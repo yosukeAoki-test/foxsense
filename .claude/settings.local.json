@@ -2,8 +2,38 @@
   "permissions": {
     "allow": [
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(pio run:*)",
+      "Bash(mkdir:*)",
+      "Bash(chmod:*)",
+      "Read(//Users/aokiyousuke/Desktop/**)",
+      "Bash(ssh:*)",
+      "Bash(composer create-project:*)",
+      "Bash(php artisan make:migration:*)",
+      "Bash(php artisan make:model:*)",
+      "Bash(php artisan make:service:*)",
+      "Bash(php artisan make:command:*)",
+      "Read(//Users/aokiyousuke/smartAgriVision/beast-detection-system/**)",
+      "Read(//Users/aokiyousuke/smartAgriVision/beast-detection-system/**)",
+      "Bash(php artisan make:controller:*)",
+      "Bash(php artisan:*)",
+      "Read(//Users/aokiyousuke/smartAgriVision/beast-detection-system/**)",
+      "Bash(echo:*)",
+      "WebSearch",
+      "WebFetch(domain:wiki.seeedstudio.com)",
+      "Bash(tar:*)",
+      "Bash(scp:*)",
+      "Bash(curl:*)",
+      "Bash(pio device:*)",
+      "Read(//Users/aokiyousuke/**)",
+      "mcp__ide__getDiagnostics",
+      "WebFetch(domain:smart-agri-vision.net)",
+      "Bash(grep:*)",
+      "Bash(bc)"
     ],
-    "deny": []
+    "deny": [],
+    "additionalDirectories": [
+      "/tmp"
+    ]
   }
 }
