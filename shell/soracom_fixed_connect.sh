@@ -1,0 +1,221 @@
+#!/bin/bash
+#
+# SORACOM完全統合接続スクリプト
+# 根本原因を解決: APN設定、初期化順序、データベアラー確立
+#
+
+DEVICE_MBIM="/dev/cdc-wdm0"
+DEVICE_AT="/dev/ttyUSB2"
+IFACE="wwan0"
+APN="soracom.io"
+LOG_FILE="/var/log/soracom_fixed.log"
+
+log_msg() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [SORACOM_FIX] $1" | tee -a $LOG_FILE
+}
+
+log_msg "=============================================="
+log_msg "  SORACOM完全統合接続スクリプト"
+log_msg "=============================================="
+
+# ステップ1: 完全クリーンアップ
+log_msg "=== STEP 1: 完全クリーンアップ ==="
+pkill -9 mbimcli qmicli pppd 2>/dev/null
+rm -f /tmp/mbim-network-state-* 2>/dev/null
+ip link set $IFACE down 2>/dev/null
+ip addr flush dev $IFACE 2>/dev/null
+ip route del default dev $IFACE 2>/dev/null
+sleep 3
+
+# ステップ2: 正しいAPN設定を確保
+log_msg "=== STEP 2: SORACOM APN設定 ==="
+cat > /etc/mbim-network.conf << EOF
+APN=$APN
+PROXY=no
+EOF
+log_msg "/etc/mbim-network.confを更新: APN=$APN"
+
+# ステップ3: ATコマンドでモデムを正しく初期化（リセットなし）
+log_msg "=== STEP 3: モデム初期化（ATコマンド）==="
+
+# ATポート設定
+if [ ! -c "$DEVICE_AT" ]; then
+    log_msg "ERROR: $DEVICE_AT が見つかりません"
+    exit 1
+fi
+
+stty -F $DEVICE_AT 115200 raw -echo 2>/dev/null
+
+send_at() {
+    local cmd="$1"
+    log_msg "AT送信: $cmd"
+    echo -e "${cmd}\r" > $DEVICE_AT
+    sleep 2
+    timeout 3 cat < $DEVICE_AT 2>&1 | tr -d '\r' | grep -v "^$" | while read line; do
+        log_msg "  応答: $line"
+    done
+}
+
+# 基本初期化
+send_at "ATZ"
+send_at "ATE0"
+
+# SIM確認
+log_msg "SIM状態確認..."
+send_at "AT+CPIN?"
+
+# LTEモード確認
+log_msg "LTEモード確認..."
+send_at "AT!SELRAT?"
+
+# 重要: APNをATコマンドで設定
+log_msg "APN設定: $APN"
+send_at "AT+CGDCONT=1,\"IP\",\"$APN\""
+send_at "AT+CGDCONT?"
+
+# 注意: AT+CGACT=1,1は実行しない（MBIMに任せる）
+log_msg "ATコマンド初期化完了（PDP有効化はMBIMに委譲）"
+
+# ステップ4: MBIMでPDPコンテキスト確立とデータベアラー有効化
+log_msg "=== STEP 4: MBIM接続（データベアラー確立）==="
+
+# mbim-networkで接続
+log_msg "mbim-network接続実行中..."
+MBIM_RESULT=$(mbim-network $DEVICE_MBIM start 2>&1)
+MBIM_STATUS=$?
+
+echo "$MBIM_RESULT" | while IFS= read -r line; do
+    log_msg "  $line"
+done
+
+if [ $MBIM_STATUS -ne 0 ]; then
+    log_msg "ERROR: mbim-network接続失敗 (exit=$MBIM_STATUS)"
+    exit 1
+fi
+
+if echo "$MBIM_RESULT" | grep -q "Network started successfully"; then
+    log_msg "✓ MBIM接続成功"
+else
+    log_msg "WARN: 接続メッセージ不明確（継続）"
+fi
+
+# 重要: 接続後、データベアラーが確立するまで待機
+log_msg "データベアラー確立待機中（10秒）..."
+sleep 10
+
+# ステップ5: IP設定取得と適用
+log_msg "=== STEP 5: IP設定取得・適用 ==="
+
+# MBIMからIP設定取得
+log_msg "MBIM経由でIP設定取得中..."
+IP_CONFIG=$(timeout 15 mbimcli -d $DEVICE_MBIM --query-ip-configuration 2>&1)
+log_msg "IP設定応答:"
+echo "$IP_CONFIG" | while IFS= read -r line; do
+    log_msg "  $line"
+done
+
+# IP抽出
+IP_ADDR=$(echo "$IP_CONFIG" | grep -oP 'IPv4 address.*:\s*\K[0-9.]+' | head -1)
+DNS1=$(echo "$IP_CONFIG" | grep -oP 'DNS \[0\].*:\s*\K[0-9.]+' | head -1)
+DNS2=$(echo "$IP_CONFIG" | grep -oP 'DNS \[1\].*:\s*\K[0-9.]+' | head -1)
+
+# MBIMで取得できない場合はATコマンドから取得
+if [ -z "$IP_ADDR" ] || [ "$IP_ADDR" = "0.0.0.0" ]; then
+    log_msg "MBIM経由でIP未取得、AT+CGCONTRDP=1で再取得..."
+
+    echo -e "AT+CGCONTRDP=1\r" > $DEVICE_AT
+    sleep 3
+    AT_IP_RESPONSE=$(timeout 5 cat < $DEVICE_AT 2>&1)
+    log_msg "AT応答: $AT_IP_RESPONSE"
+
+    IP_ADDR=$(echo "$AT_IP_RESPONSE" | grep "+CGCONTRDP:" | awk -F',' '{print $4}' | tr -d '"' | awk -F'.' '{print $1"."$2"."$3"."$4}')
+    DNS1=$(echo "$AT_IP_RESPONSE" | grep "+CGCONTRDP:" | awk -F',' '{print $6}' | tr -d '"')
+    DNS2=$(echo "$AT_IP_RESPONSE" | grep "+CGCONTRDP:" | awk -F',' '{print $7}' | tr -d '"')
+fi
+
+if [ -z "$IP_ADDR" ] || [ "$IP_ADDR" = "0.0.0.0" ] || [ "$IP_ADDR" = "..." ]; then
+    log_msg "ERROR: IPアドレス取得失敗"
+    exit 1
+fi
+
+log_msg "取得IP: $IP_ADDR"
+log_msg "取得DNS1: $DNS1"
+log_msg "取得DNS2: $DNS2"
+
+# ステップ6: wwan0インターフェース設定
+log_msg "=== STEP 6: wwan0インターフェース設定 ==="
+
+# インターフェースUP
+ip link set $IFACE up
+if [ $? -ne 0 ]; then
+    log_msg "ERROR: インターフェース起動失敗"
+    exit 1
+fi
+
+# IP設定
+ip addr add ${IP_ADDR}/32 dev $IFACE
+if [ $? -ne 0 ]; then
+    log_msg "ERROR: IPアドレス設定失敗"
+    exit 1
+fi
+
+# MTU設定
+ip link set $IFACE mtu 1428
+log_msg "✓ wwan0設定完了: $IP_ADDR/32, MTU 1428"
+
+# ステップ7: ルーティング設定
+log_msg "=== STEP 7: ルーティング設定 ==="
+
+# WiFi状態確認
+WIFI_STATE=$(cat /sys/class/net/wlan0/operstate 2>/dev/null)
+
+if [ "$WIFI_STATE" = "up" ] && ip addr show wlan0 2>/dev/null | grep -q "inet "; then
+    log_msg "WiFi接続中 - WiFi優先ルート設定"
+
+    # WiFi優先（metric 100）
+    WIFI_GW=$(ip route | grep "^default.*wlan0" | awk '{print $3}' | head -1)
+    [ -z "$WIFI_GW" ] && WIFI_GW="192.168.3.1"
+
+    ip route del default dev wlan0 2>/dev/null
+    ip route add default via $WIFI_GW dev wlan0 metric 100 2>/dev/null
+    log_msg "  WiFiルート: via $WIFI_GW metric 100"
+
+    # LTE補助（metric 400）
+    ip route add default dev $IFACE metric 400 2>/dev/null
+    log_msg "  LTEルート: dev $IFACE metric 400"
+else
+    log_msg "WiFi未接続 - LTE専用ルート"
+    ip route add default dev $IFACE metric 200
+    log_msg "  LTEルート: dev $IFACE metric 200"
+fi
+
+log_msg "現在のルート:"
+ip route show | tee -a $LOG_FILE
+
+# ステップ8: DNS設定
+log_msg "=== STEP 8: DNS設定 ==="
+{
+    echo "# Generated by soracom_fixed_connect.sh"
+    [ -n "$DNS1" ] && [ "$DNS1" != "0.0.0.0" ] && echo "nameserver $DNS1"
+    echo "nameserver 8.8.8.8"
+    [ -n "$DNS2" ] && [ "$DNS2" != "0.0.0.0" ] && [ "$DNS2" != "$DNS1" ] && echo "nameserver $DNS2"
+} > /etc/resolv.conf
+log_msg "✓ DNS設定完了"
+
+# ステップ9: 接続テスト
+log_msg "=== STEP 9: 接続テスト ==="
+
+log_msg "インターフェース状態:"
+ip addr show $IFACE | tee -a $LOG_FILE
+
+log_msg "Pingテスト (wwan0経由)..."
+if ping -c 3 -W 5 -I $IFACE 8.8.8.8 >/dev/null 2>&1; then
+    log_msg "=============================================="
+    log_msg "  ✓✓✓ SUCCESS!!! SORACOM接続成功！"
+    log_msg "=============================================="
+    exit 0
+else
+    log_msg "WARN: Ping失敗 - ルーティング確認推奨"
+    log_msg "  しかし、設定は完了しています"
+    exit 0
+fi

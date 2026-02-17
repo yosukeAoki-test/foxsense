@@ -1,0 +1,10485 @@
+Product Technical Specification
+& Customer Design Guidelines
+AirPrime EM7430
+
+4116235
+Rev 7
+Proprietary and Confidential
+Contents subject to change
+
+Preface
+
+Important
+Notice
+
+Due to the nature of wireless communications, transmission and reception of data
+can never be guaranteed. Data may be delayed, corrupted (i.e., have errors) or be
+totally lost. Although significant delays or losses of data are rare when wireless
+devices such as the Sierra Wireless modem are used in a normal manner with a
+well-constructed network, the Sierra Wireless modem should not be used in
+situations where failure to transmit or receive data could result in damage of any
+kind to the user or any other party, including but not limited to personal injury,
+death, or loss of property. Sierra Wireless accepts no responsibility for damages
+of any kind resulting from delays or errors in data transmitted or received using
+the Sierra Wireless modem, or for failure of the Sierra Wireless modem to
+transmit or receive such data.
+
+Safety and
+Hazards
+
+Do not operate the Sierra Wireless modem in areas where blasting is in progress,
+where explosive atmospheres may be present, near medical equipment, near life
+support equipment, or any equipment which may be susceptible to any form of
+radio interference. In such areas, the Sierra Wireless modem MUST BE
+POWERED OFF. The Sierra Wireless modem can transmit signals that could
+interfere with this equipment.
+Do not operate the Sierra Wireless modem in any aircraft, whether the aircraft is
+on the ground or in flight. In aircraft, the Sierra Wireless modem MUST BE
+POWERED OFF. When operating, the Sierra Wireless modem can transmit
+signals that could interfere with various onboard systems.
+Note: Some airlines may permit the use of cellular phones while the aircraft is on the
+ground and the door is open. Sierra Wireless modems may be used at this time.
+
+The driver or operator of any vehicle should not operate the Sierra Wireless
+modem while in control of a vehicle. Doing so will detract from the driver or
+operator's control and operation of that vehicle. In some states and provinces,
+operating such communications devices while in control of a vehicle is an offence.
+
+Limitation of
+Liability
+
+The information in this manual is subject to change without notice and does not
+represent a commitment on the part of Sierra Wireless. SIERRA WIRELESS AND
+ITS AFFILIATES SPECIFICALLY DISCLAIM LIABILITY FOR ANY AND ALL
+DIRECT, INDIRECT, SPECIAL, GENERAL, INCIDENTAL, CONSEQUENTIAL,
+PUNITIVE OR EXEMPLARY DAMAGES INCLUDING, BUT NOT LIMITED TO,
+LOSS OF PROFITS OR REVENUE OR ANTICIPATED PROFITS OR REVENUE
+ARISING OUT OF THE USE OR INABILITY TO USE ANY SIERRA WIRELESS
+PRODUCT, EVEN IF SIERRA WIRELESS AND/OR ITS AFFILIATES HAS BEEN
+ADVISED OF THE POSSIBILITY OF SUCH DAMAGES OR THEY ARE
+FORESEEABLE OR FOR CLAIMS BY ANY THIRD PARTY.
+Notwithstanding the foregoing, in no event shall Sierra Wireless and/or its
+affiliates aggregate liability arising under or in connection with the Sierra Wireless
+product, regardless of the number of events, occurrences, or claims giving rise to
+liability, be in excess of the price paid by the purchaser for the Sierra Wireless
+product.
+
+Rev 7 Aug.16
+
+Proprietary and Confidential - Contents subject to change
+
+3
+
+Product Technical Specification & Customer Design Guidelines
+
+Patents
+
+This product may contain technology developed by or for Sierra Wireless Inc. This
+product includes technology licensed from QUALCOMM®. This product is
+manufactured or sold by Sierra Wireless Inc. or its affiliates under one or more
+patents licensed from InterDigital Group and MMP Portfolio Licensing.
+
+Copyright
+
+©2016 Sierra Wireless. All rights reserved.
+
+Trademarks
+
+Sierra Wireless®, AirPrime®, AirLink®, AirVantage® and the Sierra Wireless logo
+are registered trademarks of Sierra Wireless, Inc.
+Windows® and Windows Vista® are registered trademarks of Microsoft
+Corporation.
+QUALCOMM® is a registered trademark of QUALCOMM Incorporated. Used
+under license.
+Other trademarks are the property of their respective owners.
+
+Contact
+Information
+Sales information and technical
+support, including warranty and returns
+
+Web: sierrawireless.com/company/contact-us/
+Global toll-free number: 1-877-687-7795
+6:00 am to 6:00 pm PST
+
+Corporate and product information
+
+Web: sierrawireless.com
+
+Revision
+History
+Revision
+number
+
+Release date
+
+Changes
+
+1
+
+October 2014
+
+Initial release
+
+2
+
+February 2015
+
+Updated Table 4-9 on page 49 (# of satellites)
+Corrected typo in Table 3-4 on page 32 (UIM_GND / UIM2_GND)
+
+4
+
+Proprietary and Confidential - Contents subject to change
+
+4116235
+
+Preface
+
+Revision
+number
+
+Release date
+
+Changes
+
+3
+
+March 2016
+
+Updated Carrier Aggregation combinations (Table 1-2 on page 16)
+Added Windows 8.1 and Windows 10 references
+Updated RF block diagram (Figure 3-2 on page 25)
+Added notes indicating signals should not be driven until device is powered on, in Host
+Interface Pin Assignments on page 25 and Power On / Off Timing on page 55.
+Updated Antenna control section
+Added Envelope correlation coefficient to Table B-1 on page 73
+Removed RFFE
+Power consumption values measured at 25C (changed from 30)
+Updated module weight (Table 7-1 on page 61)
+Added Packaging on page 95
+Added signal strength for acquisition time values (Table 4-9 on page 49)
+Relabeled ‘Max‘ column to ‘Typ‘, specified voltage (Table 5-2 on page 66)
+Added max current value (Table 5-3 on page 52)
+Updated power-on/off timing values
+Updated temperature description / details to reflect device performance, including:
+· Physical Features on page 16 — Clarified temperature range as ‘ambient’.
+· Physical Features on page 16 — Added AT!PCTEMP to note and adjusted
+suggested ‘best performance’ max temperature.
+· Table 5-5 on page 54 — Added explanatory note for TEMP_HI_WARN state.
+· Table 7-1 on page 61 — Clarified temperature range as ‘ambient’
+Adjusted GNSS tracking sensitivity specification to -160 dBm from -161 dBm to reflect
+tolerance range of measurement (Table 4-9 on page 49).
+Added Figure 7-5, Copper Pad Location on Bottom Side of Module, on page 65.
+Updated USIM and USIM2 voltages in Table 3-1 on page 26.
+Added GPIO numbers to ANT_CTRL signal names in Table 3-1 on page 26.
+Modified note indicating USB2.0 and 3.0 support in USB Interface on page 31.
+Updated Rx Sensitivity and Tx Power Tolerance values, all RATs and Bands, in
+Conducted Rx Sensitivity / Tx Power on page 48.
+Added LTE bandwidth support (Table 4-2 on page 46) and LTE CA Bandwidth Support
+on page 99.
+Added minimum pulse width to RESET# description in Table 3-7 on page 38.
+
+4
+
+April 2016
+
+Removed uplink CA columns from Table G-2, LTE CA Intra-band (Contiguous)
+Bandwidth Support, on page 100 and Table G-3, LTE CA Intra-band (Non-contiguous)
+Bandwidth Support, on page 101.
+
+5
+
+April 2016
+
+Corrected indication of areas needing heat dissipation (bottom instead of top) in
+Thermal Considerations on page 64, and updated recommendation wording in general.
+Removed ‘future’ from Galileo support in Position Location (GNSS) on page 19
+
+6
+
+May 2016
+
+Corrected ripple voltage value in Power Supply Noise on page 57
+Corrected inrush current unit in Miscellaneous DC Power Consumption on page 52
+Updated maximum current in Miscellaneous DC Power Consumption on page 52
+
+7
+
+August 2016
+
+Removed gpsOneXTRA.
+Removed wireless coexistence topic; marked pins 60/62/64 as ‘Reserved’ (Table 3-1),
+updated system block (removed COEX signals) (Figure 3-1 on page 24).
+Added USB 3.0 signal to Signal Timing figure (Figure 5-2 on page 56); added USB 3.0
+timing table (Table 5-8 on page 56).
+Updated USB 2.0 timing (Table 5-6 on page 56, Table 5-7 on page 56).
+Updated PCB thickness (Table 7-1 on page 61, Figure 7-2 on page 62).
+
+Rev 7 Aug.16
+
+Proprietary and Confidential - Contents subject to change
+
+5
+
+Product Technical Specification & Customer Design Guidelines
+
+6
+
+Proprietary and Confidential - Contents subject to change
+
+4116235
+
+Contents
+Introduction . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 15
+Supported RF bands . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 15
+Physical Features. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 16
+Application Interface Features . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 17
+Modem Features . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 17
+LTE Features . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 18
+Short Message Service (SMS) Features . . . . . . . . . . . . . . . . . . . . . . . . . . . 18
+Position Location (GNSS) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 19
+Supporting Documents. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 19
+Accessories . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 19
+Required Connectors . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 20
+Ordering Information . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 20
+Integration Requirements . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 20
+Standards Compliance . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 21
+Electrical Specifications . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 23
+Host Interface Pin Assignments . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 25
+Power Supply . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 31
+USB Interface . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 31
+USB Throughput Performance . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 32
+User-developed Drivers . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 32
+SIM Interface . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 32
+SIM Implementation . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 34
+Control Interface (Signals) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 35
+WAKE_ON_WAN# — Wake Host . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 35
+W_DISABLE1# (Wireless Disable) and W_DISABLE2# (GNSS Disable)
+..
+36
+Full_Card_Power_Off# and RESET# . . . . . . . . . . . . . . . . . . . . . . . . . . . 37
+WWAN_LED# — LED Output . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 38
+Rev 7 Aug.16
+
+Proprietary and Confidential - Contents subject to change
+
+7
+
+Product Technical Specification & Customer Design Guidelines
+
+Antenna Control. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 39
+RF Specifications . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 41
+RF Connections . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 41
+Shielding . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 42
+Antenna and Cabling . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 42
+Ground Connection . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 43
+Interference and Sensitivity . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 43
+Interference from Other Wireless Devices . . . . . . . . . . . . . . . . . . . . . . . 43
+Host-generated RF Interference . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 44
+Device-generated RF Interference . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 44
+Methods to Mitigate Decreased Rx Performance . . . . . . . . . . . . . . . . . . 44
+Radiated Spurious Emissions (RSE) . . . . . . . . . . . . . . . . . . . . . . . . . . . . 45
+Radiated Sensitivity Measurement . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 45
+Sierra Wireless’ Sensitivity Testing and Desensitization Investigation . . 45
+Sensitivity vs. Frequency . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 45
+Supported Frequencies . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 46
+Conducted Rx Sensitivity / Tx Power. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 48
+GNSS Specifications . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 49
+Power . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 51
+Power Consumption . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 51
+Module Power States. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 53
+Power State Transitions . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 54
+Power Interface . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 55
+Power Ramp-up . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 55
+Timing . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 55
+Power Supply Noise . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 57
+SED (Smart Error Detection) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 57
+Tx Power Control . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 57
+Software Interface . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 59
+Support Tools . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 59
+8
+
+Proprietary and Confidential - Contents subject to change
+
+4116235
+
+Contents
+
+USB Interface . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 59
+Mechanical and Environmental Specifications . . . . . . . . . . . . . . . . . . . . . . . 61
+Device Views . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 62
+Labeling . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 63
+Electrostatic Discharge (ESD) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 63
+Thermal Considerations . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 64
+Module Integration Testing. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 65
+Regulatory Compliance and Industry Certifications . . . . . . . . . . . . . . . . . . . 67
+Important Notice . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 67
+Safety and Hazards . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 67
+Audio Support . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 69
+PCM/I2S Audio Interface . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 70
+Antenna Specification . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 73
+Recommended Main / Diversity Antenna Specifications . . . . . . . . . . . . . . . . 73
+Recommended GNSS Antenna Specifications . . . . . . . . . . . . . . . . . . . . . . 75
+Antenna Tests . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 76
+Design Checklist . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 77
+Testing . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .79
+AT Command Entry Timing Requirement . . . . . . . . . . . . . . . . . . . . . . . . . . 79
+Acceptance Testing . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 79
+Acceptance Test Requirements . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 80
+Acceptance Test Procedure . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .80
+Certification Testing . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 80
+Production Testing . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 81
+
+Rev 7 Aug.16
+
+Proprietary and Confidential - Contents subject to change
+
+9
+
+Product Technical Specification & Customer Design Guidelines
+
+Functional Production Test . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 81
+Production Test Procedure . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 82
+UMTS (WCDMA) RF Transmission Path Test . . . . . . . . . . . . . . . . . . . . 85
+UMTS (WCDMA) RF Receive Path Test . . . . . . . . . . . . . . . . . . . . . . . . . 86
+LTE RF Receive Path Test . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 88
+GNSS RF Receive Path Test . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 90
+Quality Assurance Testing. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 90
+Suggested Testing Equipment. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 91
+Testing Assistance Provided by Sierra Wireless . . . . . . . . . . . . . . . . . . . . . 91
+IOT/Operator Testing. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 91
+Extended AT Commands for Testing. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 92
+Packaging . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 95
+References . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 97
+Sierra Wireless Documents . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 97
+Command Documents . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 97
+Other Sierra Documents . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 97
+Industry / Other Documents . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 97
+LTE CA Bandwidth Support . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 99
+Acronyms . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 103
+Index. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 109
+
+10
+
+Proprietary and Confidential - Contents subject to change
+
+4116235
+
+List of Tables
+Table 1-1: Supported RF Bands . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 15
+Table 1-2: Carrier Aggregation Combinations . . . . . . . . . . . . . . . . . . . . . . . . . . 16
+Table 1-3: Required Host-Module Connectors . . . . . . . . . . . . . . . . . . . . . . . . . 20
+Table 2-1: Standards Compliance . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 21
+Table 3-1: Host Interface (67-pin) Connections — Module View . . . . . . . . . . . . 26
+Table 3-2: Power and Ground Specifications . . . . . . . . . . . . . . . . . . . . . . . . . . 31
+Table 3-3: USB Interfaces . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 31
+Table 3-4: SIM Interface Signals . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 32
+Table 3-5: Module Control Signals . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 35
+Table 3-6: W_DISABLE_N Usage . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 37
+Table 3-7: Full_Card_Power_Off# and RESET# Usage . . . . . . . . . . . . . . . . . . 38
+Table 3-8: Antenna Control Signals. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 39
+Table 4-1: LTE Frequency Bands . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 46
+Table 4-2: LTE Bandwidth Support . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 46
+Table 4-3: WCDMA Frequency Bands Support. . . . . . . . . . . . . . . . . . . . . . . . . 47
+Table 4-4: TD-SCDMA Frequency Bands . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 47
+Table 4-5: Conducted Rx (Receive) Sensitivity — LTE Bands . . . . . . . . . . . . . . 48
+Table 4-6: Conducted Rx (Receive) Sensitivity — UMTS Bands . . . . . . . . . . . . 48
+Table 4-7: Conducted Rx (Receive) Sensitivity — TD-SCDMA Bands. . . . . . . . 49
+Table 4-8: Conducted Tx (Transmit) Power Tolerances . . . . . . . . . . . . . . . . . . 49
+Table 4-9: GNSS Specifications . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 49
+Table 5-1: Averaged Standby DC Power Consumption . . . . . . . . . . . . . . . . . . 51
+Table 5-2: Averaged Call Mode DC Power Consumption . . . . . . . . . . . . . . . . . 52
+Table 5-3: Miscellaneous DC Power Consumption . . . . . . . . . . . . . . . . . . . . . . 52
+Table 5-4: Module Power States . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 53
+Table 5-5: Power State Transition Trigger Levels . . . . . . . . . . . . . . . . . . . . . . . 54
+Table 5-6: USB 2.0 Power-On / Off Timing Parameters (Double Enumeration) . 56
+Table 5-7: USB 2.0 Power-On / Off Timing Parameters (Single Enumeration) . 56
+Rev 7 Aug.16
+
+Proprietary and Confidential - Contents subject to change
+
+11
+
+Product Technical Specification & Customer Design Guidelines
+
+Table 5-8: USB 3.0 Power-On / Off Timing Parameters (Single Enumeration) . 56
+Table 5-9: Dynamic Power Control of SAR Backoff State . . . . . . . . . . . . . . . . 58
+Table 7-1: Mechanical and Environmental Specifications. . . . . . . . . . . . . . . . . 61
+Table A-1: Host interface (67-pin) Connections — Module View . . . . . . . . . . . . 69
+Table A-2: PCM / I2S Interface Signals . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 70
+Table A-3: PCM Timing. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 71
+Table A-4: Master Transmitter with Data Rate = 3.072 MHz (±10%) . . . . . . . . 72
+Table B-1: Antenna Requirements . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 73
+Table B-2: GNSS Antenna Requirements. . . . . . . . . . . . . . . . . . . . . . . . . . . . . 75
+Table C-1: Hardware Integration Design Considerations . . . . . . . . . . . . . . . . . 77
+Table 4-1: Test Settings — UMTS Transmission Path. . . . . . . . . . . . . . . . . . . . 85
+Table 4-2: Test Settings — UMTS Receive Path . . . . . . . . . . . . . . . . . . . . . . . . 86
+Table 4-3: Test Settings — LTE Receive Path. . . . . . . . . . . . . . . . . . . . . . . . . . 88
+Table 4-4: Extended AT Commands. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 92
+Table G-1: LTE CA Inter-band Bandwidth Support. . . . . . . . . . . . . . . . . . . . . . 99
+Table G-2: LTE CA Intra-band (Contiguous) Bandwidth Support . . . . . . . . . . 100
+Table G-3: LTE CA Intra-band (Non-contiguous) Bandwidth Support . . . . . . 101
+Table H-1: Acronyms and Definitions . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 103
+
+12
+
+Proprietary and Confidential - Contents subject to change
+
+4116235
+
+List of Figures
+Figure 3-1: System Block Diagram . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 24
+Figure 3-2: Expanded RF Block Diagram . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 25
+Figure 3-3: SIM Application Interface (applies to both SIM interfaces) . . . . . . . 33
+Figure 3-4: SIM Card Contacts (Contact View) . . . . . . . . . . . . . . . . . . . . . . . . . 34
+Figure 3-5: Recommended WAKE_ON_WAN# Connection . . . . . . . . . . . . . . . 36
+Figure 3-6: Recommended Wireless Disable Connection . . . . . . . . . . . . . . . . . 37
+Figure 3-7: Example LED . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 39
+Figure 4-1: Module Connectors . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 41
+Figure 5-1: Voltage / Temperature Monitoring State Machines . . . . . . . . . . . . . 55
+Figure 5-2: Signal Timing (Full_Card_Power_Off#, and USB Enumeration). . . 56
+Figure 7-1: Top View . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 62
+Figure 7-2: Dimensioned View. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 62
+Figure 7-3: Unit Label . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 63
+Figure 7-4: Shield Locations (Top View) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 64
+Figure 7-5: Copper Pad Location on Bottom Side of Module . . . . . . . . . . . . . . 65
+Figure A-1: PCM_SYNC Timing . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 70
+Figure A-2: PCM Codec to Module Timing . . . . . . . . . . . . . . . . . . . . . . . . . . . . 71
+Figure A-3: Module to PCM Codec Timing . . . . . . . . . . . . . . . . . . . . . . . . . . . . 71
+Figure A-4: I2S Transmitter Timing Diagram . . . . . . . . . . . . . . . . . . . . . . . . . . . 72
+Figure 5-1: Device Placement in Module Tray. . . . . . . . . . . . . . . . . . . . . . . . . . 95
+Figure 5-2: Shipping Package . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 96
+
+Rev 7 Aug.16
+
+Proprietary and Confidential - Contents subject to change
+
+13
+
+Product Technical Specification & Customer Design Guidelines
+
+14
+
+Proprietary and Confidential - Contents subject to change
+
+4116235
+
+1
+
+1: Introduction
+The Sierra Wireless EM7430 Embedded Module is an M.2 module
+that provides LTE, UMTS, TD-SCDMA, and GNSS connectivity for
+notebook, ultrabook, tablet computers, and M2M applications over
+several radio frequency bands.
+
+Supported RF bands
+The modem, based on Qualcomm's MDM9230 baseband processor,
+supports data operation on LTE and UMTS networks over the bands
+described in Table 1-1, with LTE carrier aggregation (CA) as
+described in Table 1-2.
+Table 1-1: Supported RF Bands
+Bands
+Technology
+LTE
+
+Data Rates / Notes
+1
+
+3
+
+5
+
+F
+
+F
+
+F
+
+6
+
+7
+
+8
+
+F
+
+F
+
+9
+
+18
+
+19
+
+21
+
+28
+
+38
+
+39
+
+40
+
+41
+
+F
+
+F
+
+F
+
+F
+
+T
+
+T
+
+T
+
+T
+
+Data rates:
+• Downlink (Cat 6):
+FDD: 300 Mbps
+TDD: 222 Mbps
+
+•
+
+Uplink (Cat 6):
+FDD: 50 Mbps
+TDD: 26 Mbps
+Notes:
+• Downlink MIMO
+support (2x2; 4x2)
+
+•
+DC-HSPA+
+HSPA+
+HSPA
+UMTS
+
+Y
+
+Y
+
+Y
+
+Y
+
+Y
+
+Y
+
+N/A
+
+F=FDD; T= TDD
+
+Data rates:
+• Downlink (Cat 24):
+Up to 42 Mbps
+
+•
+
+Uplink (Cat 6):
+Up to 5.76 Mbps
+Notes:
+• Diversity support
+
+Rev 7 Aug.16
+
+Proprietary and Confidential - Contents subject to change
+
+15
+
+Product Technical Specification & Customer Design Guidelines
+
+Table 1-1: Supported RF Bands
+Bands
+Technology
+
+Data Rates / Notes
+1
+
+3
+
+5
+
+6
+
+7
+
+8
+
+9
+
+18
+
+19
+
+21
+
+TD-SCDMA
+
+28
+
+38
+
+39
+
+40
+
+Y
+
+41
+
+Data rates:
+• Downlink:
+Up to 2.8 Mbps
+
+•
+
+Uplink:
+Up to 2.2 Mbps
+Spreading rate:
+• Downlink:
+1.28 Mcps
+Notes:
+• Diversity support
+GNSS
+
+•
+
+GPS: 1575.42 MHz
+
+•
+
+GLONASS: 1602 MHz
+
+•
+
+BeiDou: 1561.098 MHz
+
+•
+
+Galileo1: 1575.42 MHz
+
+1. Future firmware upgrade
+
+Table 1-2: Carrier Aggregation Combinations
+
+1 + 8 / 18 / 19 / 21
+3 + 5 / 7 / 19 / 28
+5 + 3/7
+7 + 3 / 5 / 7 / 28
+8+1
+18 + 1
+19 + 1 / 3 / 21
+21 + 1 / 19
+28 + 3 / 7
+38 + 38
+39 + 39
+40 + 40
+41 + 41
+
+Physical Features
+•
+
+16
+
+M.2 form factor — WWAN Type 3042-S3-B (in WWAN — USB 3.0 Port
+Configuration 2), as specified in [8] PCI Express NGFF (M.2) Electrome-
+
+Proprietary and Confidential - Contents subject to change
+
+4116235
+
+Introduction
+
+chanical Specification Revision 1.0. (Note: Any variations from the specification are detailed in this document.)
+•
+
+Ambient operating temperature range:
+· Class A (3GPP compliant): -30°C to +70°C
+· Class B (operational, non-3GPP compliant): -40°C to +85°C (reduced
+operating parameters required)
+
+Important: The internal module temperature (reported by AT!PCTEMP) must be kept
+below 90°C. For best performance, the internal module temperature should be kept below
+80°C. Proper mounting, heat sinks, and active cooling may be required, depending on the
+integrated application.
+
+Application Interface Features
+
+Note: OMA DM and FOTA
+support is operatordependent.
+
+•
+
+USB interface (QMI) for Windows 7, Linux, and Android
+
+•
+
+MBIM for Windows 8.1 and Windows 10
+
+•
+
+AT command interface ([1] AT Command Set for User Equipment (UE)
+(Release 6) (Doc# 3GPP TS 27.007), plus proprietary extended AT
+commands) in [2] AirPrime EM74xx / MC74xx AT Command Reference
+(Doc# 4117727)
+
+•
+
+Software Development Kits (SDK),including API (Application Program
+Interface) functions:
+· Windows 7, Windows 8.1, Windows 10
+· Linux
+
+•
+
+Support for active antenna control via dedicated antenna control signals
+(ANTCTL0:3)
+
+•
+
+Dynamic power reduction support via software and dedicated GPIO (DPR)
+
+•
+
+OMA DM (Open Mobile Alliance Device Management)
+
+•
+
+FOTA (Firmware Over The Air)
+
+Modem Features
+
+Rev 7 Aug.16
+
+•
+
+LTE / DC-HSPA+ / HSPA+ / HSPA / UMTS (WCDMA) operation
+
+•
+
+Multiple (up to 16) cellular packet data profiles
+
+•
+
+Traditional modem COM port support for AT commands
+
+•
+
+USB suspend / resume
+
+•
+
+Sleep mode for minimum idle power draw
+
+•
+
+SIM application tool kit with proactive SIM commands
+
+•
+
+Enhanced Operator Name String (EONS)
+
+•
+
+Mobile-originated PDP context activation / deactivation
+
+•
+
+Support QoS profile
+· Release 99 QoS negotiation—Background, Interactive, and Streaming
+· Release 97—Precedence Class, Reliability Class, Delay Class, Peak
+Throughput, Mean Throughput
+
+Proprietary and Confidential - Contents subject to change
+
+17
+
+Product Technical Specification & Customer Design Guidelines
+
+•
+
+Static and Dynamic IP address. The network may assign a fixed IP address
+or dynamically assign one using DHCP (Dynamic Host Configuration
+Protocol).
+
+•
+
+PAP and CHAP support
+
+•
+
+PDP context type (IPv4, IPv6, or IPv4v6). IP Packet Data Protocol context
+supports dual IPv4v6.
+
+•
+
+RFC1144 TCP/IP header compression
+
+LTE Features
+•
+
+Carrier aggregation:
+· DL LTE-FDD
+·
+20 MHz intraband non-contiguous
+·
+40 MHz interband
+· DL LTE-TDD
+·
+40 MHz intraband contiguous and non-contiguous
+·
+40 MHz interband
+
+•
+
+CSG support (LTE Femto)
+
+•
+
+LTE Advanced receivers (NLIC, eICIC, feICIC)
+
+•
+
+Basic cell selection and system acquisition
+· PSS / SSS / MIB decode
+· SIB1–SIB16 decoding
+
+•
+
+NAS / AS security procedures
+· Snow 3G / AES / ZUC security
+
+•
+
+CQI / RI / PMI reporting
+
+•
+
+Paging procedures
+· Paging in Idle and Connected mode
+
+•
+
+Dedicated bearer
+· Network-initiated dedicated bearer
+· UE-initiated dedicated bearer
+
+•
+
+Multiple PDN connections (IPv4 and IPv6 combinations), subject to operating
+system support.
+
+•
+
+Connected mode intra-LTE mobility
+
+•
+
+Idle mode intra-LTE mobility
+
+•
+
+iRAT between LTE / 3G for idle and connection release with redirection
+
+•
+
+Detach procedure
+· Network-initiated detach with reattach required
+· Network-initiated detach followed by connection release
+
+Short Message Service (SMS) Features
+
+18
+
+•
+
+Mobile-originated and mobile-terminated SMS over IMS for LTE
+
+•
+
+Mobile-originated and mobile-terminated SMS over SGs for LTE
+
+Proprietary and Confidential - Contents subject to change
+
+4116235
+
+Introduction
+
+Position Location (GNSS)
+•
+
+Customizable tracking session
+
+•
+
+Automatic tracking session on startup
+
+•
+
+Concurrent standalone GPS, GLONASS, Galileo, and BeiDou
+
+•
+
+Assisted GPS (A-GPS) SUPL1.0
+
+•
+
+Assisted GPS / GLONASS SUPL2.0
+
+•
+
+GPS / GLONASS on dedicated connector or diversity connector
+
+•
+
+BeiDou on dedicated connector, or on diversity connector with reduced
+performance
+
+•
+
+Galileo on dedicated connector or diversity connector (future firmware
+upgrade)
+
+Supporting Documents
+Several additional documents describe module design, usage, integration, and
+other features. See References on page 97.
+
+Accessories
+A hardware development kit is available for AirPrime M.2 modules. The kit
+contains hardware components for evaluating and developing with the module,
+including:
+•
+
+Development board
+
+•
+
+Cables
+
+•
+
+Antennas
+
+•
+
+Other accessories
+
+For over-the-air LTE testing, ensure that suitable antennas are used.
+
+Rev 7 Aug.16
+
+Proprietary and Confidential - Contents subject to change
+
+19
+
+Product Technical Specification & Customer Design Guidelines
+
+Required Connectors
+Table 1-3 describes the connectors used to integrate the EM7430 Embedded
+Module into your host device.
+Table 1-3: Required Host-Module Connectors 1
+Connector type
+RF cables
+
+EDGE (67 pin)
+
+SIM
+
+Description
+
+•
+
+Mate with M.2-spec connectors
+
+•
+
+Three connector jacks (I-PEX 20448-001R-081 or equivalent)
+
+•
+
+Slot B compatible — Per the M.2 standard ([8] PCI Express
+NGFF (M.2) Electromechanical Specification Revision 1.0), a
+generic 75 pin position EDGE connector on the motherboard
+uses a mechanical key to mate with the 67 pin notched module
+connector.
+
+•
+
+Manufacturers include LOTES (part #APCI0018-P001A01),
+Kyocera, JAE, Tyco, and Longwell.
+
+•
+
+Industry-standard connector. See SIM Interface on page 32 for
+details.
+
+1. Manufacturers/part numbers are for reference only and are subject to change. Choose
+connectors that are appropriate for your own design.
+
+Ordering Information
+To order, contact the Sierra Wireless Sales Desk at +1 (604) 232-1488 between
+8 AM and 5 PM Pacific Time.
+
+Integration Requirements
+Sierra Wireless provides, in the documentation suite, guidelines for successful
+module integration and offers integration support services as necessary.
+When integrating the EM7430 Embedded Module, the following items must be
+addressed:
+•
+
+Mounting — Effect on temperature, shock, and vibration performance
+
+•
+
+Power supply — Impact on battery drain and possible RF interference
+
+•
+
+Antenna location and type — Impact on RF performance
+
+•
+
+Regulatory approvals — As discussed in Regulatory Compliance and Industry
+
+Certifications on page 67.
+
+20
+
+•
+
+Service provisioning — Manufacturing process
+
+•
+
+Software — As discussed in Software Interface on page 59.
+
+•
+
+Host interface — Compliance with interface voltage levels
+
+Proprietary and Confidential - Contents subject to change
+
+4116235
+
+2
+
+2: Standards Compliance
+The EM7430 Embedded Module complies with the mandatory
+requirements described in the following standards. The exact set of
+requirements supported is network operator-dependent.
+Table 2-1: Standards Compliance
+Technology
+
+Rev 7 Aug.16
+
+Standards
+
+LTE
+
+•
+
+3GPP Release 11
+
+UMTS
+
+•
+
+3GPP Release 9
+
+Proprietary and Confidential - Contents subject to change
+
+21
+
+Product Technical Specification & Customer Design Guidelines
+
+22
+
+Proprietary and Confidential - Contents subject to change
+
+4116235
+
+3
+
+3: Electrical Specifications
+The system block diagram in Figure 3-1 represents the EM7430
+module integrated into a host system. The module includes the
+following interfaces to the host:
+•
+
+Full_Card_Power_Off# — Input supplied to the module by the
+
+host — active-low to turn the unit off, or active-high to turn the unit
+on.
+•
+
+W_DISABLE1# — Active low input from the host to the EM7430
+disables the main RF radio.
+
+•
+
+W_DISABLE2# — Active low input from the host to the EM7430
+disables the GNSS radio receiver.
+WAKE_ON_WAN# — Active low output used to wake the host when
+specific events occur.
+WWAN_LED# — Active-low LED drive signal provides an indication
+of RADIO ON state, either WWAN or GNSS.
+
+•
+•
+•
+
+RESET# — Active low input from the host used to reset the
+
+module.
+•
+
+•
+•
+
+•
+
+Antenna — Three RF connectors (main (Rx / Tx), GNSS, and
+
+auxiliary (diversity/MIMO/GNSS)). For details, see RF Specifications on page 41.
+Antenna control — Four signals that can be used to control external
+antenna switches — two for high band, and two for low band.
+Dynamic power control — Signal used to adjust Tx power to meet
+FCC SAR requirements. For details, see Tx Power Control on
+page 57.).
+Dual SIM — Supported through the interface connector. The SIM
+
+cavities / connectors must be placed on the host device for this
+feature.
+•
+
+SIM detect — Internal pullup on the module detects whether a SIM
+is present or not:
+· If a SIM is not inserted, the pin must be shorted to ground.
+· If a SIM is present, the pin will be an open circuit.
+
+•
+
+USB — USB 2.0 and USB 3.0 interfaces to the host for data,
+
+control, and status information.
+The EM7430 has two main interface areas — the host I/O connector
+and the RF ports. Details of these interfaces are described in the
+sections that follow.
+
+Rev 7 Aug.16
+
+Proprietary and Confidential - Contents subject to change
+
+23
+
+Product Technical Specification & Customer Design Guidelines
+
+RF
+BLOCK
+
+RF + GRFC_GPIO
+
+Voltage Supply
+NAND
+SPMI
+
+External NAND and
+RAM
+
+USIM2
+
+SIM Detect2
+VPH/
+VBAT
+
+Audio I2S/PCM
+Audio I2C
+
+CBL_PWR_N
+
+SIM Detect1
+
+LED_DRV_N
+
+MDM9230
+
+USIM1
+
+RESIN_N
+
+PDM9635
+
+DDR2 DRAM
+
+W_DISABLE#1
+W_DISABLE#2
+DPR
+ANTCTL
+
+USB3.0
+
+HOST INTERFACE CONNECTOR
+
+WAKE_ON_WAN#
+
+VCC
+
+RESET#
+LED#1
+
+Full_Card_Power_Off#
+
+USB2.0
+
+Figure 3-1: System Block Diagram
+
+24
+
+Proprietary and Confidential - Contents subject to change
+
+4116235
+
+Electrical Specifications
+
+WTR3925
+
+DRX_MB3
+
+B8
+
+PRX_MB1
+PRX_MB2
+PRX_MB3
+PRX_MB4
+PRX_MB5
+PRX_LB1
+PRX_LB2
+PRX_LB3
+PRX_LB4
+PRX_MLB6
+
+MB-HB SW
+
+SW
+
+B41-TRX
+
+FBRX
+
+B38/B41-RX
+
+FBRX
+
+B40-RX
+
+B21
+
+B7-TX
+
+B40
+B8845 (1109)
+
+B41
+
+D6HQ2G655DP01 (1814)
+B7
+
+B38/40/41
+B21
+
+B1/3/39
+
+(
+B39
+
+NC
+
+B1
+
+SW
+
+B7
+
+NC
+
+)
+
+B21
+
+B39
+B1
+
+B3/9
+B5/18
+
+B5/8/18/19/28
+
+B28B
+
+SW
+
+SW
+
+GSM-L
+
+NC
+
+B3-9
+B5-18
+B28B B8530 (1814)
+
+B28A
+
+LPF
+
+B28A
+
+B8
+
+NC
+
+B8
+
+B7
+
+MB-HB SW
+
+TX_FBRX_M
+
+B38
+
+LBS W
+
+TX_FBRX_P
+
+LPF
+
+B8830
+
+B38-TRX
+B40-TRX
+
+B28A/B
+
+DRX_MLB6
+
+PRX_HB4
+
+SKY77807-81
+
+B5/18/19
+
+DRX_LB4
+
+PRX_HB3
+
+B28
+
+NC
+
+DRX_LB3
+
+PRX_HB2
+
+B5-18
+
+NC
+
+DRX_LB2
+
+PRX_HB1
+
+B8
+
+NC
+
+DRX_LB1
+
+TX_LB4
+
+GNSS
+
+B1
+
+B1/4
+
+DRX_MB5
+
+TX_LB3
+
+B41
+
+)
+
+B21
+
+B3
+
+DRX_MB4
+
+TX_LB2
+
+(
+
+B40
+
+B21
+
+DRX_MB2
+
+TX_LB1
+
+B3
+B38
+
+B39
+
+DRX_MB1
+
+TX_HMLB2
+
+B7
+
+B40
+
+DRX_HB4
+
+TX_HMLB1
+
+GPS+GLONASS
+B39
+
+B41
+
+DRX_HB3
+
+TX_HMB4
+
+GNSS
+
+B38
+
+DRX_HB2
+
+TX_HMB3
+
+GNSS
+
+B7
+
+DRX_HB1
+
+TX_HMB2
+
+NJG1155UX2
+
+LB SW
+
+NC
+
+GNSS_L2
+
+TX_HMB1
+
+GPS+GLONASS+COMPASS
+GNSS
+
+GNSS_L1
+
+B8538 (1814)
+
+DPX202690DT-4082A1
+
+B40
+B38/41
+NC
+NC
+B21
+B3/9
+NC
+B1
+B8
+B28A
+B28B
+B5/18/19
+B39
+
+(
+
+)
+
+B39
+
+Figure 3-2: Expanded RF Block Diagram
+
+Host Interface Pin Assignments
+The EM7430 host I/O connector provides pins for power, serial communications,
+and control. Pin assignments are listed in Table 3-1.
+Refer to the following tables for pin details based on interface types:
+
+Rev 7 Aug.16
+
+•
+
+Table 3-2, Power and Ground Specifications, on page 31
+
+•
+
+Table 3-3, USB Interfaces, on page 31
+
+•
+
+Table 3-4, SIM Interface Signals, on page 32
+
+Proprietary and Confidential - Contents subject to change
+
+25
+
+Product Technical Specification & Customer Design Guidelines
+
+•
+
+Table 3-5, Module Control Signals, on page 35
+
+Note: On any given interface (USB, SIM, etc.), leave unused inputs and outputs as noconnects.
+
+Note: The host should not drive any signals to the module until the power-on sequence is
+complete.
+
+Table 3-1: Host Interface (67-pin) Connections — Module View 1
+Pin
+
+Pin
+
+Signal name
+
+type
+
+2
+
+Description
+
+Direction 3
+
+Voltage levels (V)
+
+Active
+state
+
+Min
+
+Typ
+
+Max
+
+1
+
+CONFIG_3
+(NC in default module
+configuration)
+
+2
+
+VCC
+
+V
+
+Power source
+
+Input
+
+Power
+
+3.135
+
+3.7
+
+4.4
+
+3
+
+GND
+
+V
+
+Ground
+
+Input
+
+Power
+
+-
+
+0
+
+-
+
+4
+
+VCC
+
+V
+
+Power source
+
+Input
+
+Power
+
+3.135
+
+3.7
+
+4.4
+
+5
+
+GND
+
+V
+
+Ground
+
+Input
+
+Power
+
+-
+
+0
+
+-
+
+6
+
+Full_Card_Power_Off#4
+
+PD
+
+Turn modem on
+
+Input
+
+High
+
+0.7
+
+-
+
+4.4
+
+Turn modem off
+
+Input
+
+Low
+
+-0.3
+
+-
+
+0.5
+
+7
+
+USB_D+4
+
+-
+
+USB data positive
+
+Input/Output
+
+Differential
+
+-
+
+-
+
+-
+
+8
+
+W_DISABLE1#5
+
+PU
+
+Wireless Disable (main
+RF radio)
+
+Input
+
+Low
+
+-
+
+-
+
+0.4
+
+9
+
+USB_D-4
+
+-
+
+USB data negative
+
+Input/Output
+
+Differential
+
+-
+
+-
+
+-
+
+10
+
+WWAN_LED#
+
+OC
+
+LED Driver
+
+Output
+
+Low
+
+0
+
+-
+
+0.15
+
+11
+
+GND
+
+V
+
+Ground
+
+Input
+
+Power
+
+-
+
+0
+
+-
+
+12
+
+Key
+
+Notch location
+
+13
+
+Key
+
+Notch location
+
+14
+
+Key
+
+Notch location
+
+15
+
+Key
+
+Notch location
+
+16
+
+Key
+
+Notch location
+
+17
+
+Key
+
+Notch location
+
+18
+
+Key
+
+Notch location
+
+19
+
+Key
+
+Notch location
+
+20
+
+NC
+(For audio interface pin usage,
+see Audio Support on
+page 69.)
+
+26
+
+Reserved — Host must
+not repurpose this pin.
+
+Reserved — Host must
+not repurpose this pin.
+
+Proprietary and Confidential - Contents subject to change
+
+4116235
+
+Electrical Specifications
+
+Table 3-1: Host Interface (67-pin) Connections — Module View 1 (Continued)
+Pin
+
+Pin
+
+Signal name
+
+type
+
+2
+
+Description
+
+21
+
+CONFIG_0
+(GND in default module
+configuration)
+
+Reserved — Host must
+not repurpose this pin.
+
+22
+
+NC
+(For audio interface pin usage,
+see Audio Support on
+page 69.)
+
+Reserved — Host must
+not repurpose this pin.
+
+23
+
+WAKE_ON_WAN#4
+
+24
+
+NC
+(For audio interface pin usage,
+see Audio Support on
+page 69.)
+
+25
+
+DPR
+
+26
+
+W_DISABLE2#5
+
+PU
+
+27
+
+GND
+
+V
+
+28
+
+NC
+(For audio interface pin usage,
+see Audio Support on
+page 69.)
+
+Reserved — Host must
+not repurpose this pin.
+
+29
+
+USB3.0_TX-
+
+30
+
+UIM1_RESET4
+
+31
+
+USB3.0_TX+
+
+32
+
+UIM1_CLK4
+
+33
+
+GND
+
+Rev 7 Aug.16
+
+OC
+
+Voltage levels (V)
+
+Active
+state
+
+Direction 3
+
+Min
+
+Typ
+
+Max
+
+Output
+
+-
+
+Output
+
+Low
+
+0
+
+Input
+
+High
+
+1.17
+
+1.80
+
+2.10
+
+Input
+
+Low
+
+-0.3
+
+-
+
+0.63
+
+Wireless disable
+(GNSS radio)
+
+Input
+
+Low
+
+-
+
+-
+
+0.4
+
+Ground
+
+Input
+
+Power
+
+-
+
+0
+
+-
+
+USB 3.0 Transmit Data
+negative
+
+Output
+
+Differential
+
+-
+
+-
+
+-
+
+SIM Reset
+
+Output
+
+Low
+
+0
+
+-
+
+0.45
+
+High
+
+2.55
+(3V SIM)
+
+3.00
+(3V SIM)
+
+3.10
+(3V SIM)
+
+1.35
+(1.8V SIM)
+
+1.80
+(1.8V SIM)
+
+1.90
+(1.8V SIM)
+
+Wake Host
+
+0
+
+0.1
+
+Reserved — Host must
+not repurpose this pin.
+
+-
+
+O
+
+O
+
+V
+
+Dynamic power control
+
+USB 3.0 Transmit Data
+positive
+
+Output
+
+Differential
+
+-
+
+-
+
+-
+
+SIM Clock
+
+Output
+
+Low
+
+0
+
+-
+
+0.45
+
+High
+
+2.55
+(3V SIM)
+
+3.00
+(3V SIM)
+
+3.10
+(3V SIM)
+
+1.35
+(1.8V SIM)
+
+1.80
+(1.8V SIM)
+
+1.90
+(1.8V SIM)
+
+-
+
+0
+
+-
+
+Ground
+
+Input
+
+Power
+
+Proprietary and Confidential - Contents subject to change
+
+27
+
+Product Technical Specification & Customer Design Guidelines
+
+Table 3-1: Host Interface (67-pin) Connections — Module View 1 (Continued)
+Pin
+
+34
+
+Signal name
+UIM1_DATA4
+
+Pin
+type
+-
+
+2
+
+Description
+
+SIM IO pin
+
+Direction 3
+Input
+
+Voltage levels (V)
+
+Active
+state
+Low
+
+Min
+-0.30
+(3V SIM)
+
+Typ
+-
+
+-0.30
+(1.8V SIM)
+High
+
+Output
+
+35
+
+USB3.0_RX-
+
+36
+
+UIM1_PWR4
+
+V
+
+Max
+0.60
+(3V SIM)
+0.35
+(1.8V SIM)
+
+2.10
+(3V SIM)
+
+3.00
+(3V SIM)
+
+3.30
+(3V SIM)
+
+1.17
+(1.8V SIM)
+
+1.80
+(1.8V SIM)
+
+2.10
+(1.8V SIM)
+
+Low
+
+0
+
+-
+
+0.40
+
+High
+
+2.55
+(3V SIM)
+
+3.00
+(3V SIM)
+
+3.10
+(3V SIM)
+
+1.35
+(1.8V SIM)
+
+1.80
+(1.8V SIM)
+
+1.90
+(1.8V SIM)
+
+USB 3.0 Receive Data
+negative
+
+Input
+
+Differential
+
+-
+
+-
+
+-
+
+SIM VCC supply
+
+Output
+
+Power
+
+2.90
+(3V SIM)
+
+3.00
+(3V SIM)
+
+3.10
+(3V SIM)
+
+1.75
+(1.8V SIM)
+
+1.80
+(1.8V SIM)
+
+1.85
+(1.8V SIM)
+
+37
+
+USB3.0_RX+
+
+USB 3.0 Receive Data
+positive
+
+Input
+
+Differential
+
+-
+
+-
+
+-
+
+38
+
+NC
+
+Reserved
+
+39
+
+GND
+
+Ground
+
+Input
+
+Power
+
+-
+
+0
+
+-
+
+40
+
+SIM_DETECT_2
+
+SIM2 indication
+
+Input
+
+41
+
+NC
+
+Reserved
+
+42
+
+UIM2_DATA4
+
+V
+
+-
+
+SIM2 IO pin
+
+Input
+
+0 V — SIM not present
+Open circuit — SIM present
+
+Low
+
+-0.30
+(3V SIM)
+
+-
+
+-0.30
+(1.8V SIM)
+High
+
+Output
+
+43
+
+NC
+
+28
+
+0.60
+(3V SIM)
+0.35
+(1.8V SIM)
+
+2.10
+(3V SIM)
+
+3.00
+(3V SIM)
+
+3.30
+(3V SIM)
+
+1.17
+(1.8V SIM)
+
+1.80
+(1.8V SIM)
+
+2.10
+(1.8V SIM)
+
+Low
+
+0
+
+-
+
+0.40
+
+High
+
+2.55
+(3V SIM)
+
+3.00
+(3V SIM)
+
+3.10
+(3V SIM)
+
+1.35
+(1.8V SIM)
+
+1.80
+(1.8V SIM)
+
+1.90
+(1.8V SIM)
+
+Reserved
+
+Proprietary and Confidential - Contents subject to change
+
+4116235
+
+Electrical Specifications
+
+Table 3-1: Host Interface (67-pin) Connections — Module View 1 (Continued)
+Pin
+
+44
+
+45
+46
+
+Pin
+
+Signal name
+
+UIM2_CLK
+
+type
+
+4
+
+O
+
+GND
+4
+
+UIM2_RESET
+
+2
+
+Description
+
+SIM2 Clock
+
+Direction 3
+Output
+
+Voltage levels (V)
+
+Active
+state
+
+Min
+
+Typ
+
+Low
+
+0
+
+-
+
+0.45
+
+High
+
+2.55
+(3V SIM)
+
+3.00
+(3V SIM)
+
+3.10
+(3V SIM)
+
+1.35
+(1.8V SIM)
+
+1.80
+(1.8V SIM)
+
+1.90
+(1.8V SIM)
+
+V
+
+Ground
+
+Input
+
+Power
+
+-
+
+0
+
+-
+
+O
+
+SIM2 Reset
+
+Output
+
+Low
+
+0
+
+-
+
+0.45
+
+High
+
+2.55
+(3V SIM)
+
+-
+
+3.10
+(3V SIM)
+
+1.35
+(1.8V SIM)
+47
+
+NC
+
+48
+
+UIM2_PWR4
+
+1.90
+(1.8V SIM)
+
+Reserved
+V
+
+SIM2 VCC supply
+
+49
+
+NC
+
+Reserved
+
+50
+
+NC
+
+Reserved
+
+51
+
+GND
+
+52
+
+NC
+
+Reserved
+
+53
+
+NC
+
+Reserved
+
+54
+
+NC
+
+Reserved
+
+55
+
+NC
+
+Reserved
+
+56
+
+NC
+(For audio interface pin usage,
+see Audio Support on
+page 69.)
+
+Reserved — Host must
+not repurpose this pin.
+
+57
+
+GND
+
+58
+
+NC
+(For audio interface pin usage,
+see Audio Support on
+page 69.)
+
+Reserved — Host must
+not repurpose this pin.
+
+59
+
+ANTCTL0 (GPIO1)
+
+Customer-defined
+external switch control
+for multiple antennas
+
+V
+
+V
+
+Ground
+
+Ground
+
+Output
+
+2.90
+(3V SIM)
+
+3.00
+(3V SIM)
+
+3.10
+(3V SIM)
+
+1.75
+(1.8V SIM)
+
+1.80
+(1.8V SIM)
+
+1.85
+(1.8V SIM)
+
+Power
+
+-
+
+0
+
+-
+
+Input
+
+Power
+
+-
+
+0
+
+-
+
+Output
+
+High
+
+1.35
+
+-
+
+1.80
+
+Output
+
+Low
+
+0
+
+-
+
+0.45
+
+Output
+
+High
+
+1.35
+
+-
+
+1.80
+
+Output
+
+Low
+
+0
+
+-
+
+0.45
+
+Reserved — Host must not repurpose this pin and should leave it not connected.
+
+61
+
+ANTCTL1 (GPIO2)
+
+Customer-defined
+external switch control
+for multiple antennas
+
+Power
+
+Input
+
+60
+
+62
+
+Max
+
+Reserved — Host must not repurpose this pin and should leave it not connected.
+
+Rev 7 Aug.16
+
+Proprietary and Confidential - Contents subject to change
+
+29
+
+Product Technical Specification & Customer Design Guidelines
+
+Table 3-1: Host Interface (67-pin) Connections — Module View 1 (Continued)
+Pin
+
+63
+
+Signal name
+
+Pin
+type
+
+ANTCTL2 (GPIO3)
+
+2
+
+Description
+
+Customer-defined
+external switch control
+for multiple antennas
+
+Voltage levels (V)
+
+Active
+state
+
+Direction 3
+
+Min
+
+Typ
+
+Max
+
+Output
+
+High
+
+1.35
+
+-
+
+1.80
+
+Output
+
+Low
+
+0
+
+-
+
+0.45
+
+64
+
+Reserved — Host must not repurpose this pin and should leave it not connected.
+
+65
+
+ANTCTL3 (GPIO4)
+
+Customer-defined
+external switch control
+for multiple antennas
+
+Output
+
+High
+
+1.35
+
+-
+
+1.80
+
+Output
+
+Low
+
+0
+
+-
+
+0.45
+
+66
+
+SIM_DETECT4
+
+PU
+
+SIM indication
+
+Input
+
+67
+
+RESET#
+
+PU
+
+Reset module
+
+Input
+
+Low
+
+68
+
+NC
+
+Reserved
+
+69
+
+CONFIG_1
+(GND in default module
+configuration)
+
+Reserved — Host must
+not repurpose this pin.
+
+Output
+
+-
+
+70
+
+VCC
+
+V
+
+Power source
+
+Input
+
+Power
+
+3.135
+
+3.7
+
+4.4
+
+71
+
+GND
+
+V
+
+Ground
+
+Input
+
+Power
+
+-
+
+0
+
+-
+
+72
+
+VCC
+
+V
+
+Power source
+
+Input
+
+Power
+
+3.135
+
+3.7
+
+4.4
+
+73
+
+GND
+
+V
+
+Ground
+
+Input
+
+Power
+
+-
+
+0
+
+-
+
+74
+
+VCC
+
+V
+
+Power source
+
+Input
+
+Power
+
+3.135
+
+3.7
+
+4.4
+
+75
+
+CONFIG_2
+(NC in default module
+configuration)
+
+V
+
+Reserved
+
+Output
+
+-
+
+-
+
+0 V — SIM not present
+Open circuit — SIM present
+-0.3
+
+0.63
+
+0
+
+-
+
+1. All values are preliminary and subject to change.
+2. I — Input; O — Digital output; OC — Open Collector output; PU — Digital input (internal pull up); PD — Digital input (internal pull down);
+V — Power or ground
+3. Signal directions are from module’s point of view (e.g. ‘Output’ from module to host, ‘Input’ to module from host.)
+4. Required signal
+5. Sierra Wireless recommends that the host implement an open collector driver where a Low signal will turn the module off or enter
+low power mode, and a high signal will turn the module on or leave low power mode.
+
+30
+
+Proprietary and Confidential - Contents subject to change
+
+4116235
+
+Electrical Specifications
+
+Power Supply
+The host provides power to the EM7430 through multiple power and ground pins
+as summarized in Table 3-2.
+The host must provide safe and continuous power (via battery or a regulated
+power supply) at all times; the module does not have an independent power
+supply, or protection circuits to guard against electrical issues.
+Table 3-2: Power and Ground Specifications
+Name
+
+Pins
+
+Specification
+
+Min
+
+VCC
+(3.7V)
+
+2, 4, 70, 72, 74
+
+Voltage range
+
+See Table 3-1 on page 26.
+
+Ripple voltage
+
+-
+
+-
+
+100
+
+mVpp
+
+-
+
+-
+
+0
+
+-
+
+V
+
+GND
+
+3, 5, 11, 27, 33, 39,
+45, 51, 57, 71, 73
+
+Typ
+
+Max
+
+Units
+
+USB Interface
+Important: Host support for USB 2.0 signals is required.
+
+Important: Host support for USB 3.0 signals is optional, but if supported then the host
+must also support fallback to USB 2.0.
+
+The device supports USB 2.0 and USB 3.0 interfaces for communication between
+the host and module.
+The interfaces comply with the [9] Universal Serial Bus Specification, Rev 2.0 and
+[10] Universal Serial Bus Specification, Rev 3.0 (subject to limitations described
+below), and the host device must be designed to the same standards. (Note:
+When designing the host device, careful PCB layout practices must be followed.)
+Table 3-3: USB Interfaces
+Name
+
+Pin
+
+Description
+
+USB 2.0 USB_D+
+
+7
+
+Data positive
+
+USB_D-
+
+9
+
+Data negative
+
+USB 3.0 USB3.0-TX-1
+
+29
+
+Transmit data negative
+
+USB3.0-TX+1
+
+31
+
+Transmit data positive
+
+USB3.0-RX-1
+
+35
+
+Receive data negative
+
+USB3.0-RX+1
+
+37
+
+Receive data positive
+
+1. Signal directions (Tx / Rx) are from device’s point of
+view.
+
+Rev 7 Aug.16
+
+Proprietary and Confidential - Contents subject to change
+
+31
+
+Product Technical Specification & Customer Design Guidelines
+
+USB Throughput Performance
+This device has been designed to achieve optimal performance and maximum
+throughput using USB superspeed mode (USB 3.0). Although the device may
+operate with a high speed host, throughput performance will be on an “as is”
+basis and needs to be characterized by the OEM. Note that throughput will be
+reduced and may vary significantly based on packet size, host interface, and
+firmware revision.
+
+User-developed Drivers
+Details for user-developed USB drivers are described in [4] AirCard / AirPrime
+USB Driver Developer’s Guide (Doc# 2130634).
+
+SIM Interface
+The module supports up to two SIMs (Subscriber Identity Module) (1.8 V or 3 V).
+Each SIM holds information for a unique account, allowing users to optimize their
+use of each account on multiple devices.
+
+Note: Host support for
+SIM interface signals is
+required.
+
+The SIM pins (Table 3-4 on page 32) provide the connections necessary to
+interface to SIM sockets located on the host device as shown in Figure 3-3 on
+page 33. Voltage levels over this interface comply with 3GPP standards.
+The types of SIM connectors used depends on how the host device exposes the
+SIM sockets.
+Table 3-4: SIM Interface Signals
+
+SIM
+
+Name
+
+Pin
+
+Description
+
+SIM
+contact 1
+
+Primary
+
+UIM1_RESET
+
+30
+
+Reset
+
+2
+
+Active low SIM reset
+
+UIM1_CLK
+
+32
+
+Serial clock
+
+3
+
+Serial clock for SIM data
+
+UIM1_DATA
+
+34
+
+Data I/O
+
+7
+
+Bi-directional SIM data line
+
+UIM1_PWR
+
+36
+
+SIM voltage
+
+1
+
+Power supply for SIM
+
+SIM_DETECT
+
+66
+
+SIM indication
+
+-
+
+Input from host indicating whether SIM is present
+or not
+• Grounded if no SIM is present
+
+Notes
+
+•
+UIM_GND
+
+32
+
+Ground
+
+5
+
+No-connect (floating) if SIM is inserted
+
+Ground reference
+UIM_GND is common to module ground
+
+Proprietary and Confidential - Contents subject to change
+
+4116235
+
+Electrical Specifications
+
+Table 3-4: SIM Interface Signals (Continued)
+
+SIM
+
+Pin
+
+Description
+
+SIM
+contact 1
+
+Notes
+
+46
+
+Reset
+
+2
+
+Active low SIM reset
+
+UIM2_CLK
+
+44
+
+Serial clock
+
+3
+
+Serial clock for SIM data
+
+UIM2_DATA
+
+42
+
+Data I/O
+
+7
+
+Bi-directional SIM data line
+
+UIM2_PWR
+
+48
+
+SIM voltage
+
+1
+
+Power supply for SIM
+
+SIM indication
+
+-
+
+Input from host indicating whether SIM is present
+or not
+• Grounded if no SIM is present
+
+Name
+
+Secondary UIM2_RESET
+
+SIM_DETECT_2 40
+
+•
+UIM2_GND
+
+SIM indication
+
+-
+
+No-connect (floating) if SIM is inserted
+
+Ground reference
+UIM2_GND is common to module ground
+
+1. See Figure 3-4 on page 34 for SIM card contacts.
+
+SIM Detect
+
+UIM-PWR
+4.7uF
+X5R
+typ
+
+0.1uF
+
+(Optional.
+Locate near the
+SIM socket)
+15 k - 30 k
+
+NOTE: UIM signals
+refer to both UIM1
+and UIM2.
+
+Located near
+SIM socket
+
+(C9)
+
+(Optional.
+Locate near the
+SIM socket)
+47 pF, 51 
+
+(C1)
+
+Note: SIM Detect
+contact may vary
+by vendor
+
+(C3)
+
+UIM-CLK
+
+UIM-DATA
+(C7)
+UIM-RESET
+(C2)
+UIM_GND
+
+(C5)
+
+SIM card connector
+
+ESD
+protection
+
+EM7430
+
+Located near SIM socket.
+NOTE: Carefully consider if ESD
+protection is required – it may
+increase signal rise time and
+lead to certification failure
+
+Figure 3-3: SIM Application Interface (applies to both SIM interfaces)
+
+Rev 7 Aug.16
+
+Proprietary and Confidential - Contents subject to change
+
+33
+
+Product Technical Specification & Customer Design Guidelines
+
+Contact View (notched corner at top left)
+
+RFU
+
+C8
+
+C4
+
+RFU
+
+I/O
+
+C7
+
+C3
+
+CLK
+
+VPP
+
+C6
+
+C2
+
+RST
+
+GND
+
+C5
+
+C1
+
+VCC
+
+Figure 3-4: SIM Card Contacts (Contact View)
+
+SIM Implementation
+Note: For interface design
+requirements, refer to ETSI
+TS 102 230 V5.5.0, section
+5.2.
+
+34
+
+When designing the remote SIM interface, you must make sure that SIM signal
+integrity is not compromised.
+Some design recommendations include:
+•
+
+Total impedance of the VCC and GND connections to the SIM, measured at
+the module connector, should be less than 1  to minimize voltage drop
+(includes any trace impedance and lumped element components — inductors,
+filters, etc.).
+
+•
+
+Position the SIM connector 10 cm from the module. If a longer distance is
+required because of the host device design, use a shielded wire assembly —
+connect one end as close as possible to the SIM connector and the other end
+as close as possible to the module connector. The shielded assembly may
+help shield the SIM interface from system noise.
+
+•
+
+Reduce crosstalk on the UIM1_DATA and UIM2_DATA lines to reduce the risk
+of failures during GCF approval testing.
+
+•
+
+Avoid routing the clock and data lines for each SIM (UIM1_CLK / UIM1_DATA,
+UIM2_CLK / UIM2_DATA) in parallel over distances 2 cm — cross-coupling of
+a clock and data line pair can cause failures.
+
+•
+
+3GPP has stringent requirements for I / O rise time (<1 µs), signal level limits,
+and noise immunity — consider this carefully when developing your PCB
+layout.
+· Keep signal rise time <1 µs — keep SIM signals as short as possible, and
+keep very low capacitance traces on the data and clock signals
+(UIM1_CLK, UIM1_DATA, UIM2_CLK, UIM2_DATA). High capacitance
+increases signal rise time, potentially causing your device to fail certification
+tests.
+
+•
+
+Add external pull-up resistors (15 k–30 k), if required, between the data
+and power lines for each SIM (UIM1_DATA / UIM1_PWR, UIM2_DATA /
+UIM2_PWR) to optimize the signal rise time.
+
+•
+
+VCC line should be decoupled close to the SIM socket.
+
+•
+
+SIM is specified to run up to 5 MHz (SIM clock rate). Take note of this speed
+in the placement and routing of the SIM signals and connectors.
+
+•
+
+You must decide whether additional ESD protection is required for your
+product, as it is dependent on the application, mechanical enclosure, and SIM
+
+Proprietary and Confidential - Contents subject to change
+
+4116235
+
+Electrical Specifications
+
+connector design. The SIM pins will require additional ESD protection if they
+are exposed to high ESD levels (i.e. can be touched by a user).
+•
+
+Putting optional decoupling capacitors on the SIM power lines (UIM1_PWR,
+UIM2_PWR) near the SIM sockets is recommended — the longer the trace
+length (impedance) from the socket to the module, the greater the capacitance requirement to meet compliance tests.
+
+•
+
+Putting an optional series capacitor and resistor termination (to ground) on
+the clock lines (UIM1_CLK, UIM2_CLK) at the SIM sockets to reduce EMI
+and increase signal integrity is recommended if the trace length between the
+SIM socket and module is long — 47 pF and 50  resistor are recommended.
+
+•
+
+Test your first prototype host hardware with a Comprion IT3 SIM test device at
+a suitable testing facility.
+
+Control Interface (Signals)
+The EM7430 provides signals for:
+
+Note: Host support for
+Full_Card_Power_Off# is
+required, and support for
+other signals in Table 3-5
+is optional.
+
+•
+
+Waking the host when specific events occur
+
+•
+
+Host control of the module’s radios
+
+•
+
+Host control of module power
+
+•
+
+LED driver output
+
+These signals are summarized in Table 3-5 and paragraphs that follow.
+Table 3-5: Module Control Signals
+Name
+
+Pin
+
+Description
+
+Type 1
+
+Full_Card_Power_Off#
+
+6
+
+On / off signal
+
+PD
+
+W_DISABLE1#
+
+8
+
+Wireless disable (Main RF) PU
+
+WWAN_LED#
+
+10
+
+LED driver
+
+OC
+
+WAKE_ON_WAN#
+
+23
+
+Wake host
+
+O
+
+W_DISABLE2#
+
+26
+
+Wireless disable (GNSS)
+
+PU
+
+RESET#
+
+67
+
+Reset module
+
+PU
+
+1. O — Digital pin Output; OC — Open Collector output; PD — Digital pin Input,
+internal pull down; PU — Digital pin Input, internal pull up
+
+WAKE_ON_WAN# — Wake Host
+Note: Host support for
+WAKE_ON_WAN# is
+optional.
+
+The EM7430 uses WAKE_ON_WAN# to wake the host when specific events
+occur.
+The host must provide a 5 k–100 k pullup resistor that considers total line
+capacitance (including parasitic capacitance) such that when WAKE_ON_WAN# is
+deasserted, the line will rise to 3.7 V (Host power rail) in < 100 ns.
+See Figure 3-5 on page 36 for a recommended implementation.
+
+Rev 7 Aug.16
+
+Proprietary and Confidential - Contents subject to change
+
+35
+
+Product Technical Specification & Customer Design Guidelines
+
+VCC
+5k-100k
+Host
+WAKE_ON_WAN#
+3
+1
+
+Q
+
+Control
+R
+2
+Module
+
+Figure 3-5: Recommended WAKE_ON_WAN# Connection
+
+W_DISABLE1# (Wireless Disable) and
+W_DISABLE2# (GNSS Disable)
+Note: Host support for
+wireless / GNSS disable
+signals is optional.
+
+The host device uses W_DISABLE1# to enable / disable the WWAN or radio
+modem, and W_DISABLE2# to enable / disable GNSS functionality.
+Letting these signals float high allows the module to operate normally. These pins
+have 100 k pull-up resistors. See Figure 3-6 on page 37 for a recommended
+implementation.
+When integrating with your host device, keep the following in mind:
+
+36
+
+•
+
+The signal is an input to the module and should be driven LOW to turn the
+radio off, or HIGH or floating to keep it on.
+
+•
+
+If the host never needs to assert this power state control to the module, leave
+this signal unconnected from the host interface.
+
+Proprietary and Confidential - Contents subject to change
+
+4116235
+
+Electrical Specifications
+
+Table 3-6: W_DISABLE_N Usage
+Name
+
+Pin
+
+Description / notes
+
+W_DISABLE1#
+
+8
+
+Enable / disable the WWAN or radio modem1. When
+disabled, the modem cannot transmit or receive.
+• Leave as not connected or drive HIGH to keep the
+modem always on.
+
+•
+W_DISABLE2#
+
+26
+
+Drive LOW to turn the modem off.
+
+Enable / disable GNSS functionality1
+• Leave as not connected or drive HIGH to enable GNSS
+functionality.
+
+•
+
+Drive LOW to disable GNSS functionality.
+
+•
+
+For details on enabling / disabling GNSS functionality,
+see the AT!CUSTOM=”GPSENABLE” command in [2]
+AirPrime EM74xx / MC74xx AT Command Reference
+(Doc# 4117727).
+
+1. Sierra Wireless recommends that the host implement an open collector driver where a Low signal
+turns off the modem or disables GNSS functionality, and a high signal turns on the modem or lenables GNSS functionality.
+
+VCC
+
+PMIC for W_DISABLE#1
+
+100k
+
+Host
+
+Wireless
+disable control
+
+10k
+
+3
+1
+
+Q
+
+R
+2
+Module
+
+Figure 3-6: Recommended Wireless Disable Connection
+
+Full_Card_Power_Off# and RESET#
+Note: Host support for
+Full_Card_Power_Off# is
+required, and support for
+RESET# is optional.
+
+Rev 7 Aug.16
+
+Full_Card_Power_Off# and RESET# are inputs to the module that the host uses
+as described in Table 3-7.
+
+Proprietary and Confidential - Contents subject to change
+
+37
+
+Product Technical Specification & Customer Design Guidelines
+
+For timing details, see Power On / Off Timing on page 55.
+Table 3-7: Full_Card_Power_Off# and RESET# Usage
+Name
+
+Pin
+
+Description / notes
+
+Full_Card_Power_Off#
+
+6
+
+Powers the module on / off.
+• Signal is required.
+
+RESET#
+
+67
+
+•
+
+Pull HIGH to keep the module on. To keep the module
+always on:
+· Tie the pin directly to a host GPIO (1.8V), or
+· Use an external pull-up to pull signal high (10k–20k
+for 1.8V, 75–100k for VCC rail). Note that a largervalue resistor will reduce leakage current.
+
+•
+
+Drive LOW to turn the module off.
+
+Resets the module.
+• Signal is optional. The module will operate correctly if
+the pin is left disconnected on the host.
+
+•
+
+Pull the signal LOW (for minimum of 2 s) only to reset
+the module (the active state); otherwise, leave the
+signal floating or high impedance (the module will
+remain operational because the module has a pull-up
+resistor to an internal reference voltage (1.8V) in
+place.).
+
+•
+
+The signal requires an open collector input from the
+host.
+
+•
+
+This is a ‘hard’ reset, which should be used only if the
+host cannot communicate with the module via the USB
+port. (If the port is not working, the module may have
+locked up or crashed.)
+
+Caution: RESET# should not be driven or pulled to a logic
+high level by the host, as this may cause damage to the
+module.
+
+WWAN_LED# — LED Output
+Note: Host support for
+WWAN_LED# is optional.
+
+38
+
+The configuration for the LED shown in Figure 3-7 is customizable. Contact your
+Sierra Wireless account representative for details.
+
+Proprietary and Confidential - Contents subject to change
+
+4116235
+
+Electrical Specifications
+
+VCC
+
+Current limiting Resistor
+
+LED
+
+Module
+LED#
+MIO
+
+Figure 3-7: Example LED
+
+Antenna Control
+Note: Host support for
+antenna control signals is
+optional.
+
+The EM7430 provides four output signals (listed in Table 3-8) that may be used
+for host designs that incorporate tunable antennas. Customers can configure
+these signals as appropriate for the operating band(s) using the command
+AT!ANTSEL. (See [2] AirPrime EM74xx / MC74xx AT Command Reference
+(Doc# 4117727) for details.)
+Note:
+•
+
+Sierra Wireless recommends that two signals be used for high bands, and the
+other two signals for low / mid bands.
+
+•
+
+To avoid detuning the PCC band, customers must make sure there are no
+GPIO state conflicts between the PCC and SCC for all supported CA combinations.
+
+Table 3-8: Antenna Control Signals
+Name
+
+Pin
+
+Description
+
+ANTCTL0 59
+ANTCTL1 61
+ANTCTL2 63
+
+Customer-defined external switch controls for tunable
+antennas
+
+ANTCTL3 65
+
+Rev 7 Aug.16
+
+Proprietary and Confidential - Contents subject to change
+
+39
+
+Product Technical Specification & Customer Design Guidelines
+
+40
+
+Proprietary and Confidential - Contents subject to change
+
+4116235
+
+4
+
+4: RF Specifications
+The EM7430 includes three RF connectors for use with host-supplied
+antennas:
+•
+
+Main RF connector — Tx / Rx path
+
+•
+
+GNSS RF connector — Dedicated GPS, GLONASS, BeiDou, and
+Galileo
+
+•
+
+Auxiliary RF connector — Diversity, MIMO, GPS, GLONASS, and
+Galileo
+
+The module does not have integrated antennas.
+Auxiliary (Diversity/MIMO/GNSS)
+RF connector
+GNSS RF connector
+Main (Rx/Tx) RF connector
+
+I/O FPC connector
+
+Figure 4-1: Module Connectors
+
+RF Connections
+When attaching antennas to the module:
+•
+
+Use RF plug connectors that are compatible with the following RF
+receptacle connectors: Foxconn (KK12011-02-7H), Longwell
+(911-002-0006R), Speedtech (C87P101-00001-H), Murata
+(MM4829-2702RA4 (HSC)), IPEX (20449-001E (MHF4)).
+
+•
+
+Match coaxial connections between the module and the antenna
+to 50 .
+
+•
+
+Minimize RF cable losses to the antenna; the recommended
+maximum cable loss for antenna cabling is 0.5 dB.
+
+•
+
+To ensure best thermal performance, use the mounting hole (if
+possible) to attach (ground) the device to a metal chassis.
+
+Note: If the antenna connection is shorted or open, the modem will not
+sustain permanent damage.
+
+Rev 7 Aug.16
+
+Proprietary and Confidential - Contents subject to change
+
+41
+
+Product Technical Specification & Customer Design Guidelines
+
+Shielding
+The module is fully shielded to protect against EMI and must not be removed.
+
+Antenna and Cabling
+When selecting the antenna and cable, it is critical to RF performance to match
+antenna gain and cable loss.
+Note: For detailed electrical performance criteria, see Appendix B: Antenna Specification
+on page 73.
+
+Choosing the Correct Antenna and Cabling
+When matching antennas and cabling:
+•
+
+The antenna (and associated circuitry) should have a nominal impedance of
+50  with a return loss of better than 10 dB across each frequency band of
+operation.
+
+•
+
+The system gain value affects both radiated power and regulatory (FCC, IC,
+CE, etc.) test results.
+
+Designing Custom Antennas
+Consider the following points when designing custom antennas:
+•
+
+A skilled RF engineer should do the development to ensure that the RF
+performance is maintained.
+
+•
+
+If both UMTS and CDMA modules will be installed in the same platform, you
+may want to develop separate antennas for maximum performance.
+
+Determining the Antenna’s Location
+When deciding where to put the antennas:
+•
+
+Antenna location may affect RF performance. Although the module is
+shielded to prevent interference in most applications, the placement of the
+antenna is still very important — if the host device is insufficiently shielded,
+high levels of broadband or spurious noise can degrade the module’s performance.
+
+•
+
+Connecting cables between the module and the antenna must have 50 
+impedance. If the impedance of the module is mismatched, RF performance
+is reduced significantly.
+
+•
+
+Antenna cables should be routed, if possible, away from noise sources
+(switching power supplies, LCD assemblies, etc.). If the cables are near the
+noise sources, the noise may be coupled into the RF cable and into the
+antenna. See Interference from Other Wireless Devices on page 43.
+
+Disabling the Diversity Antenna
+Use the AT command !RXDEN=0 to disable receive diversity or !RXDEN=1 to
+enable receive diversity.
+
+42
+
+Proprietary and Confidential - Contents subject to change
+
+4116235
+
+RF Specifications
+
+Note: A diversity antenna is used to improve connection quality and reliability through
+redundancy. Because two antennas may experience difference interference effects (signal
+distortion, delay, etc.), when one antenna receives a degraded signal, the other may not be
+similarly affected.
+
+Ground Connection
+When connecting the module to system ground:
+•
+
+Prevent noise leakage by establishing a very good ground connection to the
+module through the host connector.
+
+•
+
+Connect to system ground using the mounting hole shown in Figure 4-1 on
+page 41.
+
+•
+
+Minimize ground noise leakage into the RF.
+Depending on the host board design, noise could potentially be coupled to
+the module from the host board. This is mainly an issue for host designs that
+have signals traveling along the length of the module, or circuitry operating at
+both ends of the module interconnects.
+
+Interference and Sensitivity
+Several interference sources can affect the module’s RF performance
+(RF desense). Common sources include power supply noise and devicegenerated RF.
+RF desense can be addressed through a combination of mitigation techniques
+(Methods to Mitigate Decreased Rx Performance on page 44) and radiated
+sensitivity measurement (Radiated Sensitivity Measurement on page 45).
+Note: The EM7430 is based on ZIF (Zero Intermediate Frequency) technologies. When
+performing EMC (Electromagnetic Compatibility) tests, there are no IF (Intermediate
+Frequency) components from the module to consider.
+
+Interference from Other Wireless Devices
+Wireless devices operating inside the host device can cause interference that
+affects the module.
+To determine the most suitable locations for antennas on your host device,
+evaluate each wireless device’s radio system, considering the following:
+
+Rev 7 Aug.16
+
+•
+
+Any harmonics, sub-harmonics, or cross-products of signals generated by
+wireless devices that fall in the module’s Rx range may cause spurious
+response, resulting in decreased Rx performance.
+
+•
+
+The Tx power and corresponding broadband noise of other wireless devices
+may overload or increase the noise floor of the module’s receiver, resulting in
+Rx desense.
+
+Proprietary and Confidential - Contents subject to change
+
+43
+
+Product Technical Specification & Customer Design Guidelines
+
+The severity of this interference depends on the closeness of the other antennas
+to the module’s antenna. To determine suitable locations for each wireless
+device’s antenna, thoroughly evaluate your host device’s design.
+
+Host-generated RF Interference
+All electronic computing devices generate RF interference that can negatively
+affect the receive sensitivity of the module.
+Proximity of host electronics to the antenna in wireless devices can contribute to
+decreased Rx performance. Components that are most likely to cause this
+include:
+•
+
+Microprocessor and memory
+
+•
+
+Display panel and display drivers
+
+•
+
+Switching-mode power supplies
+
+Device-generated RF Interference
+The module can cause interference with other devices. Wireless devices such as
+AirPrime embedded modules transmit in bursts (pulse transients) for set durations
+(RF burst frequencies). Hearing aids and speakers convert these burst
+frequencies into audible frequencies, resulting in audible noise.
+
+Methods to Mitigate Decreased Rx
+Performance
+It is important to investigate sources of localized interference early in the design
+cycle. To reduce the effect of device-generated RF on Rx performance:
+
+44
+
+•
+
+Put the antenna as far as possible from sources of interference. The
+drawback is that the module may be less convenient to use.
+
+•
+
+Shield the host device. The module itself is well shielded to avoid external
+interference. However, the antenna cannot be shielded for obvious reasons.
+In most instances, it is necessary to employ shielding on the components of
+the host device (such as the main processor and parallel bus) that have the
+highest RF emissions.
+
+•
+
+Filter out unwanted high-order harmonic energy by using discrete filtering on
+low frequency lines.
+
+•
+
+Form shielding layers around high-speed clock traces by using multi-layer
+PCBs.
+
+•
+
+Route antenna cables away from noise sources.
+
+Proprietary and Confidential - Contents subject to change
+
+4116235
+
+RF Specifications
+
+Radiated Spurious Emissions (RSE)
+When designing an antenna for use with AirPrime embedded modules, the host
+device with an AirPrime embedded module must satisfy any applicable
+standards / local regulatory bodies for radiated spurious emission (RSE) for
+receive-only mode and for transmit mode (transmitter is operating).
+Note that antenna impedance affects radiated emissions, which must be
+compared against the conducted 50-ohm emissions baseline. (AirPrime
+embedded modules meet the 50-ohm conducted emissions requirement.)
+
+Radiated Sensitivity Measurement
+A wireless host device contains many noise sources that contribute to a reduction
+in Rx performance.
+To determine the extent of any receiver performance desensitization due to selfgenerated noise in the host device, over-the-air (OTA) or radiated testing is
+required. This testing can be performed by Sierra Wireless or you can use your
+own OTA test chamber for in-house testing.
+
+Sierra Wireless’ Sensitivity Testing and
+Desensitization Investigation
+Although AirPrime embedded modules are designed to meet network operator
+requirements for receiver performance, they are still susceptible to various
+performance inhibitors.
+As part of the Engineering Services package, Sierra Wireless offers modem OTA
+sensitivity testing and desensitization (desense) investigation. For more
+information, contact your account manager or the Sales Desk (see Contact
+Information on page 4).
+Note: Sierra Wireless has the capability to measure TIS (Total Isotropic Sensitivity) and
+TRP (Total Radiated Power) according to CTIA's published test procedure.
+
+Sensitivity vs. Frequency
+For UMTS bands, sensitivity is defined as the input power level in dBm that
+produces a BER (Bit Error Rate) of 0.1%. Sensitivity should be measured at all
+UMTS frequencies across each band.
+For LTE bands, sensitivity is defined as the RF level at which throughput is 95% of
+maximum.
+
+Rev 7 Aug.16
+
+Proprietary and Confidential - Contents subject to change
+
+45
+
+Product Technical Specification & Customer Design Guidelines
+
+Supported Frequencies
+The EM7430 supports:
+•
+
+Multiple-band LTE — See Table 4-1 on page 46 (supported bands) and
+Table 4-1 on page 46 (LTE bandwidth support).
+
+•
+
+LTE Advanced carrier aggregation — See Table 1-2 on page 16. For detailed
+carrier aggregation bandwidth support, see LTE CA Bandwidth Support on
+page 99.
+
+•
+
+Multiple-band WCDMA / HSPA / HSPA+ / DC-HSPA+ — See Table 4-3 on
+page 47.
+
+•
+
+Multiple-band WCDMA receive diversity
+
+•
+
+Single-band TD-SCDMA — See Table 4-4 on page 47.
+
+•
+
+GPS, GLONASS, BeiDou, Galileo — See Table 4-9 on page 49.
+
+•
+
+Inter-RAT and inter-frequency cell reselection and handover between
+supported frequency bands
+
+Table 4-1: LTE Frequency Bands
+Band
+
+Frequency (Tx)
+
+Frequency (Rx)
+
+Band 1
+
+1920–1980 MHz
+
+2110–2170 MHz
+
+Band 3
+
+1710–1785
+
+1805–1880 MHz
+
+Band 5
+
+824–849 MHz
+
+869–894 MHz
+
+Band 7
+
+2500–2570 MHz
+
+2620–2690 MHz
+
+Band 8
+
+880–915 MHz
+
+925–960 MHz
+
+Band 18
+
+815–830 MHz
+
+860–875 MHz
+
+Band 19
+
+830–845 MHz
+
+875–890 MHz
+
+Band 21
+
+1447.9–1462.9 MHz
+
+1495.9–1510.9 MHz
+
+Band 28
+
+703–748 MHz
+
+758–803 MHz
+
+Band 38
+
+2570–2620 MHz (TDD)
+
+Band 39
+
+1880–1920 MHz (TDD)
+
+Band 40
+
+2300–2400 MHz (TDD)
+
+Band 41
+
+2496–2690 MHz (TDD)
+
+Table 4-2: LTE Bandwidth Support 1
+Band
+
+46
+
+1.4 MHz
+
+3 MHz
+
+5 MHz
+
+10 MHz
+
+15 MHz
+
+20 MHz
+
+Band 1
+
+
+
+
+
+
+
+
+
+
+
+
+
+Band 3
+
+
+
+
+
+
+
+
+
+2
+
+2
+
+Band 5
+
+
+
+
+
+
+
+2
+
+
+
+
+
+Band 7
+
+
+
+
+
+
+
+
+
+3
+
+3
+
+Proprietary and Confidential - Contents subject to change
+
+4116235
+
+RF Specifications
+
+Table 4-2: LTE Bandwidth Support 1 (Continued)
+Band
+
+1.4 MHz
+
+3 MHz
+
+5 MHz
+
+10 MHz
+
+15 MHz
+
+20 MHz
+
+Band 8
+
+
+
+
+
+
+
+2
+
+
+
+
+
+Band 18
+
+
+
+
+
+
+
+2
+
+2
+
+
+
+Band 19
+
+
+
+
+
+
+
+2
+
+2
+
+
+
+Band 21
+
+
+
+
+
+
+
+2
+
+2
+
+
+
+Band 28
+
+
+
+
+
+
+
+2
+
+2
+
+2,4
+
+Band 38
+
+
+
+
+
+
+
+
+
+3
+
+3
+
+Band 39
+
+
+
+
+
+
+
+
+
+3
+
+3
+
+Band 40
+
+
+
+
+
+
+
+
+
+
+
+
+
+Band 41
+
+
+
+
+
+
+
+
+
+
+
+
+
+1. Table contents are derived from 3GPP TS 36.521-1 v12.6.0, table 5.4.2.1-1.
+2. Bandwidth for which a relaxation of the specified UE receiver sensitivity requirement
+(Clause 7.3 of 3GPP TS 36.521-1 v12.6.0) is allowed.
+3. Bandwidth for which uplink transmission bandwidth can be restricted by the network for
+some channel assignments in FDD/TDD co-existence scenarios in order to meet
+unwanted emissions requirements (Clause 6.6.3.2 of 3GPP TS 36.521-1 v12.6.0).
+4. For the 20 MHz bandwidth, the minimum requirements are specified for E-UTRA UL carrier frequencies confined to either 713–723 MHz or 728–738 MHz.
+
+Table 4-3: WCDMA Frequency Bands Support
+Band 1
+
+Frequency (Tx)
+
+Frequency (Rx)
+
+Band 1
+
+1920–1980 MHz
+
+2110–2170 MHz
+
+Band 5
+
+824–849 MHz
+
+869–894 MHz
+
+Band 6
+
+830–840 MHz
+
+875–885 MHz
+
+Band 8
+
+880–915 MHz
+
+925–960 MHz
+
+Band 9
+
+1749.9–1784.9 MHz 1844.9–1879.9 MHz
+
+Band 19 830–845 MHz
+
+875–890 MHz
+
+1. WCDMA channel spacing is 5 MHz, but this can be adjusted to
+optimize performance in a particular deployment scenario.
+
+Table 4-4: TD-SCDMA Frequency Bands
+
+Rev 7 Aug.16
+
+Band
+
+Frequency range
+
+Band 39
+
+1880–1920 MHz
+
+Proprietary and Confidential - Contents subject to change
+
+47
+
+Product Technical Specification & Customer Design Guidelines
+
+Conducted Rx Sensitivity / Tx Power
+Note: All values in the following tables are preliminary, pending transceiver matching and
+testing.
+
+Table 4-5: Conducted Rx (Receive) Sensitivity — LTE Bands
+Conducted Rx sensitivity (dBm)
+LTE bands
+
+Secondary
+(Typical)
+
+LTE Band 1
+
+-97.5
+
+-97.5
+
+-100.6
+
+-96.3
+
+LTE Band 3
+
+-97.1
+
+-98.1
+
+-100.7
+
+-93.3
+
+LTE Band 5
+
+-99.3
+
+-99.5
+
+-102.5
+
+-94.3
+
+LTE Band 7
+
+-96.4
+
+-97.6
+
+-100.1
+
+-94.3
+
+LTE Band 8
+
+-99.3
+
+-99.3
+
+-102.2
+
+-93.3
+
+LTE Band 18
+
+-98.9
+
+-99.9
+
+-102.7
+
+-96.3
+
+-99.3
+
+-99.6
+
+-102.3
+
+-96.3
+
+LTE Band 21
+
+-98.2
+
+-98.9
+
+-101.2
+
+-96.3
+
+LTE Band 28
+
+-97.3
+
+-98.0
+
+-100.6
+
+-94.8
+
+LTE Band 38
+
+-97.2
+
+-97.2
+
+-100.3
+
+-96.3
+
+LTE Band 39
+
+-98.4
+
+-97.2
+
+-101.1
+
+-96.3
+
+LTE Band 40
+
+-96.0
+
+-97.5
+
+-100.0
+
+-96.3
+
+LTE Band 41
+
+-97.0
+
+-96.9
+
+-99.9
+
+-94.3
+
+LTE Band 19
+
+Full RB
+BW: 10 MHz2
+
+SIMO
+(Typical)
+
+SIMO 1
+(Worst case)
+
+Primary
+(Typical)
+
+1. Per 3GPP specification
+2. Sensitivity values scale with bandwidth:
+x_MHz_Sensitivity = 10_MHz_Sensitivity - 10*log(10 MHz/x_MHz)
+Note: Bandwidth support is dependent on firmware version.
+
+Table 4-6: Conducted Rx (Receive) Sensitivity — UMTS Bands
+Conducted Rx sensitivity (dBm)
+UMTS bands
+
+Primary
+(Typical)
+
+Secondary
+(Typical)
+
+Primary / Secondary
+(Worst case) 1
+
+Band 1
+
+-110.1
+
+-110.0
+
+-106.0
+
+Band 5
+
+-111.4
+
+-112.3
+
+-104.0
+
+-112.0
+
+-112.1
+
+-106.0
+
+-112.0
+
+-112.0
+
+-103.0
+
+Band 9
+
+-110.2
+
+-110.7
+
+-105.0
+
+Band 19
+
+-111.7
+
+-112.1
+
+-106.0
+
+Band 6
+Band 8
+
+48
+
+0.1% BER
+12.2 kbps
+
+Proprietary and Confidential - Contents subject to change
+
+4116235
+
+RF Specifications
+
+1. Per 3GPP specification
+
+Table 4-7: Conducted Rx (Receive) Sensitivity — TD-SCDMA Bands
+Conducted Rx sensitivity (dBm)
+LTE bands
+
+Primary
+(Typical)
+
+Band 39
+
+Secondary
+(Typical)
+
+Worst case
+
+-112.2
+
+-107.3
+
+Table 4-8: Conducted Tx (Transmit) Power Tolerances
+Parameter
+
+Conducted transmit power
+
+Notes
+
+LTE
+LTE Band 1,3,5,8,18,19,21,28,39
+
++23 dBm  1 dB
+
+LTE Band 7, 38, 40, 41
+
++22 dBm  1 dB
+
+UMTS
+Band 1 (IMT 2100 12.2 kbps)
+Band 5 (UMTS 850 12.2 kbps)
+Band 6 (UMTS 850 12.2 kbps)
+Band 8 (UMTS 900 12.2 kbps)
+Band 9 (UMTS 1700 12.2 kbps)
+Band 19 (UMTS 850 12.2 kbps)
+
++23 dBm  1 dB
+
+Connectorized
+(Class 3)
+
+TD-SCDMA
++23 dBm  1 dB
+
+Band 39
+
+GNSS Specifications
+Note: For detailed electrical performance criteria, see Recommended GNSS Antenna
+Specifications on page 75.
+
+.
+Table 4-9: GNSS Specifications
+
+Rev 7 Aug.16
+
+Parameter/feature
+
+Description
+
+Satellite channels
+
+Maximum 30 channels (16 GPS, 14 GLONASS),
+simultaneous tracking
+
+Protocols
+
+NMEA 0183 V3.0
+
+Acquisition time1
+
+Hot start: 1 s
+Warm start: 29 s
+Cold start: 32 s
+
+Accuracy
+
+Horizontal: < 2 m (50%); < 5 m (90%)
+Altitude: < 4 m (50%); < 8 m (90%)
+Velocity: < 0.2 m/s
+
+Proprietary and Confidential - Contents subject to change
+
+49
+
+Product Technical Specification & Customer Design Guidelines
+
+Table 4-9: GNSS Specifications (Continued)
+Parameter/feature
+
+Description
+
+Sensitivity
+
+Tracking2: -160 dBm
+Acquisition3 (Assisted): -158 dBm
+Acquisition (Standalone): -145 dBm
+
+Operational limits
+
+Altitude <6000 m or velocity <100 m/s
+(Either limit may be exceeded, but not both.)
+
+1. Acquisition times measured with signal strength = -135 dBm
+2. Tracking sensitivity is the lowest GNSS signal level for which the device can still
+detect an in-view satellite 50% of the time when in sequential tracking mode.
+3. Acquisition sensitivity is the lowest GNSS signal level for which the device can still
+detect an in-view satellite 50% of the time.
+
+50
+
+Proprietary and Confidential - Contents subject to change
+
+4116235
+
+5
+
+5: Power
+Power Consumption
+Power consumption measurements in the tables below are for the
+EM7430 connected to the host PC via USB.
+The module does not have its own power source and depends on the
+host device for power. For a description of input voltage
+requirements, see Power Supply on page 31.
+
+Table 5-1: Averaged Standby DC Power Consumption 1
+Current
+Signal
+VCC
+
+Description
+
+Bands
+
+2
+
+Typ
+
+Max
+
+3
+
+Unit
+
+Notes /
+configuration
+
+Standby current consumption (Sleep mode activated4)
+LTE
+
+LTE Bands
+
+2.8
+
+3.3
+
+mA
+
+DRX cycle = 8 (2.56 s)
+
+HSDPA / WCDMA
+
+UMTS bands
+
+2.8
+
+3.3
+
+mA
+
+DRX cycle = 8 (2.56 s)
+
+Standby current consumption5 (Sleep mode deactivated4)
+LTE
+
+LTE bands
+
+31
+
+35
+
+mA
+
+DRX cycle = 8 (2.56 s)
+
+HSDPA / WCDMA
+
+UMTS bands
+
+31
+
+35
+
+mA
+
+DRX cycle = 8 (2.56 s)
+
+Low Power Mode (LPM) / Offline Mode5 (Sleep mode activated4)
+RF disabled, but module is operational
+
+2.1
+
+2.6
+
+mA
+
+Low Power Mode (LPM) / Offline Mode5 (Sleep mode deactivated4)
+RF disabled, but module is operational
+
+29
+
+32
+
+mA
+
+70
+
+120
+
+A
+
+Leakage current
+Module powered off —
+Full_Card_Power_Off# is Low, and VCC is
+supplied
+
+1. Preliminary, subject to change.
+2. For supported bands, see Table 4-1, LTE Frequency Bands, on page 46 and Table 4-3, WCDMA Frequency
+Bands Support, on page 47.
+3. Measured at 25ºC / nominal 3.7 V voltage.
+4. Assumes USB bus is fully suspended during measurements
+5. LPM and standby power consumption will increase when LEDs are enabled. To reduce power consumption,
+configure LEDs to remain off while in standby and LPM modes.
+
+Rev 7 Aug.16
+
+Proprietary and Confidential - Contents subject to change
+
+51
+
+Product Technical Specification & Customer Design Guidelines
+
+Table 5-2: Averaged Call Mode DC Power Consumption
+Description
+
+Current 1
+
+Tx power
+
+LTE
+
+Unit
+
+580
+
+mA
+
+CA 300 / 50 Mbps , 20 MHz + 20 MHz BW
+
+310
+
+mA
+
+CA 100 / 50 Mbps , 10 MHz + 10 MHz BW
+
+380
+
+mA
+
+150 / 50 Mbps , 20 MHz BW
+
+900
+
+mA
+
+CA 300 / 50 Mbps , 20 MHz + 20 MHz BW
+
+600
+
+mA
+
+CA 100 / 50 Mbps , 10 MHz + 10 MHz BW
+
+720
+
+mA
+
+150 / 50 Mbps , 20 MHz BW
+
+1000
+
+mA
+
+CA 300 / 50 Mbps , 20 MHz + 20 MHz BW
+
+650
+
+mA
+
+CA 100 / 50 Mbps , 10 MHz + 10 MHz BW
+
+770
+
+mA
+
+150 / 50 Mbps , 20 MHz BW
+
+0 dBm
+
+290
+
+mA
+
+All speeds
+
+20 dBm
+
+400
+
+mA
+
+All speeds
+
+23 dBm
+
+530
+
+mA
+
+Worst case
+
+23 dBm
+
+150
+
+mA
+
+TD-SCDMA Duplex Switch Point TS2
+(2 uplink Tx slots, 1.28 Mcps)
+
+2
+
+A
+
+All LTE / WCDMA bands
+
+Unit
+
+Notes / configuration
+
+mA
+
+High speed USB connection, CL = 50 pF
+on D+ and D- signals
+
+0 dBm
+
+20 dBm
+
+23 dBm
+
+DC-HSPA/ HSPA
+
+TD-SCDMA
+
+Notes
+
+Typ
+
+Peak current
+(averaged over 100 s)
+
+1. Measured at 25ºC / nominal 3.7 V voltage
+
+Table 5-3: Miscellaneous DC Power Consumption
+Current / Voltage
+Signal
+VCC
+
+Description
+
+USB active current
+
+Min
+
+Typ
+
+Max
+
+-
+
+15
+
+20
+
+Inrush current
+
+Maximum current
+
+GNSS Signal
+connector
+
+52
+
+-
+
+2.2
+
+2.5
+
+A
+
+-
+
+1.5
+
+A
+
+100
+
+mA
+
+3.25
+
+V
+
+Active bias on GNSS port
+3.05
+
+3.15
+
+•
+
+Assumes power supply turn on time
+> 100µs
+
+•
+
+Dependent on host power supply
+rise time.
+
+•
+
+Across all bands, all temperature
+ranges
+
+•
+
+3.7 V supply
+
+Voltage applied to the GNSS antenna to
+power electronics inside the antenna
+(GNSS RF connector in Figure 4-1 on
+page 41).
+
+Proprietary and Confidential - Contents subject to change
+
+4116235
+
+Power
+
+Module Power States
+The module has five power states, as described in Table 5-4.
+
+•
+•
+
+Module is active
+
+•
+
+Module is capable of placing / receiving calls, or establishing data connections on the
+wireless network
+
+•
+
+Current consumption is affected by several factors, including:
+
+RF enabled
+
+Normal
+(Default
+state)
+
+USB interface active
+
+Details
+
+Module is powered
+
+State
+
+Host is powered
+
+Table 5-4: Module Power States
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Default state. Occurs when VCC is first applied, Full_Card_Power_Off# is
+deasserted (pulled high), and W_DISABLE1# is deasserted
+
+• Radio band being used
+• Transmit power
+• Receive gain settings
+• Data rate
+Low power
+(‘Airplane
+mode’)
+
+•
+•
+
+Module is active
+Module enters this state:
+
+• Under host interface control:
+· Host issues AT+CFUN=0 ([1] AT Command Set for User Equipment (UE)
+·
+
+(Release 6) (Doc# 3GPP TS 27.007))), or
+Host asserts W_DISABLE1#, after AT!PCOFFEN=0 has been issued.
+
+• Automatically, when critical temperature or voltage trigger limits have been
+reached))
+
+Sleep
+
+Off
+
+Disconnected
+
+Rev 7 Aug.16
+
+•
+•
+
+Normal state of module between calls or data connections
+
+•
+
+Host keeps module powered off by asserting Full_Card_Power_Off# (signal pulled
+low or left floating)
+
+•
+•
+
+Module draws minimal current
+
+•
+
+Host power source is disconnected from the module and all voltages associated with
+the module are at 0 V.
+
+Module cycles between wake (polling the network) and sleep, at network providerdetermined interval.
+
+See Full_Card_Power_Off# and RESET# on page 37 for more information.
+
+Proprietary and Confidential - Contents subject to change
+
+53
+
+Product Technical Specification & Customer Design Guidelines
+
+Power State Transitions
+The module uses state machines to monitor supply voltage and operating
+temperature, and notifies the host when critical threshold limits are exceeded.
+(See Table 5-5 for trigger details and Figure 5-1 for state machine behavior.)
+Power state transitions may occur:
+•
+
+Automatically, when critical supply voltage or module temperature trigger
+levels are encountered.
+
+•
+
+Under host control, using available AT commands in response to user choices
+(for example, opting to switch to airplane mode) or operating conditions.
+
+Table 5-5: Power State Transition Trigger Levels
+Temperature 1
+
+Voltage
+Transition
+
+Notes
+V2
+
+Trigger
+
+Trigger
+
+°C
+
+VOLT_HI_CRIT
+
+4.4
+
+TEMP_LO_CRIT
+
+-45
+
+VOLT_LO_CRIT
+
+2.9
+
+TEMP_HI_CRIT
+
+93
+
+Low Power to Normal
+
+VOLT_HI_NORM
+
+4.3
+
+TEMP_NORM_LO
+
+-30
+
+Low Power to Normal
+or
+Remain in Normal
+(Remove warnings)
+
+VOLT_LO_NORM
+
+3.3
+
+TEMP_HI_NORM
+
+70
+
+Normal (Issue warning)
+
+VOLT_LO_WARN
+
+3.2
+
+TEMP_HI_WARN
+
+80
+
+-
+
+-
+
+-
+
+-
+
+Normal to Low Power
+
+Power off / on
+(Host-initiated)
+
+•
+
+RF activity suspended
+
+•
+
+RF activity resumed
+
+•
+
+In the TEMP_HI_WARN state, the
+module may have reduced performance (Class B temperature
+range).
+
+•
+
+Power off recommended when
+supply voltage or module
+operating temperature is critically
+low or high.
+
+1. Module-reported temperatures at the printed circuit board.
+2. Supply voltage — 3.7V
+
+54
+
+Proprietary and Confidential - Contents subject to change
+
+4116235
+
+Power
+
+current_vcc < VOLT_LO_WARN
+current_temp > TEMP_HI_WARN
+
+Normal mode
+current_vcc > VOLT_LO_NORM
+current_temp < TEMP_HI_NORM
+
+current_vcc > VOLT_LO_NORM
+current_temp <= TEMP_HI_NORM
+
+current_vcc > VOLT_HI_CRIT
+current_temp < TEMP_LO_CRIT
+current_vcc < VOLT_HI_NORM
+current_temp > TEMP_NORM_LO
+
+Normal mode
+Low supply voltage warning
+or
+High temperature warning
+
+current_vcc < VOLT_LO_CRIT
+current_temp > TEMP_HI_CRIT
+
+Low power mode
+Handled by Power
+State state machine.
+
+(Manual transition)
+Host deasserts
+Full_Card_Power_Off#
+
+Off mode
+Handled by Power
+State state machine
+
+Figure 5-1: Voltage / Temperature Monitoring State Machines
+
+Power Interface
+Power Ramp-up
+On initial power up, inrush current depends on the power supply rise time — turn
+on time >100 µs is required for < 3A inrush current.
+The supply voltage must remain within specified tolerances while this is occurring.
+
+Timing
+Power On / Off Timing
+Figure 5-2 describes the timing sequence for powering the module on and off.
+
+Rev 7 Aug.16
+
+Proprietary and Confidential - Contents subject to change
+
+55
+
+Product Technical Specification & Customer Design Guidelines
+
+Note: The host should not drive any signals to the module until the power-on sequence is
+complete.
+
+D E V IC E S T A T E
+
+D is c o n n e c te d
+
+O ff
+
+P o w e r-o n
+Sequence
+
+P o w e r-o ff
+S equ ence
+
+A c tiv e
+
+O ff
+
+D is c o n n e c te d
+
+H ig h
+
+VCC
+Low
+
+H ig h
+
+F u ll_ C a rd_ P o w e r_ O ff#
+
+t_ U S B _ s u s p e n d
+
+Low
+
+t_ p w r_ o n _ s e q
+
+USB_D+
+(D o u b le e n u m e ra tio n)
+
+H ig h
+Low
+
+t_ p w r _ o ff_ s e q
+
+t_ U S B _ a c tiv e
+
+t_ p w r _ o n _ s e q
+
+U SB _D +
+(S in g le e n u m e ra tio n)
+
+H ig h
+Low
+
+t_ p w r _ o ff_ s e q
+
+t_ p w r _ o n _ s e q
+
+U S B 3 .0
+(S in g le e n u m e ra tio n)
+
+H ig h
+Low
+
+t_ p w r _ o ff_ s e q
+
+Figure 5-2: Signal Timing (Full_Card_Power_Off#, and USB Enumeration)
+
+Table 5-6: USB 2.0 Power-On / Off Timing Parameters (Double
+Enumeration)
+Parameter
+
+Typical (s)
+
+Maximum (s)
+
+t_pwr_on_seq
+
+0.55
+
+0.65
+
+t_USB_active
+
+0.15
+
+0.2
+
+t_USB_suspend
+
+7.5
+
+11
+
+t_pwr_off_seq
+
+20
+
+25
+
+Table 5-7: USB 2.0 Power-On / Off Timing Parameters (Single
+Enumeration)
+Parameter
+
+Typical (s)
+
+Maximum (s)
+
+t_pwr_on_seq
+
+8.6
+
+11
+
+t_pwr_off_seq
+
+20
+
+25
+
+Table 5-8: USB 3.0 Power-On / Off Timing Parameters (Single
+Enumeration)
+Parameter
+
+56
+
+Typical (s)
+
+Maximum (s)
+
+t_pwr_on_seq
+
+8.5
+
+11
+
+t_pwr_off_seq
+
+20
+
+25
+
+Proprietary and Confidential - Contents subject to change
+
+4116235
+
+Power
+
+USB Enumeration
+The unit supports single and double USB enumeration with the host:
+•
+
+Single enumeration:
+· Applies to USB 2.0 and USB 3.0
+· Enumeration starts within maximum t_pwr_on_seq seconds of power-on.
+
+•
+
+Double enumeration — As shown in Figure 5-2:
+· Applies to USB 2.0 only
+· First enumeration starts within t_pwr_on_seq seconds of power-on (while
+USB_D+ is high)
+· Second enumeration starts after t_USB_suspend (when USB_D+ goes
+high again)
+
+Reset Timing
+To reset the module, hold the RESET# signal low for at least 3 seconds.
+
+Power Supply Noise
+Noise in the power supply can lead to noise in the RF signal.
+The power supply ripple limit for the module is no more than 100 mVp-p 1 Hz to
+100 kHz. This limit includes voltage ripple due to transmitter burst activity.
+Additional decoupling capacitors can be added to the main VCC line to filter noise
+into the device.
+
+SED (Smart Error Detection)
+The module uses a form of SED to track premature modem resets.
+•
+
+Module tracks consecutive resets occuring soon after power-on.
+
+•
+
+After a sixth consecutive reset, the module waits in boot-and-hold mode for a
+firmware download to resolve the power-cycle problem.
+
+Tx Power Control
+The module’s Tx power limit may be controlled using either SAR backoff AT
+commands, defined in [2] AirPrime EM74xx / MC74xx AT Command Reference
+(Doc# 4117727), or the DPR (Dynamic power control) signal. Use the
+GPIOSARENABLE parameter for !CUSTOM to choose the method:
+•
+
+Rev 7 Aug.16
+
+AT commands:
+· !SARSTATEDFLT — Set (or report) the default SAR backoff state that the
+device uses when it powers up. This setting is persistent across power
+cycles and overrides any PRI setting.
+· !SARSTATE — Set (or report) the current SAR backoff state (override the
+default state). This change in state is non-persistent across power cycles.
+· !SARBACKOFF — Set (or report) the maximum Tx power limit for a specific
+band / technology / state combination.
+
+Proprietary and Confidential - Contents subject to change
+
+57
+
+Product Technical Specification & Customer Design Guidelines
+
+Note: A customization is
+available to invert the DPR
+logic. (e.g. make DPR low
+= No SAR backoff)
+
+•
+
+Dynamic power control — The module’s firmware monitors DPR (pin 25) and
+adjusts the RF Tx power appropriately, as detailed in Table 5-9. (This state
+change is equivalent to issuing the !SARSTATE AT command.)
+
+Table 5-9: Dynamic Power Control of SAR Backoff State
+DPR
+
+SAR backoff state
+
+High 1
+
+No SAR backof
+
+Low
+
+Backoff 1
+
+1. DPR is pulled high by default.
+
+Note: The host can implement an open collector drive for the DPR pin (if a 1.8 Vcompatible drive is not available).
+
+58
+
+Proprietary and Confidential - Contents subject to change
+
+4116235
+
+6
+
+6: Software Interface
+Support Tools
+The EM7430 is compatible with the following support tools from
+Sierra Wireless and authorized third parties:
+•
+
+Firmware update utilities from Sierra Wireless
+
+•
+
+Sierra Wireless Logger
+
+•
+
+QXDM from QUALCOMM
+
+•
+
+QUALCOMM Product Support Tool (QPST)
+
+•
+
+Windows and Linux SDKs (including API and drivers)
+
+USB Interface
+The device supports the following protocols for modem
+communication:
+•
+
+Qualcomm QMI interface. (Please contact your Sierra Wireless
+account representative for QMI interface documentation.)
+
+•
+
+MBIM (Mobile Broadband Interface Model)
+
+MTU Size (Windows 7)
+The MTU (Maximum Transmission Unit) size is configured using a
+driver installer command line option:
+MTUSize=<value> (<value> is the size in bytes)
+Example:
+driverinstaller /MTUSize=1428
+Note: Wireless network operators will have their own specific MTU requirements.
+
+Rev 7 Aug.16
+
+Proprietary and Confidential - Contents subject to change
+
+59
+
+Product Technical Specification & Customer Design Guidelines
+
+60
+
+Proprietary and Confidential - Contents subject to change
+
+4116235
+
+7: Mechanical and Environmental Specifi- 7
+cations
+The EM7430 module complies with the mechanical and
+environmental specifications in Table 7-1. Final product conformance
+to these specifications depends on the OEM device implementation.
+Table 7-1: Mechanical and Environmental Specifications
+Mode
+
+Details
+
+Operational
+Class A
+
+-30ºC to +70ºC – 3GPP compliant
+
+Operational
+Class B
+
+-40ºC to +85ºC – non-3GPP compliant (reduced
+operating parameters required)
+
+Non-operational
+
+-40ºC to +85ºC, 96 hours
+(from MIL-STD 202 Method 108)
+
+Relative humidity
+
+Non-operational
+
+85ºC, 85% relative humidity for 48 hours
+(non-condensing)
+
+Vibration
+
+Non-operational
+
+Random vibration, 10 to 2000 Hz, 0.1 g2/Hz to
+0.0005 g2/Hz, in each of three mutually perpendicular
+axes. Test duration of 60 minutes for each axis, for a total
+test time of three hours.
+
+Shock
+
+Non-operational
+
+Half sine shock, 11 ms, 30 g, 8x each axis
+Half sine shock, 6 ms, 100 g, 3x each axis
+
+Drop
+
+Non-operational
+
+1 m on concrete on each of six faces, two times (module
+only)
+
+(Electrostatic discharge
+(See Electrostatic
+Discharge (ESD) on
+page 63.)
+
+Operational
+
+The RF port (antenna launch and RF connector) complies
+with the IEC 61000-4-2 standard:
+• Electrostatic Discharge Immunity: Test: Level3
+Air Discharge: ±8 kV
+
+Non-operational
+
+The host connector interface complies with the following
+standard only:
+• minimum ±500 V Human Body Model
+(JESD22-A114-B)
+
+Ambient temperature
+
+Thermal considerations
+
+See Thermal Considerations on page 64.
+
+Form factor
+
+M.2 Form Factor
+
+Dimensions
+
+Length:
+Width:
+Thickness:
+Weight:
+
+Rev 7 Aug.16
+
+42±0.15 mm (max)
+30±0.15 mm (max)
+Above PCB — 1.50 mm (max)
+PCB — 0.88 mm (max)
+6.5 g
+
+Proprietary and Confidential - Contents subject to change
+
+61
+
+Product Technical Specification & Customer Design Guidelines
+
+Device Views
+
+Top view
+Figure 7-1: Top View
+
+( 3.50)
+0.00
+
+5.25
+
+18.35
+
+1.06
+
+22.85
+
+0.80±0.08
+
+
+
+
+
+
+3.90
+
+
+
+
+
+RF Connectors
+
+
+
+LABEL
+(Centered on shield lid)
+
+42.00±0.15 33.89
+
+
+
+
+
+
+
+4.22
+
+
+
+
+
+
+
+
+ 
+1.20"
+
+" 
+
+1.5 MAX
+
+30.00±0.15
+
+
+
+
+
+19.85
+(Note: All dimensions shown in mm.)
+
+Figure 7-2: Dimensioned View
+
+62
+
+Proprietary and Confidential - Contents subject to change
+
+4116235
+
+Mechanical and Environmental Specifications
+
+Labeling
+
+EM7430
+
+IMEI # 352678011234569
+FPPDDDYNNNNHH
+
+BB
+
+|||||||||||||||||||||||||||||||||||
+
+FCC ID: N7Nxxxxxx
+PRODUCT OF CHINA
+
+Figure 7-3: Unit Label
+
+Note: The displayed label is an example only. The production label will vary by SKU.
+
+The EM7430 label is non-removable, centered on the shield lid, and may contain:
+•
+
+Sierra Wireless logo and product name
+
+•
+
+IMEI number in Code-128 barcode format
+
+•
+
+SKU number (when required)
+
+•
+
+Factory Serial Number (FSN) in alphanumeric format
+
+•
+
+Manufacturing date code (incorporated into FSN)
+
+•
+
+Licensed vendor logo
+
+•
+
+Certification marks/details
+
+Note: The EM7430 supports OEM partner-specific label requirements.
+
+Electrostatic Discharge (ESD)
+The OEM is responsible for ensuring that the EM7430 host interface pins are not
+exposed to ESD during handling or normal operation. (See Table 7-1 on page 61
+for specifications.)
+ESD protection is highly recommended for the SIM connector at the point where
+the contacts are exposed, and for any other signals from the host interface that
+would be subjected to ESD by the user of the product. (The device includes ESD
+protection on the antenna.)
+
+Rev 7 Aug.16
+
+Proprietary and Confidential - Contents subject to change
+
+63
+
+Product Technical Specification & Customer Design Guidelines
+
+Thermal Considerations
+Embedded modules can generate significant amounts of heat that must be
+dissipated in the host device for safety and performance reasons.
+
+RF
+
+Baseband
+
+Figure 7-4: Shield Locations (Top View)
+
+The amount of thermal dissipation required depends on:
+•
+
+Supply voltage — Maximum power dissipation for the module can be up to
+3.5 W at voltage supply limits.
+
+•
+
+Usage — Typical power dissipation values depend on the location within the
+host, amount of data transferred, etc.
+
+Specific areas requiring heat dissipation are shown in Figure 7-4:
+•
+
+RF — Bottom face of module near RF connectors. Likely to be the hottest
+area.
+
+•
+
+Baseband —Bottom face of module, below the baseband area.
+
+To enhance heat dissipation:
+•
+
+64
+
+It is recommended to add a heat sink that mounts the module to the main
+PCB or metal chassis (a thermal compound or pads must be used between
+the module and the heat sink).
+
+Proprietary and Confidential - Contents subject to change
+
+4116235
+
+Mechanical and Environmental Specifications
+
+Figure 7-5: Copper Pad Location on Bottom Side of Module
+
+•
+
+Maximize airflow over / around the module.
+
+•
+
+Locate the module away from other hot components.
+
+•
+
+Module mounting holes must be used to attach (ground) the device to the
+main PCB ground or a metal chassis.
+
+•
+
+You may also need active cooling to pull heat away from the module.
+
+Note: Adequate dissipation of heat is necessary to ensure that the module functions
+properly.
+
+Module Integration Testing
+When testing your integration design:
+•
+
+Test to your worst case operating environment conditions (temperature and
+voltage)
+
+•
+
+Test using worst case operation (transmitter on 100% duty cycle, maximum
+power)
+
+•
+
+Monitor temperature at all shield locations. Attach thermocouples to the areas
+indicated in Figure 7-4 on page 64 (RF, Baseband).
+
+Note: Make sure that your system design provides sufficient cooling for the module.
+
+Rev 7 Aug.16
+
+Proprietary and Confidential - Contents subject to change
+
+65
+
+Product Technical Specification & Customer Design Guidelines
+
+(For acceptance, certification, quality, and production (including RF) test
+suggestions, see Testing on page 79.)
+
+66
+
+Proprietary and Confidential - Contents subject to change
+
+4116235
+
+8
+
+8: Regulatory Compliance and Industry
+Certifications
+This module is designed to meet, and upon commercial release, will
+meet the requirements of the following regulatory bodies and
+regulations, where applicable:
+•
+
+The National Communications Commission (NCC) of Taiwan,
+Republic of China
+
+•
+
+Ministry of Internal Affairs and Communications (MIC) of Japan
+
+•
+
+Radio Equipment and Telecommunications Terminal Equipment
+(R&TTE) Directive of the European Union
+
+Upon commercial release, the following industry certifications will
+have been obtained, where applicable:
+•
+
+GCF
+
+Additional certifications and details on specific country approvals may
+be obtained upon customer request — contact your Sierra Wireless
+account representative for details.
+Additional testing and certification may be required for the end
+product with an embedded EM7430 module and are the responsibility
+of the OEM. Sierra Wireless offers professional services-based
+assistance to OEMs with the testing and certification process, if
+required.
+
+Important Notice
+Because of the nature of wireless communications, transmission and
+reception of data can never be guaranteed. Data may be delayed,
+corrupted (i.e., have errors) or be totally lost. Although significant
+delays or losses of data are rare when wireless devices such as the
+Sierra Wireless module are used in a normal manner with a wellconstructed network, the Sierra Wireless module should not be used
+in situations where failure to transmit or receive data could result in
+damage of any kind to the user or any other party, including but not
+limited to personal injury, death, or loss of property. Sierra Wireless
+and its affiliates accept no responsibility for damages of any kind
+resulting from delays or errors in data transmitted or received using
+the Sierra Wireless module, or for failure of the Sierra Wireless
+module to transmit or receive such data.
+
+Safety and Hazards
+Do not operate your EM7430 module:
+•
+
+Rev 7 Aug.16
+
+In areas where blasting is in progress
+
+Proprietary and Confidential - Contents subject to change
+
+67
+
+Product Technical Specification & Customer Design Guidelines
+
+•
+
+Where explosive atmospheres may be present including refuelling points, fuel
+depots, and chemical plants
+
+•
+
+Near medical equipment, life support equipment, or any equipment which
+may be susceptible to any form of radio interference. In such areas, the
+EM7430 module MUST BE POWERED OFF. Otherwise, the EM7430 module
+can transmit signals that could interfere with this equipment.
+
+In an aircraft, the EM7430 module MUST BE POWERED OFF. Otherwise, the
+EM7430 module can transmit signals that could interfere with various onboard
+systems and may be dangerous to the operation of the aircraft or disrupt the
+cellular network. Use of a cellular phone in an aircraft is illegal in some
+jurisdictions. Failure to observe this instruction may lead to suspension or denial
+of cellular telephone services to the offender, or legal action or both.
+Some airlines may permit the use of cellular phones while the aircraft is on the
+ground and the door is open. The EM7430 module may be used normally at this
+time.
+
+68
+
+Proprietary and Confidential - Contents subject to change
+
+4116235
+
+A
+
+A: Audio Support
+The EM7430 host I/O connector provides pins to support PCM or I2S
+audio interfaces as listed in Table A-1.
+
+Table A-1: Host interface (67-pin) Connections — Module View a
+Pin
+
+20
+
+Signal name
+
+PCM_CLK / I2S_CLKc
+
+Pin
+type b
+
+-
+
+Description
+
+(PCM_CLK)
+PCM Clock
+
+Direction
+to module
+
+Input
+
+Output
+
+(I2S_CLK)
+I2S Clock
+
+22
+
+24
+
+28
+
+PCM_DIN / I2S DIN
+
+PCM_DOUT / I2S DOUT
+
+PCM_SYNC / I2S_WSc
+
+-
+
+-
+
+-
+
+PCM Data In /
+I2S Data In
+PCM Data Out /
+I2S Data Out
+(PCM_SYNC)
+PCM Sync
+
+Output
+
+Input
+
+Output
+
+Input
+
+Output
+
+(I2S_WS)
+I2S Word Select
+
+56
+
+I2C_DATAd
+
+-
+
+I2C serial bus data
+(for external codec)
+
+Output
+
+Input
+
+Output
+
+58
+
+I2C_CLKd
+
+-
+
+I2C serial bus clock
+(for external codec)
+
+Input
+
+Output
+
+Active
+state
+
+Voltage levels (V)
+Min
+
+Typ
+
+Max
+
+High
+
+1.17
+
+1.80
+
+2.10
+
+Low
+
+-0.30
+
+High
+
+1.35
+
+Low
+
+0
+
+0.45
+
+High
+
+1.35
+
+1.90
+
+Low
+
+0
+
+0.45
+
+High
+
+1.17
+
+Low
+
+-0.30
+
+High
+
+1.35
+
+Low
+
+0
+
+High
+
+1.17
+
+Low
+
+-0.30
+
+High
+
+1.35
+
+Low
+
+0
+
+0.45
+
+High
+
+1.35
+
+1.90
+
+Low
+
+0
+
+0.45
+
+High
+
+1.17
+
+Low
+
+-0.30
+
+High
+
+1.35
+
+Low
+
+0
+
+High
+
+1.17
+
+Low
+
+-0.30
+
+High
+
+1.35
+
+Low
+
+0
+
+0.63
+1.80
+
+1.80
+
+1.90
+
+2.10
+0.63
+
+1.80
+
+1.90
+0.45
+
+1.80
+
+2.10
+0.63
+
+1.80
+
+1.80
+
+1.90
+
+2.10
+0.63
+
+1.80
+
+1.90
+0.45
+
+1.80
+
+2.10
+0.63
+
+1.80
+
+1.90
+0.45
+
+a. The host should leave all ‘NC’ (‘no connect) pins unconnected.
+b. I — Input; O — Digital output; OC — Open Collector output; PU — Digital input (internal pull up); PD — Digital input
+(internal pull down); V — Power or ground
+c. Functions as input when in PCM slave mode. Otherwise, functions as output in either PCM or I2S master
+mode.
+d. Keep this pin NC when not used (I2C function is not needed).
+
+Rev 7 Aug.16
+
+Proprietary and Confidential - Contents subject to change
+
+69
+
+Product Technical Specification & Customer Design Guidelines
+
+PCM/I2S Audio Interface
+The module implements a PCM/I2S digital audio interface using a dedicated serial
+link for digital audio data; all other signals, such as subcoding and control, are
+transmitted separately. Default setting is PCM slave mode, but this can be
+switched, using AT commands, to PCM master mode, I2S master mode, or I2S
+slave mode.
+PCM/I2S signals are summarized in the following table.
+
+Table A-2: PCM / I2S Interface Signals
+Signal name
+
+Pin
+
+Description
+
+PCM_CLK/I2S_CLK
+
+20
+
+PCM Clock / I2S Clock
+
+PCM_DIN/I2S_DIN
+
+22
+
+PCM Data In / I2S Data In
+
+PCM_DOUT/I2S_DOUT
+
+24
+
+PCM Data Out / I2S Data
+Out
+
+PCM_SYNC/I2S_WS
+
+28
+
+PCM Sync / I2S Word
+Select
+
+PCM
+The PCM interface supports the following features:
+•
+
+Either master mode or slave mode
+
+•
+
+Auxiliary PCM
+
+•
+
+8k and 16k sampling rates
+
+•
+
+Linear, µ-law and A-law formats
+
+•
+
+Padding setting (enable or disable)
+
+•
+
+8, 16, 32, 64, 128, and 256 bits per frame
+
+•
+
+Bit frequency (sample rate * bits per frame)
+
+The following figures and table illustrate PCM signals timing.
+
+Figure A-1: PCM_SYNC Timing
+
+70
+
+Proprietary and Confidential - Contents subject to change
+
+4116235
+
+Audio Support
+
+Figure A-2: PCM Codec to Module Timing
+
+Figure A-3: Module to PCM Codec Timing
+
+Table A-3: PCM Timing a
+Parameter
+
+Description
+
+Min
+
+Typ
+
+Max
+
+Units
+
+T(sync)
+
+PCM_FS cycle time
+
+-
+
+125
+
+-
+
+us
+
+T(synch)
+
+PCM_FS high time
+
+-
+
+488
+
+-
+
+ns
+
+T(cyncl)
+
+PCM_FS low time
+
+-
+
+124.5 -
+
+us
+
+T(clk)
+
+PCM_CLK cycle time
+
+-
+
+488
+
+-
+
+ns
+
+T(clkh)
+
+PCM_CLK high time
+
+-
+
+244
+
+-
+
+ns
+
+T(clkl)
+
+PCM_CLK low time
+
+-
+
+244
+
+-
+
+ns
+
+T(sync_offset)
+
+PCM_SYNC offset time to PCM_CLK falling
+
+-
+
+122
+
+-
+
+ns
+
+T(sudin)
+
+PCM_DIN setup time before falling edge of PCM_CLK 60
+
+-
+
+-
+
+ns
+
+T(hdin)
+
+PCM_DIN hold time after falling edge of PCM_CLK
+
+60
+
+-
+
+-
+
+ns
+
+T(pdout)
+
+Delay from PCM_CLK rising to PCM_DOUT valid
+
+-
+
+-
+
+60
+
+ns
+
+T(zdout)
+
+Delay from PCM_CLK falling to PCM_DOUT HIGH-Z
+
+-
+
+-
+
+60
+
+ns
+
+a. Maximum PCM clock rate is 2.048 MHz.
+
+Rev 7 Aug.16
+
+Proprietary and Confidential - Contents subject to change
+
+71
+
+Product Technical Specification & Customer Design Guidelines
+
+I2S
+The I2S interface can be used to transfer serial digital audio to or from an external
+stereo DAC/ADC and supports the following features:
+•
+
+Master mode only (follows Philips I2S bus specifications for timing)
+
+•
+
+48K sampling rate
+
+•
+
+16 bits per channel
+
+•
+
+1536 kHz bit clock
+
+Figure A-4: I2S Transmitter Timing Diagram
+
+Table A-4: Master Transmitter with Data Rate = 3.072 MHz (±10%) a
+Parameter
+
+Description
+
+Condition
+
+Min
+
+Typ
+
+Max
+
+Units
+
+T
+
+Clock period
+
+I2S requirement: min T = 293
+
+293
+
+326
+
+359
+
+ns
+
+t(hc)
+
+Clock high
+
+I2S requirement: min > 0.35T 120
+
+-
+
+-
+
+ns
+
+t(lc)
+
+Clock low
+
+I2S requirement: min > 0.35T 120
+
+-
+
+-
+
+ns
+
+t(dtr)
+
+Delay
+
+I2S requirment: max < 0.8T
+
+-
+
+-
+
+250
+
+ns
+
+t(htr)
+
+Hold time
+
+I2S requirement: min > 0
+
+100
+
+-
+
+-
+
+ns
+
+a. maximum sample rate = 48 KHz at 3.072 MHz (32 bits per sample)
+
+72
+
+Proprietary and Confidential - Contents subject to change
+
+4116235
+
+B
+
+B: Antenna Specification
+This appendix describes recommended electrical performance
+criteria for main path, diversity path, and GNSS antennas used with
+AirPrime embedded modules.
+The performance specifications described in this section are valid
+while antennas are mounted in the host device with antenna feed
+cables routed in their final application configuration.
+Note: Antennas should be designed before the industrial design is finished
+to make sure that the best antennas can be developed
+
+Recommended Main / Diversity
+Antenna Specifications
+Table B-1: Antenna Requirements a
+Parameter
+
+Requirements
+
+Comments
+
+Antenna system
+
+(LTE) External multi-band 2x2
+MIMO antenna system (Ant1 /
+Ant2)b
+(3G) External multi-band antenna
+system with diversity (Ant1 / Ant2)c
+
+If Ant2 includes GNSS, then it must also satisfy
+requirements in Table B-2 on page 75.
+
+Operating bands —
+Antenna 1
+
+703–960 MHz
+1447–1511 MHz
+1710–1980 MHz
+2110–2170 MHz
+2300–2690 MHz
+
+Operating bands —
+Antenna 2
+
+791–960 MHz
+1495–1511 MHz
+1805–1920 MHz
+2110–2170 MHz
+2300–2690 MHz
+
+VSWR of Ant1 and Ant2
+
+Rev 7 Aug.16
+
+•
+
+< 2:1 (recommended)
+
+•
+
+< 3:1 (worst case)
+
+On all bands including band edges
+
+Proprietary and Confidential - Contents subject to change
+
+73
+
+Product Technical Specification & Customer Design Guidelines
+
+Table B-1: Antenna Requirements (Continued) a
+Parameter
+
+Requirements
+
+Total radiated efficiency of
+Ant1 and Ant2
+
+> 50% on all bands
+
+Radiation patterns of Ant1
+and Ant2
+
+Nominally Omni-directional
+radiation pattern in azimuth plane.
+
+Envelope correlation
+coefficient between Ant1
+and Ant2
+
+•
+
+< 0.4 on 791–894 MHz and
+925–960 MHz bands
+
+•
+
+< 0.2 on 1805–1990 MHz and
+2110–2170 MHz bands
+
+Mean Effective Gain of
+Ant1 and Ant2 (MEG1,
+MEG2)
+
+ -3 dBi
+
+Ant1 and Ant2 Mean
+Effective Gain Imbalance I
+MEG1 / MEG2 I
+
+< 2 dB for MIMO operation
+< 6 dB for diversity operation
+
+Maximum antenna gain
+
+Must not exceed antenna gains
+due to RF exposure and ERP /
+EIRP limits.
+
+74
+
+Comments
+
+•
+
+Measured at the RF connector.
+
+•
+
+Includes mismatch losses, losses in the
+matching circuit, and antenna losses,
+excluding cable loss.
+
+•
+
+Sierra Wireless recommends using
+antenna efficiency as the primary
+parameter for evaluating the antenna
+system.
+Peak gain is not a good indication of
+antenna performance when integrated
+with a host device (the antenna does not
+provide omni-directional gain patterns).
+Peak gain can be affected by antenna
+size, location, design type, etc. — the
+antenna gain patterns remain fixed unless
+one or more of these parameters change.
+
+Proprietary and Confidential - Contents subject to change
+
+4116235
+
+Antenna Specification
+
+Table B-1: Antenna Requirements (Continued) a
+Parameter
+
+Requirements
+
+Isolation between Ant1 and
+Ant2 (S21)
+
+Power handling
+
+> 10 dB
+
+•
+
+> 2 W RF power on low bands
+
+•
+
+> 1 W on high bands
+
+Comments
+
+•
+
+If antennas can be moved, test all
+positions for both antennas.
+
+•
+
+Make sure all other wireless devices
+(Bluetooth or WLAN antennas, etc.) are
+turned OFF to avoid interference.
+
+•
+
+Measure power endurance over 4 hours
+(estimated talk time) using a 2 W CW
+signal — set the CW test signal frequency
+to the middle of the PCS Tx band
+(1880 MHz for PCS).
+
+•
+
+Visually inspect device to ensure there is
+no damage to the antenna structure and
+matching components.
+
+•
+
+VSWR / TIS / TRP measurements taken
+before and after this test must show
+similar results.
+
+a. These worst-case VSWR figures for the transmitter bands may not guarantee RSE levels to be within regulatory limits. The
+device alone meets all regulatory emissions limits when tested into a cabled (conducted) 50 ohm system. With antenna
+designs with up to 2.5:1 VSWR or worse, the radiated emissions could exceed limits. The antenna system may need to be
+tuned in order to meet the RSE limits as the complex match between the module and antenna can cause unwanted levels of
+emissions. Tuning may include antenna pattern changes, phase/delay adjustment, passive component matching. Examples of
+the application test limits would be included in FCC Part 22, Part 24 and Part 27,test case 4.2.2 for WCDMA
+(ETSI EN 301 908-1), where applicable.
+b. Ant1 — Primary, Ant2 — Secondary (Diversity / MIMO / GNSS)
+c. Ant1 — Primary, Ant2 — Secondary (Diversity / GNSS)
+
+Recommended GNSS Antenna
+Specifications
+Table B-2: GNSS Antenna Requirements
+Parameter
+Frequency range
+
+Field of view (FOV)
+
+Rev 7 Aug.16
+
+Requirements
+
+•
+
+Wide-band GNSS:
+1560–1606 MHz recommended
+
+•
+
+Narrow-band GPS:
+1575.42 MHz ±2 MHz minimum
+
+•
+
+Narrow-band Galileo:
+1575.42 MHz ±2 MHz minimum
+
+•
+
+Narrow-band BeiDou:
+1561.098 MHz ±2 MHz minimum
+
+•
+
+Narrow-band GLONASS:
+1601.72 MHz ±4.2 MHz minimum
+
+•
+
+Omni-directional in azimuth
+
+•
+
+-45° to +90° in elevation
+
+Proprietary and Confidential - Contents subject to change
+
+Comments
+
+75
+
+Product Technical Specification & Customer Design Guidelines
+
+Table B-2: GNSS Antenna Requirements (Continued)
+Parameter
+
+Requirements
+
+Comments
+
+Polarization
+(average Gv/Gh)
+
+> 0 dB
+
+Vertical linear polarization is
+sufficient.
+
+Free space average gain
+(Gv+Gh) over FOV
+
+> -6 dBi (preferably > -3 dBi)
+
+Gv and Gh are measured
+and averaged over -45° to
++90° in elevation, and ±180°
+in azimuth.
+
+Gain
+
+•
+
+Maximum gain and uniform
+coverage in the high elevation
+angle and zenith.
+
+•
+
+Gain in azimuth plane is not
+desired.
+
+Average 3D gain
+
+> -5 dBi
+
+Isolation between GNSS
+and Ant1
+
+> 10 dB in all uplink bands
+
+Typical VSWR
+
+< 2.5:1
+
+Polarization
+
+Any other than LHCP (left-hand
+circular polarized) is acceptable.
+
+Antenna Tests
+The following guidelines apply to the requirements described in Table B-1 on
+page 73 and Table B-2 on page 75:
+•
+
+Perform electrical measurements at room temperature (+20°C to +26°C)
+unless otherwise specified
+
+•
+
+For main and diversity path antennas, make sure the antennas (including
+contact device, coaxial cable, connectors, and matching circuit with no more
+than six components, if required) have nominal impedances of 50  across
+supported frequency bands.
+
+•
+
+All tests (except isolation / correlation coefficient) —Test the main or diversity
+antenna with the other antenna terminated.
+
+•
+
+Any metallic part of the antenna system that is exposed to the outside
+environment needs to meet the electrostatic discharge tests per IEC61000-42 (conducted discharge +8kV).
+
+•
+
+The functional requirements of the antenna system are tested and verified
+while the embedded module’s antenna is integrated in the host device.
+
+Note: Additional testing, including active performance tests, mechanical, and accelerated
+life tests can be discussed with Sierra Wireless’ engineering services. Contact your Sierra
+Wireless representative for assistance.
+
+76
+
+Proprietary and Confidential - Contents subject to change
+
+4116235
+
+C
+
+C: Design Checklist
+This chapter provides a summary of the design considerations
+mentioned throughout this guide. This includes items relating to the
+power interface, RF integration, thermal considerations, cabling
+issues, and so on.
+Note: This is NOT an exhaustive list of design considerations. It is expected
+that you will employ good design practices and engineering principles in your
+integration.
+
+Table C-1: Hardware Integration Design Considerations
+Suggestion
+
+Section where discussed
+
+Component placement
+If an ESD suppressor is not used on the host device, allow space on the
+SIM connector for series resistors in layout. (Up to 100  may be used
+depending on ESD testing requirements).
+
+SIM Implementation on
+page 34
+
+Minimize RF cable losses as these affect performance values listed in
+product specification documents.
+
+RF Connections on page 41
+
+Antennas
+Match the module / antenna coax connections to 50 — mismatched
+antenna impedance and cable loss negatively affect RF performance.
+
+RF Connections on page 41
+
+If installing UMTS and CDMA modules in the same device, consider using
+separate antennas for maximum performance.
+
+Antenna and Cabling on
+page 42
+
+Power
+Make sure the power supply can handle the maximum current specified
+for the module type.
+
+Power Consumption on
+page 51
+
+Limit the total impedance of VCC and GND connections to the SIM at the
+connector to less than 1  (including any trace impedance and lumped
+element components — inductors, filters, etc.). All other lines must have a
+trace impedance less than 2 .
+
+SIM Implementation on
+page 34
+
+Decouple the VCC line close to the SIM socket. The longer the trace
+length (impedance) from socket to module, the greater the capacitance
+requirement to meet compliance tests.
+
+SIM Implementation on
+page 34
+
+PCB signal routing
+USB 2.0 / 3.0 — Route these signals over 90  differential lines on the
+PCB.
+I2C port — If supported, route these signals away from noise-sensitive
+signals on the PCB.
+PCM port — If supported, route these signals away from noise-sensitive
+signals on the PCB.
+
+Rev 7 Aug.16
+
+Proprietary and Confidential - Contents subject to change
+
+77
+
+Product Technical Specification & Customer Design Guidelines
+
+Table C-1: Hardware Integration Design Considerations (Continued)
+Suggestion
+
+Section where discussed
+
+EMI / ESD
+Investigate sources of localized interference early in the design cycle.
+
+Methods to Mitigate Decreased
+Rx Performance on page 44
+
+Provide ESD protection for the SIM connector at the exposed contact
+point (in particular, the CLK, VCC, IO, and RESET# lines).
+
+SIM Implementation on
+page 34
+
+Keep very low capacitance traces on the UIM_DATA and UIM_CLK
+signals.
+
+SIM Implementation on
+page 34
+
+To minimize noise leakage, establish a very good ground connection
+between the module and host.
+
+Ground Connection on page 43
+
+Route cables away from noise sources (for example, power supplies,
+LCD assemblies, etc.).
+
+Methods to Mitigate Decreased
+Rx Performance on page 44
+
+Shield high RF-emitting components of the host device (for example,
+main processor, parallel bus, etc.).
+
+Methods to Mitigate Decreased
+Rx Performance on page 44
+
+Use discrete filtering on low frequency lines to filter out unwanted highorder harmonic energy.
+
+Methods to Mitigate Decreased
+Rx Performance on page 44
+
+Use multi-layer PCBs to form shielding layers around high-speed clock
+traces.
+
+Methods to Mitigate Decreased
+Rx Performance on page 44
+
+Thermal
+Test to worst case operating conditions — temperature, voltage, and
+operation mode (transmitter on 100% duty cycle, maximum power).
+
+Thermal Considerations on
+page 64
+
+Use appropriate techniques to reduce module temperatures (for example,
+airflow, heat sinks, heat-relief tape, module placement, etc.).
+
+Thermal Considerations on
+page 64
+
+Host / Modem communication
+
+78
+
+Make sure the host USB driver supports remote wakeup, resume, and
+suspend operations, and serial port emulation.
+
+[4] AirCard / AirPrime USB
+Driver Developer’s Guide
+(Doc# 2130634)
+
+When no valid data is being sent, do not send SOF tokens from the host
+(causes unnecessary power consumption).
+
+[4] AirCard / AirPrime USB
+Driver Developer’s Guide
+(Doc# 2130634)
+
+Proprietary and Confidential - Contents subject to change
+
+4116235
+
+D
+
+D: Testing
+Note: All AirPrime embedded modules are factory-tested to ensure they
+conform to published product specifications.
+
+Developers of OEM devices integrating Sierra Wireless AirPrime
+embedded modules should include a series of test phases in their
+manufacturing process to make sure that their devices work properly
+with the embedded modules.
+Suggested phases include:
+•
+
+Acceptance Testing — Testing of modules when they are received
+from Sierra Wireless
+
+•
+
+Certification Testing — Testing of completed devices to obtain
+required certifications before beginning mass production
+
+•
+
+Production Testing — Testing of completed devices with the
+modules embedded
+
+•
+
+Quality Assurance Testing — Post-production
+
+AT Command Entry Timing
+Requirement
+Some AT commands require time to process before additional
+commands are entered. For example, the modem will return “OK”
+when it receives AT!DAFTMACT. However, if AT!DASBAND is received
+too soon after this, the modem will return an error.
+When building automated test scripts, ensure that sufficient delays
+are embedded where necessary to avoid these errors.
+
+Acceptance Testing
+Note: Acceptance testing is typically performed for each shipment received.
+
+When you receive a shipment from Sierra Wireless, you should make
+sure it is suitable before beginning production.
+From a random sampling of units, test that:
+
+Rev 7 Aug.16
+
+•
+
+Units are operational
+
+•
+
+Units are loaded with the correct firmware version
+
+Proprietary and Confidential - Contents subject to change
+
+79
+
+Product Technical Specification & Customer Design Guidelines
+
+Acceptance Test Requirements
+To perform the suggested tests, you require a test system in which to temporarily
+install the module, and you must be able to observe the test device’s LED
+indicator.
+
+Acceptance Test Procedure
+The following is a suggested acceptance testing procedure using Sierra Wireless’
+Skylight™ software:
+Note: You can perform
+these tests using appropriate AT commands.
+
+Test 1: Check Power-up and Initialization
+1. After installing the module, start the test system.
+2. Launch Skylight.
+3. Check the LED — If the LED is off, there is a problem with the module or with
+the connection to the LED.
+
+Test 2: Check Version Numbers
+1. From Skylight, select Help > About.
+2. Verify that the firmware version in the About window is correct.
+3. Close the About window.
+If the module fails either of these tests, or is not recognized by Skylight:
+1. Replace the module with one that is known to work correctly and repeat the
+tests.
+2. If the tests are successful, reinstall the original module and repeat the tests.
+If the module still does not work correctly, contact your account manager.
+
+Certification Testing
+Note: Typically, certification testing of your device with the integrated module is required
+one time only.
+
+The AirPrime embedded module has been certified as described in Regulatory
+Compliance and Industry Certifications on page 67.
+When you produce a host device with a Sierra Wireless AirPrime embedded
+module, you must obtain certifications for the final product from appropriate
+regulatory bodies in the jurisdictions where it will be distributed.
+The following are some of the regulatory bodies from which you may require
+certification — it is your responsibility to make sure that you obtain all necessary
+certifications for your product from these or other groups:
+
+80
+
+•
+
+FCC (Federal Communications Commission — www.fcc.gov)
+
+•
+
+Industry Canada (www.ic.gc.ca)
+
+Proprietary and Confidential - Contents subject to change
+
+4116235
+
+Testing
+
+•
+
+GCF (Global Certification Forum — www.globalcertificationforum.org) outside
+of North America
+
+•
+
+PTCRB (PCS Type Certification Review Board — www.ptcrb.com) in North
+America
+
+Production Testing
+Note: Production testing typically continues for the life of the product.
+
+Production testing ensures that, for each assembled device, the module is
+installed correctly (I / O signals are passed between the host and module), and the
+antenna is connected and performing to specifications (RF tests).
+Typical items to test include:
+•
+
+Host connectivity
+
+•
+
+Baseband (host / module connectors)
+
+•
+
+RF assembly (Tx and / or Rx, as appropriate)
+
+•
+
+Network availability
+
+•
+
+Host / device configuration issues
+
+Note: The number and types of tests to perform are your decision — the tests listed in this
+section are guidelines only. Make sure that the tests you perform exercise functionality to
+the degree that your situation requires.
+
+Use an appropriate test station for your testing environment (see Acceptance Test
+Requirements on page 80 for suggestions) and use AT commands to control the
+integrated module.
+Note: Your test location must be protected from ESD to avoid interference with the module
+and antenna(s), assuming that your test computer is in a disassembled state.
+Also, consider using an RF shielding box — local government regulations may prohibit
+unauthorized transmissions.
+
+Functional Production Test
+This section presents a suggested procedure for performing a basic manual
+functional test on a laboratory bench using an EM7430 Embedded Module and a
+hardware development kit. When you have become familiar with the testing
+method, use it to develop your own automated production testing procedures.
+
+Suggested Production Tests
+Consider the following tests when you design your production test procedures for
+devices with the AirPrime module installed.
+
+Rev 7 Aug.16
+
+•
+
+Visual check of the module’s connectors and RF assemblies
+
+•
+
+Module is operational
+
+Proprietary and Confidential - Contents subject to change
+
+81
+
+Product Technical Specification & Customer Design Guidelines
+
+•
+
+USB connection is functional
+
+•
+
+LED is functional
+
+•
+
+Power on / off
+
+•
+
+Firmware revision check
+
+•
+
+Rx tests on main and auxiliary paths
+
+•
+
+Tx test
+
+Production Test Procedure
+The following is a suggested test plan — you must decide which tests are
+appropriate for your product. You may wish to add additional tests that more fully
+exercise the capabilities of your product.
+Using an appropriate Dev Kit-based test station, and referring to the appropriate
+AT command references:
+1. Visually inspect the module’s connectors and RF assemblies for obvious
+defects before installing it in the test station.
+2. Ensure that the module is turned off before beginning your tests — Drive
+Full_Card_Power_Off# low or leave floating.
+3. If using Linux, determine if any USB devices are currently connected to the
+computer:
+a. Open a shell window and enter the command ls / dev / tty / USB*.
+b. Record the ttyUSBn values that are returned; these are the currently
+connected USB devices. If the command returns “no such file or
+directory”, there are no devices currently connected.
+4. Test Full_Card_Power_Off# — Turn on the module by driving Full_Card_Power_Off# high.
+5. Test USB functionality — Check for USB enumeration.
+· (Windows systems) The Device Manager shows the device under Network
+adapters. For example:
+
+· (Linux systems) Enter the command ls / dev / tty / USB* and then record and
+compare the results with those from Step 3. If there are any new ttyUSBn
+devices, then the modem has enumerated successfully. (The AT port is the
+last new device.)
+6. Make sure your modem is connected and running, and then establish contact
+with the module:
+· Windows systems: Use a terminal emulation / communications program
+such as Microsoft HyperTerminal® to connect to the Sierra Wireless modem
+(see listings in Step 5):
+a. Start HyperTerminal.
+
+82
+
+Proprietary and Confidential - Contents subject to change
+
+4116235
+
+Testing
+
+b. Select File > Connection Description. The Connection Description dialog
+box appears.
+i. Type Sierra in the Name box and click OK. The Connect To dialog box
+appears.
+ii. Click OK without changing any of the displayed information. The
+Connect dialog box appears.
+iii. Click Cancel.
+iv. Type ATZ in the HyperTerminal window. If the connection is established, the message OK appears.
+· Linux systems: Use a terminal emulation / communications program such as
+minicom to connect over the device handle for AT commands (see listings
+in Step 5):
+
+Note: If necessary, use
+AT E1 to enable echo.
+
+Note: If the command
+“minicom” is not found,
+then use a different
+program, or download
+minicom and repeat this
+step. See Downloading
+and Configuring minicom
+for Linux Systems on
+page 84 for details.
+
+i. Start minicom:
+·
+First use of the modem: From the command line, type
+minicom -s. (The ‘-s’ switch shows the configuration menu.)
+·
+Subsequent uses: From the command line, type minicom. (The
+‘-s’ switch is assumed.)
+The minicom configuration details appear and the message OK
+appears when the connection is established.
+
+7. Display the firmware version:
+· AT+GMR
+8. Test the LED — Set the LED in blinking mode using this command, then
+visually verify that the LED turns off and on:
+· AT!LDTEST=0,0 (LED on)
+· AT!LDTEST=0,1 (LED off)
+9. Unlock the extended AT command set. (Note: Use AT!ENTERCND? to check
+command syntax, which is SKU-dependent.):
+· AT!ENTERCND=”<password>”
+10. Put the module in diagnostic / factory test mode:
+· AT!DAFTMACT
+11. Communicate with the SIM using +CPIN or +CIMI.
+When performing RF tests, use a test platform as described in Suggested
+Testing Equipment on page 91.
+12. Test RF transmission, if desired:
+· (UMTS) See UMTS (WCDMA) RF Transmission Path Test on page 85.
+· (LTE) To test the LTE transmission path, use a call box.
+
+Rev 7 Aug.16
+
+Proprietary and Confidential - Contents subject to change
+
+83
+
+Product Technical Specification & Customer Design Guidelines
+
+13. Test RF reception, if desired:
+· (UMTS) See UMTS (WCDMA) RF Receive Path Test on page 86.
+· (LTE) See LTE RF Receive Path Test on page 88.
+14. Test standalone GNSS functionality — See GNSS RF Receive Path Test on
+page 90.
+15. Drive Full_Card_Power_Off# low (or leave floating) and confirm that the
+module powers down:
+· Windows systems — The Sierra Wireless items under the Ports (COM &
+LPT) entry in Device Manager disappear as the module powers off.
+· Linux systems — Enter the command ls / dev / tty / USB*. The devices
+enumerated in Step 5 will not appear after the module powers off.
+
+Downloading and Configuring minicom for Linux Systems
+Note: This procedure is for Ubuntu systems. If you are using a different Linux distribution,
+use the appropriate commands for your system to download minicom.
+
+To download and configure minicom in a Ubuntu system:
+Note: To install minicom,
+you must have root
+access, or be included in
+the sudoers list.
+
+1. Download and install minicom — enter the following command:
+sudo apt-get install minicom
+2. When prompted, enter your user password to begin the download and installation. When minicom is installed, the shell prompt appears.
+3. Configure minicom to communicate with your modem:
+a. Start minicom with the following command:
+minicom -s
+4. Use the down-arrow key to select the Serial port setup option.
+5. Refer to Step 5 on page 82 to identify the device file handle ( / dev / ttyUSBn)
+used for AT commands.
+6. Indicate the file handle to use for AT commands — Enter A and then replace
+the serial device string with the AT file handle.
+7. Press Enter twice.
+8. Use the down-arrow key to select Save setup as dfl.
+9. Select Exit.
+
+84
+
+Proprietary and Confidential - Contents subject to change
+
+4116235
+
+Testing
+
+UMTS (WCDMA) RF Transmission Path Test
+Note: This procedure segment is performed in Step 12 of the Production Test Procedure
+on page 82.
+
+The suggested test procedure that follows uses the parameters in Table 4-1.
+
+Table 4-1: Test Settings — UMTS Transmission Path
+Band
+
+Band ID
+
+Tx Channel a
+
+2100 MHz
+
+Band 1
+
+9
+
+9750
+
+850 MHz
+
+Band 5
+
+22
+
+4182
+
+900 MHz
+
+Band 8
+
+29
+
+2787
+
+1700 MHz
+
+Band 9
+
+31
+
+8837
+
+800 MHz
+
+Band 19 75
+
+337
+
+a. Channel values shown are at the center of the
+corresponding bands.
+
+To test the DUT’s transmitter path:
+Note: This procedure
+describes steps using the
+"Power Meter: Gigatronics
+8651A” (with Option 12
+and Power Sensor
+80701A).
+
+1. Set up the power meter:
+
+a. Make sure the meter has been given sufficient time to warm up, if
+necessary, to enable it to take accurate measurements.
+b. Zero-calibrate the meter.
+c. Enable MAP mode.
+2. Prepare the DUT using the following AT commands:
+a. AT!ENTERCND=”<password>” (Unlock extended AT command set.)
+b. AT!DAFTMACT
+(Enter test mode.)
+c. AT!DASBAND=<bandValue> (Set frequency band.)
+·
+See Table 4-1 on page 85 for appropriate <bandValue> values
+d. AT!DASCHAN=<channel>
+(Set modem channel)
+·
+See Table 4-1 on page 85 for appropriate <channel> values
+e. AT!DASTXON
+f.
+
+Rev 7 Aug.16
+
+AT!DAWSTXCW=0
+AT!DASPDM=2, 75
+
+(Turns on the transmit path.)
+(Use a modulated carrier.)
+(Set the power level. Repeat command with
+
+Proprietary and Confidential - Contents subject to change
+
+85
+
+Product Technical Specification & Customer Design Guidelines
+
+different offsets until desired Tx power is obtained.)
+AT!DAWSPARANGE=3 (Set to high PA gain state.)
+g. Offset the tracking (If necessary, repeat with different offsets until the
+desired frequency is obtained.)
+AT!DASPDM=4,35100
+
+h. Take the measurement.
+i.
+
+AT!DASTXOFF
+
+(Turn off the transmitter.)
+
+3. Test limits — Run ten or more good DUTs through this test procedure to
+obtain a nominal output power value.
+· Apply a tolerance of 5 to 6 dB to each measurement (assuming a good
+setup design).
+· Monitor these limits during mass-production ramp-up to determine if further
+adjustments are needed.
+Note: The module has a nominal output power of +23 dBm 1 dB in WCDMA mode.
+However, the value measured by the power meter is significantly influenced (beyond the
+stated 1 dB output power tolerance) by the test setup (host RF cabling loss, antenna
+efficiency and pattern, test antenna efficiency and pattern, and choice of shield box).
+
+Note: When doing the same test over the air in an RF chamber, values are likely to be
+significantly lower.
+
+UMTS (WCDMA) RF Receive Path Test
+Note: This procedure segment is performed in Step 13 of Production Test Procedure on
+page 82.
+
+The suggested test procedure that follows uses the parameters in Table 4-2.
+
+Table 4-2: Test Settings — UMTS Receive Path
+Band #
+
+Frequency a (MHz)
+
+Band ID
+
+Rx Channel b
+
+2100 MHz
+
+Band 1
+
+2141.20
+
+9
+
+9750
+
+850 MHz
+
+Band 5
+
+882.60
+
+22
+
+4182
+
+900 MHz
+
+Band 8
+
+948.60
+
+29
+
+2787
+
+1700 MHz
+
+Band 9
+
+1863.60
+
+31
+
+8837
+
+800 MHz
+
+Band 19 883.70
+
+75
+
+337
+
+a. Receive frequencies shown are 1.2 MHz offset from center
+b. Channel values shown are at the center of the corresponding bands.
+
+86
+
+Proprietary and Confidential - Contents subject to change
+
+4116235
+
+Testing
+
+To test the DUT’s receive path:
+Note: This procedure
+describes steps using the
+Agilent 8648C signal
+generator — the Rohde &
+Schwarz SML03 is shown
+for reference only.
+
+1. Set up the signal generator:
+
+a. Set the amplitude to:
+·
+-80 dBm
+b. Set the frequency for the band being tested. See Table 4-2 on page 86 for
+frequency values.
+2. Set up the DUT:
+a. AT!ENTERCND=”<password>” (Unlock extended AT command set.)
+b. AT!DAFTMACT (Put modem into factory test mode.)
+c. AT!DASBAND=<band> (Set frequency band.)
+·
+See Table 4-2 on page 86 for <band> values
+d. AT!DASCHAN=<channel> (Set modem channel)
+·
+See Table 4-2 on page 86 for <channel> values
+e. AT!DASLNAGAIN=0 (Set the LNA to maximum gain.)
+f.
+
+AT!DAWGAVGAGC=9400,0 (For PCS1900, channel 9400 as an example.)
+
+The returned value is the RSSI in dBm.
+3. Test limits — Run ten or more good DUTs through this test procedure to
+obtain a nominal received power value.
+· Apply a tolerance of 5 to 6 dB to each measurement (assuming a good
+setup design).
+· Make sure the measurement is made at a high enough level that it is not
+influenced by DUT-generated and ambient noise.
+· The Signal Generator power level can be adjusted and new limits found if
+the radiated test needs greater signal strength.
+· Monitor these limits during mass-production ramp-up to determine if further
+adjustments are needed.
+Note: The value measured from the DUT is significantly influenced by the test setup and
+DUT design (host RF cabling loss, antenna efficiency and pattern, test antenna efficiency
+and pattern, and choice of shield box).
+
+Rev 7 Aug.16
+
+Proprietary and Confidential - Contents subject to change
+
+87
+
+Product Technical Specification & Customer Design Guidelines
+
+4. Test diversity paths:
+a. Set up the signal generator as in Step 1.
+Note: Setup of the DUT is
+the same as in Step 2,
+except for a change to
+AT!DAWGAVGAGC and
+the addition of
+AT!DAWSSCHAIN.
+
+b. Set up the DUT:
+i. AT!ENTERCND=”<password>” (Unlock extended AT command set.)
+ii. AT!DAFTMACT (Put modem into factory test mode.)
+iii. AT!DASBAND=<band> (Set frequency band.)
+·
+See Table 4-2 on page 86 for <band> values
+iv. AT!DAWSSCHAIN=1 (Enable the secondary chain.)
+v. AT!DASCHAN=<channel> (Set modem channel)
+·
+See Table 4-2 on page 86 for <channel> values
+vi. AT!DASLNAGAIN=0 (Set the LNA to maximum gain.)
+vii.AT!DAWGAVGAGC=9400,0,1 (‘1’ indicates the diversity path is used.)
+c. Test the limits as in Step 3.
+
+LTE RF Receive Path Test
+Note: This procedure segment is performed in Step 13 of the Production Test Procedure
+on page 82.
+
+The suggested test procedure that follows uses the parameters in Table 4-3.
+
+Table 4-3: Test Settings — LTE Receive Path
+Band #
+
+Frequency a (MHz)
+
+Band ID
+
+Rx Channel b
+
+2100 MHz
+
+Band 1
+
+2142.00
+
+34
+
+18300
+
+1800 MHz
+
+Band 3
+
+1844.50
+
+44
+
+19575
+
+850 MHz
+
+Band 5
+
+883.50
+
+45
+
+20525
+
+2600 MHz
+
+Band 7
+
+2657.00
+
+35
+
+21100
+
+900 MHz
+
+Band 8
+
+944.50
+
+47
+
+21625
+
+850 MHz
+
+Band 18
+
+869.50
+
+54
+
+23925
+
+850 MHz
+
+Band 19
+
+884.50
+
+55
+
+24075
+
+1500 MHz
+
+Band 21
+
+1505.40
+
+57
+
+24525
+
+700 MHz
+
+Band 28
+
+782.50
+
+64
+
+27435
+
+2600 MHz
+
+Band 38
+
+2597.00
+
+38
+
+38000
+
+1900 MHz
+
+Band 39
+
+1902.00
+
+74
+
+38450
+
+2300 MHz
+
+Band 40
+
+2352.00
+
+39
+
+39150
+
+2500 MHz
+
+Band 41
+
+2595.00
+
+76
+
+40620
+
+a. Receive frequencies shown are 2 MHz offset from center
+b. Channel values shown are at the center of the corresponding bands.
+
+88
+
+Proprietary and Confidential - Contents subject to change
+
+4116235
+
+Testing
+
+To test the DUT’s receive path (or diversity path, while connected to the diversity
+antenna):
+Note: This procedure
+describes steps using the
+Agilent 8648C signal
+generator — the Rohde &
+Schwarz SML03 is shown
+for reference only.
+
+1. Set up the signal generator:
+
+a. Set the amplitude to -70 dBm
+b. Set the frequency for the band being tested. See Table 4-3 for frequency
+values.
+2. Set up the DUT:
+a. AT!ENTERCND=”<password>” (Unlock extended AT command set.)
+b. AT!DAFTMACT (Put modem into factory test mode.)
+c. AT!DASBAND=<band> (Set frequency band.)
+·
+See Table 4-3 for <band> values
+d. AT!DALSRXBW=2 (Set Rx LTE bandwidth to 5MHz.)
+e. AT!DALSTXBW=2 (Set Tx LTE bandwidth to 5MHz.)
+f. AT!DASCHAN=<channel> (Set modem channel)
+·
+See Table 4-3 for <channel> values
+g. AT!DALGAVGAGC=<channel>,0 (Get averaged Rx AGC)
+·
+See Table 4-3 for <channel> values
+3. Test limits — Run ten or more good DUTs through this test procedure to
+obtain a nominal received power value.
+· Apply a tolerance of 5 to 6 dB to each measurement (assuming a good
+setup design).
+· Make sure the measurement is made at a high enough level that it is not
+influenced by DUT-generated and ambient noise.
+· The Signal Generator power level can be adjusted and new limits found if
+the radiated test needs greater signal strength.
+· Monitor these limits during mass-production ramp-up to determine if further
+adjustments are needed.
+Note: The value measured from the DUT is significantly influenced by the test setup and
+DUT design (host RF cabling loss, antenna efficiency and pattern, test antenna efficiency
+and pattern, and choice of shield box).
+
+Rev 7 Aug.16
+
+Proprietary and Confidential - Contents subject to change
+
+89
+
+Product Technical Specification & Customer Design Guidelines
+
+GNSS RF Receive Path Test
+The GNSS receive path uses either the dedicated GNSS connector or the shared
+Diversity / MIMO / GNSS connector.
+To test the GNSS receive path:
+1. Inject a carrier signal at -110dBm, frequency 1575.52 MHz into the GNSS Rx
+path at the connector. (Note that this frequency is 100 kHz higher than the
+actual GPS L1 center frequency.)
+2. Test the signal carrier-to-noise level at the GNSS receiver:
+a. AT!ENTERCND=”<password>” (Unlock extended AT command set.)
+b. AT!DAFTMACT (Put modem into factory test mode.)
+c. AT!DACGPSTESTMODE=1 (Start CGPS diagnostic task.)
+d. AT!DACGPSSTANDALONE=1 (Enter standalone RF mode.)
+e. AT!DACGPSMASKON (Enable log mask.)
+f.
+
+AT!DACGPSCTON (Return signal-to-noise and frequency measurements.)
+
+g. Repeat AT!DACGPSCTON five to ten times to ensure the measurements
+are repeatable and stable.
+3. Leave the RF connection to the embedded module intact, and turn off the
+signal generator.
+4. Take several more !DACGPSCTON readings. This will demonstrate a 'bad'
+signal in order to set limits for testing, if needed. This frequency offset should
+fall outside of the guidelines in the note below, which indicates that the CtoN
+result is invalid.
+5. (Optional) Turn the signal generator on again, and reduce the level to 120dBm. Take more !DACGPSCTON readings and use these as a reference
+for what a marginal / poor signal would be.
+Note: The response to AT!DACGPSCTON for a good connection should show CtoN within
+58 +/- 5dB and Freq (frequency offset) within 100000 Hz +/- 5000 Hz .
+
+Quality Assurance Testing
+Note: QA is an ongoing
+process based on random
+samples from a finished
+batch of devices.
+
+90
+
+The quality assurance tests that you perform on your finished products should be
+designed to verify the performance and quality of your devices.
+The following are some testing suggestions that can confirm that the antenna is
+interfaced properly, and that the RF module is calibrated and performs to
+specifications:
+•
+
+Module registration on cellular networks
+
+•
+
+Power consumption
+
+•
+
+Originate and terminate data and voice (if applicable) calls
+
+•
+
+Cell hand-off
+
+•
+
+Transmitter and receiver tests
+
+•
+
+FER (Frame Error Rate) as an indicator of receiver sensitivity / performance
+
+Proprietary and Confidential - Contents subject to change
+
+4116235
+
+Testing
+
+•
+
+Channel and average power measurements to verify that the device is transmitting within product specifications
+
+•
+
+RF sensitivity tests
+
+•
+
+RF sensitivity testing — BER / BLER for different bands and modes
+
+•
+
+Transmitter and receiver tests (based on relevant sections of the 3GPP
+TS51010 and 3GPP 34121 documents)
+
+Suggested Testing Equipment
+To perform production and post-production tests, you will require appropriate
+testing equipment. A test computer can be used to coordinate testing between the
+integrated module (on the development kit or host) and the measurement
+equipment, usually with GPIB connections. The suggested setup includes a
+power meter to test RF output power and a signal generator to evaluate the
+receiver.
+
+Testing Assistance Provided by Sierra
+Wireless
+Extended AT commands have been implemented to assist with performing FTA
+GCF tests and portions of CE Mark tests requiring radio module access. These
+are documented in the [2] AirPrime EM74xx / MC74xx AT Command Reference
+(Doc# 4117727).
+Sierra Wireless offers optional professional services based assistance to OEMs
+with regulatory approvals.
+
+IOT/Operator Testing
+Interoperability and Operator/Carrier testing of the finished system is the
+responsibility of the OEM. The test process will be determined with the chosen
+network operator(s) and will be dependent upon your business relationship with
+them, as well as the product's application and sales channel strategy.
+Sierra Wireless offers assistance to OEMs with the testing process, if required.
+
+Rev 7 Aug.16
+
+Proprietary and Confidential - Contents subject to change
+
+91
+
+Product Technical Specification & Customer Design Guidelines
+
+Extended AT Commands for Testing
+Sierra Wireless provides the [2] AirPrime EM74xx / MC74xx AT Command
+Reference (Doc# 4117727), which describes proprietary AT commands that may
+help in hardware integration design and testing (these commands are NOT
+intended for use by end users).
+Some commands from this document that may be useful for hardware integration
+are listed in Table 4-4 on page 92.
+
+Table 4-4: Extended AT Commands
+Command
+
+Description
+
+Password commands
+!ENTERCND
+
+Enable access to password-protected commands
+
+!SETCND
+
+Set AT command password
+
+Modem reset and status commands
+!RESET
+
+Reset the modem
+
+!GSTATUS
+
+Return the operation status of the modem (mode, band,
+channel, and so on)
+
+Diagnostic commands
+!BAND
+
+Select a set of frequency bands or reports current selection
+
+Test commands
+
+92
+
+!DAFTMACT
+
+Put the modem into FTM (Factory Test Mode)
+
+!DAFTMDEACT
+
+Put the modem into online mode
+
+!DALGAVGAGC
+
+Return averaged Rx AGC value (LTE)
+
+!DALGRXAGC
+
+Return Rx AGC value (LTE)
+
+!DALGTXAGC
+
+Return Tx AGC value and transmitter parameters (LTE)
+
+!DAOFFLINE
+
+Place modem offline
+
+!DASBAND
+
+Set the frequency band (UMTS)
+
+!DASCHAN
+
+Set the modem channel (frequency) (UMTS)
+
+!DASLNAGAIN
+
+Set the LNA (Low Noise Amplifier) gain state
+
+!DASPDM
+
+Set the PDM (Pulse Duration Modulation) value
+
+!DASTXOFF
+
+Turn off the Tx PA (Power Amplifier)
+
+!DASTXON
+
+Turn on the Tx PA (Power Amplifier)
+
+!DAWGAVGAGC
+
+Return averaged RX AGC value (WCDMA)
+
+!DAWGRXAGC
+
+Return the Rx AGC (Automatic Gain Control) value (UMTS)
+
+!DAWINFO
+
+Return WCDMA mode RF information
+
+Proprietary and Confidential - Contents subject to change
+
+4116235
+
+Testing
+
+Table 4-4: Extended AT Commands
+
+Rev 7 Aug.16
+
+Command
+
+Description
+
+!DAWSCONFIGRX
+
+Set the UMTS receiver to factory calibration settings
+
+!DAWSPARANGE
+
+Set the PA range state machine (UMTS)
+
+!DAWSCHAINTCM
+
+Place receive chain in test call mode (WCDMA)
+
+!DAWSSCHAIN
+
+Enable secondary receive chain (WCDMA)
+
+!DAWSTXCW
+
+Set the waveform used by the transmitter (UMTS)
+
+!DAWSTXPWR
+
+Set desired Tx power level (WCDMA)
+
+Proprietary and Confidential - Contents subject to change
+
+93
+
+Product Technical Specification & Customer Design Guidelines
+
+94
+
+Proprietary and Confidential - Contents subject to change
+
+4116235
+
+E
+
+E: Packaging
+Sierra Wireless AirPrime Embedded Modules are shipped in sealed
+boxes. The standard packaging (see Figure 5-1), contains a single
+tray with a capacity of 100 modules . (Note that some SKUs may have
+custom packaging — contact Sierra Wireless for SKU-specific details.)
+In the standard packaging, Embedded Modules are inserted, system
+connector first, into the bottom portion (T1) of a two-part tray. all
+facing the same direction. This allows the top edge of each
+Embedded Module to contact the top of the triangular features in the
+top portion (T2) of the tray (see Detail A).
+The top and bottom portions of the tray snap together at the four
+connection points.
+Triangular recesses hold top
+edges of modules
+System connector
+
+Tray connection points
+Detail A
+
+See Detail A
+
+Figure 5-1: Device Placement in Module Tray
+
+Rev 7 Aug.16
+
+Proprietary and Confidential - Contents subject to change
+
+95
+
+Product Technical Specification & Customer Design Guidelines
+
+The tray cover is secured to the tray base with ESD-safe tape (EP1) at the
+locations indicated. The tray is placed in a manufacturing box(B1), sealed with a
+security tape (P1), a manufacturing label (L3) is placed on the bottom-right
+corner, above the security tape, and if required a label (L4) is applied beside the
+manufacturing label. (See Figure 5-2.)
+
+If required
+(SKU-specific)
+
+Figure 5-2: Shipping Package
+
+96
+
+Proprietary and Confidential - Contents subject to change
+
+4116235
+
+F
+
+F: References
+This guide deals specifically with hardware integration issues that are
+unique to AirPrime embedded modules.
+
+Sierra Wireless Documents
+The Sierra Wireless documents listed below are available from
+www.sierrawireless.com. For additional documents describing
+embedded module design, usage, and integration issues, contact
+your Sierra Wireless account representative.
+
+Command Documents
+[1] AT Command Set for User Equipment (UE) (Release 6)
+(Doc# 3GPP TS 27.007)
+[2] AirPrime EM74xx / MC74xx AT Command Reference
+(Doc# 4117727)
+
+Other Sierra Documents
+[3] M.2 Dev Kit Welcome Letter (Doc# 2400323)
+[4] AirCard / AirPrime USB Driver Developer’s Guide (Doc# 2130634)
+
+Industry / Other Documents
+The following non-Sierra Wireless references are not included in your
+documentation package:
+[5] FCC Regulations - Part 15 - Radio Frequency Devices
+[6] IEC-61000-4-2 level 3 (Electrostatic Discharge Immunity Test)
+[7] Mobile Station (MS) Conformance Specification; Part 4:
+Subscriber Interface Module (Doc# 3GPP TS 11.10-4)
+[8] PCI Express NGFF (M.2) Electromechanical Specification
+Revision 1.0
+[9] Universal Serial Bus Specification, Rev 2.0
+[10] Universal Serial Bus Specification, Rev 3.0
+[11] JESD22-A114-B
+[12] JESD22-C101
+[13]MIPI Alliance Specification for RF Front-End Control Interface
+
+Rev 7 Aug.16
+
+Proprietary and Confidential - Contents subject to change
+
+97
+
+Product Technical Specification & Customer Design Guidelines
+
+98
+
+Proprietary and Confidential - Contents subject to change
+
+4116235
+
+G
+
+G: LTE CA Bandwidth Support
+Note: The tables in this appendix are excerpted from 3GPP TS 36.521-1
+v13.0.1.
+
+Table G-1: LTE CA Inter-band Bandwidth Support
+Note: This table is excerpted from 3GPP TS 36.521-1 v13.0.1, Table 5.4.2A.1-2.
+
+5
+[MHz]
+
+10
+[MHz]
+
+15
+[MHz]
+
+20
+[MHz]
+
+Max
+aggregated
+BW [MHz]
+
+Bandwidth
+combination
+set
+
+1
+
+Y
+
+Y
+
+Y
+
+Y
+
+30
+
+0
+
+8
+
+Y
+
+Y
+
+1
+
+Y
+
+Y
+
+20
+
+1
+
+8
+
+Y
+
+Y
+
+1
+
+Y
+
+Y
+
+Y
+
+Y
+
+1
+
+Y
+
+18
+
+E-UTRA CA
+configuration
+
+E-UTRA
+bands
+
+CA_1A-8A
+
+CA_1A-19A
+
+CA_1A-21A
+
+CA_3A-5A
+
+3
+[MHz]
+
+Y
+
+Y
+
+30
+
+2
+
+Y
+
+Y
+
+Y
+
+35
+
+0
+
+Y
+
+Y
+
+Y
+
+1
+
+Y
+
+Y
+
+20
+
+1
+
+18
+
+Y
+
+Y
+
+1
+
+Y
+
+Y
+
+Y
+
+Y
+
+35
+
+0
+
+19
+
+Y
+
+Y
+
+Y
+
+1
+
+Y
+
+Y
+
+Y
+
+Y
+
+35
+
+0
+
+21
+
+Y
+
+Y
+
+Y
+
+Y
+
+Y
+
+Y
+
+30
+
+0
+
+20
+
+1
+
+8
+CA_1A-18A
+
+1.4
+[MHz]
+
+Y
+
+3
+5
+
+Y
+
+3
+
+CA_3A-7A
+
+Y
+
+5
+
+Y
+
+Y
+
+3
+
+Y
+
+Y
+
+5
+
+Y
+
+Y
+
+3
+
+Y
+
+7
+
+Rev 7 Aug.16
+
+Y
+
+Y
+
+Y
+
+30
+
+2
+
+Y
+
+Y
+
+Y
+
+40
+
+0
+
+Y
+
+Y
+
+Y
+
+Proprietary and Confidential - Contents subject to change
+
+99
+
+Product Technical Specification & Customer Design Guidelines
+
+Table G-1: LTE CA Inter-band Bandwidth Support (Continued)
+Note: This table is excerpted from 3GPP TS 36.521-1 v13.0.1, Table 5.4.2A.1-2.
+
+5
+[MHz]
+
+10
+[MHz]
+
+15
+[MHz]
+
+20
+[MHz]
+
+Max
+aggregated
+BW [MHz]
+
+Bandwidth
+combination
+set
+
+3
+
+Y
+
+Y
+
+Y
+
+Y
+
+35
+
+0
+
+19
+
+Y
+
+Y
+
+Y
+
+3
+
+Y
+
+Y
+
+Y
+
+Y
+
+40
+
+0
+
+28
+
+Y
+
+Y
+
+Y
+
+Y
+
+Y
+
+Y
+
+30
+
+0
+
+35
+
+0
+
+30
+
+0
+
+E-UTRA CA
+configuration
+
+E-UTRA
+bands
+
+CA_3A-19A
+
+CA_3A-28A
+
+CA_5A-7A
+
+1.4
+[MHz]
+
+5
+
+Y
+
+3
+[MHz]
+
+Y
+
+7
+CA_7A-28A
+
+CA_19A-21A
+
+Y
+
+Y
+
+Y
+Y
+
+7
+
+Y
+
+Y
+
+Y
+
+28
+
+Y
+
+Y
+
+Y
+
+19
+
+Y
+
+Y
+
+Y
+
+21
+
+Y
+
+Y
+
+Y
+
+Table G-2: LTE CA Intra-band (Contiguous) Bandwidth Support
+Note: This table is excerpted from 3GPP TS 36.521-1 v13.0.1, Table 5.4.2A.1-1.
+Component carriers in order of
+increasing carrier frequency
+
+E-UTRA CA
+configuration
+
+Channel
+bandwidths for
+carrier [MHz]
+
+Channel
+bandwidths for
+carrier [MHz]
+
+Max
+aggregated
+BW [MHz]
+
+Bandwidth
+combination
+set
+
+CA_7C
+
+15
+
+15
+
+40
+
+0
+
+20
+
+20
+
+10
+
+20
+
+40
+
+1
+
+15
+
+15, 20
+
+20
+
+10, 15, 20
+
+15
+
+15
+
+40
+
+0
+
+20
+
+20
+
+5, 10, 15
+
+20
+
+35
+
+0
+
+20
+
+5, 10, 15
+
+CA_38C
+
+CA_39C
+
+100
+
+Proprietary and Confidential - Contents subject to change
+
+4116235
+
+LTE CA Bandwidth Support
+
+Table G-2: LTE CA Intra-band (Contiguous) Bandwidth Support
+Note: This table is excerpted from 3GPP TS 36.521-1 v13.0.1, Table 5.4.2A.1-1.
+Component carriers in order of
+increasing carrier frequency
+
+E-UTRA CA
+configuration
+
+Channel
+bandwidths for
+carrier [MHz]
+
+Channel
+bandwidths for
+carrier [MHz]
+
+Max
+aggregated
+BW [MHz]
+
+Bandwidth
+combination
+set
+
+CA_40C
+
+10
+
+20
+
+40
+
+0
+
+15
+
+15
+
+20
+
+10, 20
+
+10, 15
+
+20
+
+40
+
+1
+
+15
+
+15
+
+20
+
+10, 15, 20
+
+10
+
+20
+
+40
+
+0
+
+15
+
+15, 20
+
+20
+
+10, 15, 20
+
+5, 10
+
+20
+
+40
+
+1
+
+15
+
+15, 20
+
+20
+
+5, 10, 15, 20
+
+CA_41C
+
+Table G-3: LTE CA Intra-band (Non-contiguous) Bandwidth Support
+Note: This table is excerpted from 3GPP TS 36.521-1 v13.0.1, Table 5.4.2A.1-3.
+Component carriers in order of
+increasing carrier frequency
+
+Rev 7 Aug.16
+
+E-UTRA CA
+configuration
+
+Channel
+bandwidths for
+carrier [MHz]
+
+Channel
+bandwidths for
+carrier [MHz]
+
+Max
+aggregated
+BW [MHz]
+
+Bandwidth
+combination
+set
+
+CA_41A-41A
+
+10, 15, 20
+
+10, 15, 20
+
+40
+
+0
+
+5, 10, 15, 20
+
+5, 10, 15, 20
+
+40
+
+1
+
+Proprietary and Confidential - Contents subject to change
+
+101
+
+Product Technical Specification & Customer Design Guidelines
+
+102
+
+Proprietary and Confidential - Contents subject to change
+
+4116235
+
+H
+
+H: Acronyms
+Table H-1: Acronyms and Definitions
+Acronym or term
+
+Definition
+
+3GPP
+
+3rd Generation Partnership Project
+
+8PSK
+
+Octagonal Phase Shift Keying
+
+AGC
+
+Automatic Gain Control
+
+A-GPS
+
+Assisted GPS
+
+API
+
+Application Programming Interface
+
+BeiDou
+
+BeiDou Navigation Satellite System
+A Chinese system that uses a series of satellites in geostationary and middle
+earth orbits to provide navigational data.
+
+BER
+
+Bit Error Rate — A measure of receive sensitivity
+
+BLER
+
+Block Error Rate
+
+bluetooth
+
+Wireless protocol for data exchange over short distances
+
+CQI
+
+Channel Quality Indication
+
+COM
+
+Communication port
+
+CS
+
+Circuit-switched
+
+CSG
+
+Closed Subscriber Group
+
+CW
+
+Continuous waveform
+
+dB
+
+Decibel = 10 x log10 (P1 / P2)
+P1 is calculated power; P2 is reference power
+Decibel = 20 x log10 (V1 / V2)
+V1 is calculated voltage, V2 is reference voltage
+
+Rev 7 Aug.16
+
+dBm
+
+A logarithmic (base 10) measure of relative power (dB for decibels); relative to
+milliwatts (m). A dBm value will be 30 units (1000 times) larger (less negative)
+than a dBW value, because of the difference in scale (milliwatts vs. watts).
+
+DC-HSPA+
+
+Dual Carrier HSPA+
+
+DCS
+
+Digital Cellular System
+A cellular communication infrastructure that uses the 1.8 GHz radio spectrum.
+
+DL
+
+Downlink (network to mobile)
+
+DRX
+
+Discontinuous Reception
+
+DSM
+
+Distributed Shared Memory
+
+DUT
+
+Device Under Test
+
+eICIC
+
+Enhanced Inter-Cell Interference Coordination
+
+Proprietary and Confidential - Contents subject to change
+
+103
+
+Product Technical Specification & Customer Design Guidelines
+
+Table H-1: Acronyms and Definitions (Continued)
+
+104
+
+Acronym or term
+
+Definition
+
+EIRP
+
+Effective (or Equivalent) Isotropic Radiated Power
+
+EMC
+
+Electromagnetic Compatibility
+
+EMI
+
+Electromagnetic Interference
+
+ERP
+
+Effective Radiated Power
+
+ESD
+
+Electrostatic Discharge
+
+FCC
+
+Federal Communications Commission
+The U.S. federal agency that is responsible for interstate and foreign
+communications. The FCC regulates commercial and private radio spectrum
+management, sets rates for communications services, determines standards for
+equipment, and controls broadcast licensing. Consult www.fcc.gov.
+
+FDD
+
+Frequency Division Duplexing
+
+FDMA
+
+Frequency Division Multiple Access
+
+feICIC
+
+Further Enhanced Inter-Cell Interference Coordination
+
+FER
+
+Frame Error Rate — A measure of receive sensitivity.
+
+firmware
+
+Software stored in ROM or EEPROM; essential programs that remain even when
+the system is turned off. Firmware is easier to change than hardware but more
+permanent than software stored on disk.
+
+FOTA
+
+Firmware Over The Air — Technology used to download firmware upgrades
+directly from the service provider, over the air.
+
+FOV
+
+Field Of View
+
+FSN
+
+Factory Serial Number—A unique serial number assigned to the mini card during
+manufacturing.
+
+Galileo
+
+A European system that uses a series of satellites in middle earth orbit to provide
+navigational data.
+
+GCF
+
+Global Certification Forum
+
+GLONASS
+
+Global Navigation Satellite System — A Russian system that uses a series of 24
+satellites in middle circular orbit to provide navigational data.
+
+GMSK
+
+Gaussian Minimum Shift Keying modulation
+
+GNSS
+
+Global Navigation Satellite Systems (GPS, GLONASS, BeiDou, and Galileo)
+
+GPS
+
+Global Positioning System
+An American system that uses a series of 24 satellites in middle circular orbit to
+provide navigational data.
+
+Host
+
+The device into which an embedded module is integrated
+
+HSDPA
+
+High Speed Downlink Packet Access
+
+HSPA+
+
+Enhanced HSPA, as defined in 3GPP Release 7 and beyond
+
+HSUPA
+
+High Speed Uplink Packet Access
+
+Proprietary and Confidential - Contents subject to change
+
+4116235
+
+Acronyms
+
+Table H-1: Acronyms and Definitions (Continued)
+Acronym or term
+
+Definition
+
+Hz
+
+Hertz = 1 cycle / second
+
+IC
+
+Industry Canada
+
+IF
+
+Intermediate Frequency
+
+IMEI
+
+International Mobile Equipment Identity
+
+IMS
+
+IP Multimedia Subsystem — Architectural framework for delivering IP multimedia
+services.
+
+inrush current
+
+Peak current drawn when a device is connected or powered on
+
+inter-RAT
+
+Radio Access Technology
+
+IOT
+
+Interoperability Testing
+
+IS
+
+Interim Standard.
+After receiving industry consensus, the TIA forwards the standard to ANSI for
+approval.
+
+ISIM
+
+IMS Subscriber Identity Module (Also referred to as a SIM card)
+
+LED
+
+Light Emitting Diode.
+A semiconductor diode that emits visible or infrared light.
+
+LHCP
+
+Left-Hand Circular Polarized
+
+LNA
+
+Low Noise Amplifier
+
+LPM
+
+Low Power Mode
+
+LPT
+
+Line Print Terminal
+
+LTE
+
+Long Term Evolution—a high-performance air interface for cellular mobile
+communication systems.
+
+MCS
+
+Modulation and Coding Scheme
+
+MHz
+
+Megahertz = 10e6 Hz
+
+MIMO
+
+Multiple Input Multiple Output—wireless antenna technology that uses multiple
+antennas at both transmitter and receiver side. This improves performance.
+
+NAS / AS
+
+Network Access Server
+
+NC
+
+No Connect
+
+NIC
+
+Network Interface Card
+
+NLIC
+
+Non-Linear Interference Cancellation
+
+NMEA
+
+National Marine Electronics Association
+
+OEM
+
+Original Equipment Manufacturer—a company that manufactures a product and
+sells it to a reseller.
+
+OFDMA
+
+Orthogonal Frequency Division Multiple Access
+
+Rev 7 Aug.16
+
+Proprietary and Confidential - Contents subject to change
+
+105
+
+Product Technical Specification & Customer Design Guidelines
+
+Table H-1: Acronyms and Definitions (Continued)
+
+106
+
+Acronym or term
+
+Definition
+
+OMA DM
+
+Open Mobile Alliance Device Management — A device management protocol.
+
+OTA
+
+‘Over the air’ (or radiated through the antenna)
+
+PA
+
+Power Amplifier
+
+packet
+
+A short, fixed-length block of data, including a header, that is transmitted as a unit
+in a communications network.
+
+PCB
+
+Printed Circuit Board
+
+PCC
+
+Primary Component Carrier
+
+PCS
+
+Personal Communication System
+A cellular communication infrastructure that uses the 1.9 GHz radio spectrum.
+
+PDN
+
+Packet Data Network
+
+PMI
+
+Pre-coding Matrix Index
+
+PSS
+
+Primary synchronisation signal
+
+PST
+
+Product Support Tools
+
+PTCRB
+
+PCS Type Certification Review Board
+
+QAM
+
+Quadrature Amplitude Modulation.
+This form of modulation uses amplitude, frequency, and phase to transfer data on
+the carrier wave.
+
+QMI
+
+Qualcomm MSM/Modem Interface
+
+QOS
+
+Quality of Service
+
+QPSK
+
+Quadrature Phase-Shift Keying
+
+QPST
+
+Qualcomm Product Support Tools
+
+RAT
+
+Radio Access Technology
+
+RF
+
+Radio Frequency
+
+RI
+
+Ring Indicator
+
+roaming
+
+A cellular subscriber is in an area where service is obtained from a cellular service
+provider that is not the subscriber’s provider.
+
+RSE
+
+Radiated Spurious Emissions
+
+RSSI
+
+Received Signal Strength Indication
+
+SCC
+
+Secondary Component Carrier
+
+SDK
+
+Software Development Kit
+
+SED
+
+Smart Error Detection
+
+Proprietary and Confidential - Contents subject to change
+
+4116235
+
+Acronyms
+
+Table H-1: Acronyms and Definitions (Continued)
+Acronym or term
+
+Definition
+
+Sensitivity
+(Audio)
+
+Measure of lowest power signal that the receiver can measure.
+
+Sensitivity (RF)
+
+Measure of lowest power signal at the receiver input that can provide a prescribed
+BER / BLER / SNR value at the receiver output.
+
+SG
+
+An LTE signaling interface for SMS (“SMS over SGs”)
+
+SIB
+
+System Information Block
+
+SIM
+
+Subscriber Identity Module. Also referred to as USIM or UICC.
+
+SIMO
+
+Single Input Multiple Output—smart antenna technology that uses a single
+antenna at the transmitter side and multiple antennas at the receiver side. This
+improves performance and security.
+
+SISO
+
+Single Input Single Output—antenna technology that uses a single antenna at
+both the transmitter side and the receiver side.
+
+SKU
+
+Stock Keeping Unit—identifies an inventory item: a unique code, consisting of
+numbers or letters and numbers, assigned to a product by a retailer for purposes
+of identification and inventory control.
+
+SMS
+
+Short Message Service.
+A feature that allows users of a wireless device on a wireless network to receive
+or transmit short electronic alphanumeric messages (up to 160 characters,
+depending on the service provider).
+
+S/N
+
+Signal-to-noise (ratio)
+
+SNR
+
+Signal-to-Noise Ratio
+
+SOF
+
+Start of Frame — A USB function.
+
+SSS
+
+Secondary synchronisation signal.
+
+SUPL
+
+Secure User Plane Location
+
+TDD
+
+Time Division Duplexing
+
+TD-SCDMA
+
+Time Division Synchronous Code Division Multiple Access
+
+TIA/EIA
+
+Telecommunications Industry Association / Electronics Industry Association.
+A standards setting trade organization, whose members provide communications
+and information technology products, systems, distribution services and
+professional services in the United States and around the world. Consult
+www.tiaonline.org.
+
+TIS
+
+Total Isotropic Sensitivity
+
+TRP
+
+Total Radiated Power
+
+UDK
+
+Universal Development Kit (for PCI Express Mini Cards)
+
+UE
+
+User Equipment
+
+UICC
+
+Universal Integrated Circuit Card (Also referred to as a SIM card.)
+
+UL
+
+Uplink (mobile to network)
+
+Rev 7 Aug.16
+
+Proprietary and Confidential - Contents subject to change
+
+107
+
+Product Technical Specification & Customer Design Guidelines
+
+Table H-1: Acronyms and Definitions (Continued)
+
+108
+
+Acronym or term
+
+Definition
+
+UMTS
+
+Universal Mobile Telecommunications System
+
+USB
+
+Universal Serial Bus
+
+USIM
+
+Universal Subscriber Identity Module (UMTS)
+
+VCC
+
+Supply voltage
+
+VSWR
+
+Voltage Standing Wave Ratio
+
+WAN
+
+Wide Area Network
+
+WCDMA
+
+Wideband Code Division Multiple Access (also referred to as UMTS)
+
+WLAN
+
+Wireless Local Area Network
+
+ZIF
+
+Zero Intermediate Frequency
+
+ZUC
+
+ZUC stream cypher
+
+Proprietary and Confidential - Contents subject to change
+
+4116235
+
+Index
+Numerics
+
+bottom view, 62
+
+3D gain, average
+gain
+3D average (GNSS), 76
+3GPP compliance
+LTE, 21
+UMTS, 21
+
+C
+
+A
+acceptance tests, 79
+accessories, 19
+accuracy (GNSS), 49
+acquisition time (GNSS), 49
+acronyms and definitions, 99–??, 103– 108
+A-GNSS, 19
+A-GPS, 19
+antenna
+connection considerations, 41
+connectors, 23
+control, 23, 39
+custom, design, 42
+diversity antenna, disabling, 42
+GNSS, specifications, recommended, 73, 75
+limit, matching coaxial connections, 41
+location, considerations, 42
+matching, considerations, 42
+maximum cable loss, 41
+routing, 42
+specification, 73– 76
+specifications, recommended, 73
+testing, 76
+antennas
+design checklist, 77
+API, 59
+application interface features, 17
+approvals, regulatory and industry, 67
+AT commands, 92
+averaged call mode DC power consumption, 52
+averaged standby DC power consumption, 51
+
+B
+bands supported, RF
+summary, 15
+LTE, 46, 47, 85, 86, 88
+bearers, dedicated, 18
+BER (Bit Error Rate), 45
+bit error rate (BER)
+measure of sensitivity, 45
+block diagram
+expanded RF, 25
+system, 24
+
+Rev 7 Aug.16
+
+cable loss
+antenna, maximum, 41
+capacitors
+with SIM, 35
+with XIM_DATA / XIM_CLK, 34
+carrier/operator testing, 91
+cell selection, 18
+certification tests, 80
+checklist, design, 77
+communications, host to modem
+design checklist, 78
+conducted Tx power tolerances, 49
+connection
+grounding, 43
+connectors, required
+host-module, 20
+control interface, 35
+CQI, 18
+
+D
+DC power consumption
+averaged call mode, 52
+averaged standby, 51
+desense. See RF
+design checklist
+antennas, 77
+component placement, 77
+EMI/ESD, 78
+host/modem communications, 78
+power, 77
+thermal, 78
+USB3, 77
+detach procedure, 18
+dimensioned view, 62
+dimensions, 61, 62
+diversity antenna
+disabling, 42
+drop specifications, 61
+dynamic power control, 23
+
+E
+EDGE
+connector, required, 20
+electrical specifications, 23
+electrostatic discharge specifications, 61
+electrostatic discharge. See ESD
+envelope correlation coefficient, 74
+
+Proprietary and Confidential - Contents subject to change
+
+109
+
+Product Technical Specification & Customer Design Guidelines
+
+environmental specifications, 61– 63
+ESD
+design checklist, 78
+protection requirements, 63
+ESD specifications, 61
+expanded RF block diagram, 25
+
+F
+field of view, 75
+filtering, RF desense, 44
+form factor, 61
+FOV, 75
+free space average gain, 76
+frequencies supported, 46
+frequency band support
+LTE, 46, 47, 85, 86, 88
+Full_Card_Power_Off#, 37
+
+G
+gain
+GNSS, 76
+maximum, 74
+mean effective, 74
+mean effective imbalance, 74
+GNSS
+antenna specifications, recommended, 73, 75
+GPS
+features supported, 19
+specifications, 49
+ground specifications, 31
+grounding
+connection considerations, 43
+
+H
+
+L
+labeling, 63
+LED
+example, 39
+LED output, 23, 35, 38
+LTE
+3GPP compliance, 21
+bandwidth support, 46
+bandwidth support, LTE CA, 99
+features, 18
+frequency band support, 46, 47, 85, 86, 88
+
+M
+mean effective gain, 74
+mean effective gain imbalance, 74
+mechanical specifications, 61– 63
+MIB, 18
+minicom
+downloading and installing, 84
+modem features, 17
+module
+power states, 53– 55
+
+N
+
+host interface
+pin assignments, 25
+humidity specifications, 61
+
+NAS/AS security, 18
+noise
+leakage, minimizing, 43
+RF interference, power supply, 57
+
+I
+I/O rise time requirements, 34
+impedance
+module–antenna, 42
+SIM, 34
+industry approvals, 67
+integration requirements, 20
+interface
+control interface, 35
+feature summary, 17
+host, pin assignments, 25
+QMI, 59
+SIM, 32
+software, 59
+USB, 31
+
+110
+
+interference
+device generated, 44
+host-generated, 44
+power supply noise, 57
+wireless devices, 43
+Interoperability testing, 91
+intra-LTE mobility, 18
+IOT testing, 91
+iRAT, 18
+isolation, 75, 76
+
+O
+OEM
+assistance with testing, 91
+labeling, 63
+operator/carrier testing, 91
+ordering information, 20
+
+P
+packaging, 95
+paging procedures, 18
+PCB
+multi-layer, shielding for RF desense, 44
+
+Proprietary and Confidential - Contents subject to change
+
+4116235
+
+Index
+
+PDN connections, multiple, 18
+pin assignments, host interface, 25
+PMI, 18
+polarization, 76
+position location, 19
+power
+design checklist, 77
+handling, 75
+power-up timing, 55
+ramp-up timing, 55
+state machines, 54
+states, module, 53– 55
+supply, RF interference, 57
+supply, ripple limit, 57
+power consumption, DC
+averaged call mode, 52
+averaged standby, 51
+power off signal, 23
+power specifications, 31
+power tolerances, conducted Tx, 49
+Product Support Tool, QUALCOMM (QPST), 59
+production tests, 81
+PSS, 18
+
+antenna cable loss, maximum, 41
+antenna connection, considerations, 41
+connectors, required, 20
+desense
+device-generated, 44
+harmonic energy, filtering, 44
+mitigation suggestions, 44
+shielding suggestions, 44
+interference
+other devices, 44
+power supply, 57
+wireless devices, 43
+RF bands supported
+summary, 15
+LTE, 46, 47, 85, 86, 88
+RF block diagram, expanded, 25
+RF specifications, 41–??
+RI, 18
+RSE, 45
+Rx sensitivity
+conducted, 48, 49
+
+S
+
+Q
+QMI interface, 59
+QPST (QUALCOMM Product Support Tool), 59
+QUALCOMM Product Support Tool (QPST), 59
+quality assurance tests, 90
+QXDM support, 59
+
+R
+radiated efficiency, total, 74
+radiated sensitivity measurement, 45
+radiated spurious emissions, 45
+radiation patterns, 74
+references, 97
+regulatory approvals, 67
+regulatory information, ??– 68
+limitation of liability, 67
+safety and hazards, 67
+reset
+timing, 55
+RESET#, 23, 37
+resistors, external pull-up, 34
+
+Rev 7 Aug.16
+
+RF
+
+sales
+ordering, 20
+SAR backoff, 57
+SDKs available, 59
+SED
+see Smart Error Detection
+See also W_DISABLE1#, 36
+See also W_DISABLE2#, 36
+sensitivity
+conducted, RF parameter, 48, 49
+defined, 45
+radiated measurement, overview, 45
+testing, overview, 45
+shielding
+module, compliance, 42
+reducing RF desense, 44
+shock specifications, 61
+SIB, 18
+signals, 35
+Full_Card_Power_Off#, 37
+RESET#, 37
+WWAN_LED#, 38
+SIM
+capacitor recommendations, 35
+card contacts, 34
+clock rate, 34
+connector, required, 20
+electrical specifications, 34
+impedance, connectors, 34
+interface, 32
+interface diagram, 33
+operation, 34– 35
+SIM Detect, 23
+
+Proprietary and Confidential - Contents subject to change
+
+111
+
+Product Technical Specification & Customer Design Guidelines
+
+Smart Error Detection
+detecting module reset, 57
+SMS features, 18
+Snow 3G/AES security, 18
+software interface, 59
+specifications
+electrical, 23
+environmental specifications, 61– 63
+GPS, 49
+mechanical, 61– 63
+RF, 41–??
+SSS, 18
+standalone mode, GPS / GLONASS, 19
+standby DC power consumption, averaged, 51
+state machines, 54
+support
+testing assistance by Sierra Wireless, 91
+tools, 59
+system acquisition, 18
+system block diagram, 24
+
+T
+temperature specifications, 61
+temperature, module. See thermal
+testing
+overview, 79
+acceptance tests, 79
+assistance provided by Sierra Wireless, 91
+certification tests, 80
+equipment, suggested, 91
+interoperability and operator/carrier testing, 91
+manual functional test, suggested, 81
+production tests, 81
+quality assurance tests, 90
+RF receive path, LTE, 88
+RF receive path, UMTS, 86
+RF transmission path, UMTS, 85
+suggestions, 79– 93
+thermal
+considerations, 64– 65
+design checklist, 78
+dissipation, factors affecting, 64
+dissipation, suggestions, 64
+testing, module, 65
+
+112
+
+timing
+power ramp-up, 55
+power-up, 55
+reset, 55
+USB enumeration, 55
+top view, 62
+tracking session
+automatic, 19
+standalone, 19
+Tx power tolerances, conducted, 49
+
+U
+UMTS
+3GPP compliance, 21
+USB
+drivers, user-developed, 32
+high / full speed throughput performance, 32
+interface, 31
+USB enumeration timing, 55
+USB3
+design checklist, 77
+
+V
+vibration specifications, 61
+VSWR, 73, 76
+
+W
+W_DISABLE#1, 23, 35
+W_DISABLE#2, 23, 35
+W_DISABLE1#, 36
+W_DISABLE2#, 36
+WAKE_ON_WAN#, 23
+Wireless Disable, 35
+Wireless Disable (GNSS), 36
+Wireless Disable (Main RF), 36
+WWAN_LED#, 35, 38
+
+Z
+ZIF (Zero Intermediate Frequency), 43
+
+Proprietary and Confidential - Contents subject to change
+
+4116235
+
+

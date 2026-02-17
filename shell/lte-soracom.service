@@ -1,0 +1,18 @@
+[Unit]
+Description=SORACOM LTE Auto Connect Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/lte_soracom_connect.sh connect
+RemainAfterExit=yes
+ExecStop=/usr/local/bin/lte_soracom_connect.sh disconnect
+
+# ログ出力
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=lte-soracom
+
+[Install]
+WantedBy=multi-user.target

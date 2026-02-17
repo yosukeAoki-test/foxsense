@@ -1,0 +1,33 @@
+#
+# 本設定ファイルは各シェルから読み込まれます
+#
+
+# サーバーURL（http[s]://ホスト名:ポート までを記述。最後のスラッシュは書かない）
+url="https://app.nougubako.jp"
+
+# 端末ID
+terminal_id=1234
+
+# 写真確度(0|90|180|270)
+rotate=90
+
+# 監視画像数
+watch_image_count=2
+
+# CO2閾値
+co2_threshold=600
+
+# バルブ解放GPIO番号
+valve_gpio=26
+
+# バルブ解放時間
+splay_time=15
+
+# カメラ用メモリ増量
+gpu_mem=128
+
+# USB電流上限解除
+max_usb_current=1
+
+# センサー電源GPIO番号（遠隔リセット用）
+sensor_power_gpio=17

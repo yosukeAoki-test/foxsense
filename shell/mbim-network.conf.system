@@ -1,0 +1,5 @@
+APN=soracom.io
+APN_USER=sora
+APN_PASS=sora
+APN_AUTH=CHAP
+PROXY=no

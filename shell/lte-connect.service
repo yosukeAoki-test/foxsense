@@ -1,0 +1,15 @@
+[Unit]
+Description=LTE Connection Service
+After=network.target
+Wants=network.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/lte_connect.sh connect
+ExecStop=/usr/local/bin/lte_connect.sh disconnect
+TimeoutStartSec=120
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,326 @@
+#!/bin/bash
+#
+# EM7430 QMI接続スクリプト
+# MBIMの代わりにQMIプロトコルを使用
+#
+
+DEVICE="/dev/cdc-wdm0"
+IFACE="wwan0"
+LOG_FILE="/tmp/qmi_connect.log"
+APN="meeq.io"
+APN_USER="meeq"
+APN_PASS="meeq"
+
+# ログ関数
+log_qmi() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [QMI] $1" | tee -a $LOG_FILE
+}
+
+# エラー終了
+error_exit() {
+    log_qmi "ERROR: $1"
+    exit 1
+}
+
+# QMI接続
+qmi_connect() {
+    log_qmi "========================================="
+    log_qmi "  EM7430 QMI接続開始"
+    log_qmi "========================================="
+
+    # デバイス確認
+    if [ ! -e "$DEVICE" ]; then
+        error_exit "QMIデバイス $DEVICE が見つかりません"
+    fi
+    log_qmi "QMIデバイス確認: $DEVICE"
+
+    # 既存の接続をクリーンアップ
+    log_qmi "既存接続のクリーンアップ..."
+    ip link set $IFACE down 2>/dev/null
+    ip addr flush dev $IFACE 2>/dev/null
+    sleep 2
+
+    # QMIデバイス情報取得
+    log_qmi "--- デバイス情報 ---"
+    qmicli -d $DEVICE --dms-get-manufacturer 2>&1 | tee -a $LOG_FILE
+    qmicli -d $DEVICE --dms-get-model 2>&1 | tee -a $LOG_FILE
+    qmicli -d $DEVICE --dms-get-revision 2>&1 | tee -a $LOG_FILE
+
+    # SIM状態確認
+    log_qmi "--- SIM状態確認 ---"
+    local uim_status=$(qmicli -d $DEVICE --uim-get-card-status 2>&1)
+    log_qmi "$uim_status"
+
+    # ネットワーク登録確認
+    log_qmi "--- ネットワーク登録確認 ---"
+    local nas_status=$(qmicli -d $DEVICE --nas-get-serving-system 2>&1)
+    log_qmi "$nas_status"
+
+    # 信号強度確認
+    log_qmi "--- 信号強度 ---"
+    qmicli -d $DEVICE --nas-get-signal-strength 2>&1 | tee -a $LOG_FILE
+
+    # WDS（Wireless Data Service）でデータ接続開始
+    log_qmi "========================================="
+    log_qmi "  データ接続開始"
+    log_qmi "  APN: $APN"
+    log_qmi "  認証: $APN_USER / $APN_PASS"
+    log_qmi "========================================="
+
+    # PDPコンテキストの開始（IPタイプ: 4 = IPv4）
+    local wds_start_output=$(qmicli -d $DEVICE --wds-start-network="apn='${APN}',username='${APN_USER}',password='${APN_PASS}',ip-type=4" --client-no-release-cid 2>&1)
+    local wds_result=$?
+
+    log_qmi "WDS Start Network結果 (exit=$wds_result):"
+    echo "$wds_start_output" | while IFS= read -r line; do
+        log_qmi "  $line"
+    done
+
+    if [ $wds_result -ne 0 ]; then
+        log_qmi "ERROR: WDS Start Network失敗"
+        return 1
+    fi
+
+    # Packet Data Handle (PDH) を抽出
+    local pdh=$(echo "$wds_start_output" | grep "Packet data handle:" | awk -F"'" '{print $2}')
+    if [ -z "$pdh" ]; then
+        log_qmi "ERROR: Packet Data Handle取得失敗"
+        return 1
+    fi
+
+    log_qmi "Packet Data Handle: $pdh"
+    echo "$pdh" > /tmp/qmi_pdh.txt
+
+    # Client ID を抽出して保存
+    local cid=$(echo "$wds_start_output" | grep "CID:" | awk -F"'" '{print $2}')
+    if [ -n "$cid" ]; then
+        log_qmi "Client ID: $cid"
+        echo "$cid" > /tmp/qmi_cid.txt
+    fi
+
+    sleep 3
+
+    # IP設定の取得
+    log_qmi "--- IP設定取得 ---"
+    local ip_settings=$(qmicli -d $DEVICE --wds-get-current-settings 2>&1)
+    log_qmi "$ip_settings"
+
+    # IPアドレスを抽出
+    local ip_addr=$(echo "$ip_settings" | grep "IPv4 address:" | awk -F": " '{print $2}' | tr -d ' ')
+    local gateway=$(echo "$ip_settings" | grep "IPv4 gateway address:" | awk -F": " '{print $2}' | tr -d ' ')
+    local dns1=$(echo "$ip_settings" | grep "IPv4 primary DNS:" | awk -F": " '{print $2}' | tr -d ' ')
+    local dns2=$(echo "$ip_settings" | grep "IPv4 secondary DNS:" | awk -F": " '{print $2}' | tr -d ' ')
+    local mtu=$(echo "$ip_settings" | grep "MTU:" | awk '{print $2}' | tr -d ' ')
+
+    if [ -z "$ip_addr" ] || [ "$ip_addr" = "unknown" ]; then
+        log_qmi "WARN: QMI経由でIP取得失敗、ATコマンドで試行..."
+
+        # ATコマンドでIP取得
+        if [ -x /usr/local/bin/soracom-ip-setup.sh ]; then
+            /usr/local/bin/soracom-ip-setup.sh
+            if [ $? -eq 0 ]; then
+                log_qmi "ATコマンド経由でIP設定完了"
+
+                # ルーティング設定
+                configure_routing
+
+                log_qmi "========================================="
+                log_qmi "  QMI接続完了（IP設定: ATコマンド経由）"
+                log_qmi "========================================="
+                return 0
+            fi
+        fi
+
+        error_exit "IP設定取得失敗"
+    fi
+
+    log_qmi "取得IP情報:"
+    log_qmi "  IPアドレス: $ip_addr"
+    log_qmi "  ゲートウェイ: $gateway"
+    log_qmi "  DNS1: $dns1"
+    log_qmi "  DNS2: $dns2"
+    log_qmi "  MTU: $mtu"
+
+    # インターフェース設定
+    log_qmi "--- インターフェース設定 ---"
+
+    # wwan0インターフェースUP
+    ip link set $IFACE up
+    if [ $? -ne 0 ]; then
+        error_exit "インターフェース起動失敗"
+    fi
+    log_qmi "インターフェース起動: $IFACE"
+
+    # IPアドレス設定
+    if [ -n "$ip_addr" ]; then
+        ip addr add ${ip_addr}/32 dev $IFACE
+        log_qmi "IPアドレス設定: ${ip_addr}/32"
+    fi
+
+    # MTU設定
+    if [ -n "$mtu" ] && [ "$mtu" != "0" ]; then
+        ip link set $IFACE mtu $mtu
+        log_qmi "MTU設定: $mtu"
+    else
+        ip link set $IFACE mtu 1428
+        log_qmi "MTU設定: 1428 (デフォルト)"
+    fi
+
+    # ルーティング設定
+    configure_routing
+
+    # DNS設定
+    if [ -n "$dns1" ]; then
+        log_qmi "--- DNS設定 ---"
+        cat > /etc/resolv.conf << EOF
+# Generated by qmi_connect.sh
+nameserver ${dns1}
+nameserver 8.8.8.8
+EOF
+        [ -n "$dns2" ] && [ "$dns2" != "0.0.0.0" ] && echo "nameserver ${dns2}" >> /etc/resolv.conf
+        log_qmi "DNS設定完了: $dns1"
+    fi
+
+    # 接続テスト
+    log_qmi "--- 接続テスト ---"
+    if ping -c 2 -W 3 -I $IFACE 8.8.8.8 >/dev/null 2>&1; then
+        log_qmi "SUCCESS: QMI経由でインターネット到達可能"
+    else
+        log_qmi "WARN: 接続テスト失敗（ルーティングの問題の可能性）"
+    fi
+
+    log_qmi "========================================="
+    log_qmi "  QMI接続完了"
+    log_qmi "========================================="
+
+    return 0
+}
+
+# ルーティング設定
+configure_routing() {
+    log_qmi "--- ルーティング設定 ---"
+
+    # 既存のwwan0ルートを削除
+    ip route del default dev $IFACE 2>/dev/null
+
+    # WiFi状態を確認
+    local wifi_state=$(cat /sys/class/net/wlan0/operstate 2>/dev/null)
+
+    if [ "$wifi_state" = "up" ] && ip addr show wlan0 | grep -q "inet "; then
+        # WiFi接続中: WiFi優先、LTE補助
+        log_qmi "WiFi接続中 - WiFi優先ルート設定"
+
+        # WiFi優先ルート確認
+        if ! ip route | grep -q "default.*wlan0"; then
+            local wifi_gw=$(ip route | grep "^default" | awk '{print $3}' | head -1)
+            if [ -z "$wifi_gw" ]; then
+                wifi_gw="192.168.3.1"
+            fi
+            ip route add default via $wifi_gw dev wlan0 metric 100 2>/dev/null
+        fi
+
+        # LTE補助ルート
+        ip route add default dev $IFACE metric 400 2>/dev/null
+        log_qmi "ルート設定完了: WiFi(metric 100) + LTE(metric 400)"
+    else
+        # WiFi未接続: LTE専用
+        log_qmi "WiFi未接続 - LTE専用ルート設定"
+        ip route add default dev $IFACE metric 200
+
+        if [ $? -eq 0 ]; then
+            log_qmi "LTEルート設定完了"
+        else
+            log_qmi "ERROR: LTEルート設定失敗"
+            return 1
+        fi
+    fi
+
+    return 0
+}
+
+# QMI切断
+qmi_disconnect() {
+    log_qmi "========================================="
+    log_qmi "  QMI切断開始"
+    log_qmi "========================================="
+
+    # Packet Data Handleを読み取り
+    if [ -f /tmp/qmi_pdh.txt ]; then
+        local pdh=$(cat /tmp/qmi_pdh.txt)
+        log_qmi "Packet Data Handle: $pdh"
+
+        # データ接続停止
+        qmicli -d $DEVICE --wds-stop-network="$pdh" --client-no-release-cid 2>&1 | tee -a $LOG_FILE
+        rm -f /tmp/qmi_pdh.txt
+    else
+        log_qmi "WARN: PDHファイルなし、強制切断..."
+    fi
+
+    # Client IDの解放
+    if [ -f /tmp/qmi_cid.txt ]; then
+        rm -f /tmp/qmi_cid.txt
+    fi
+
+    # インターフェースクリーンアップ
+    ip route del default dev $IFACE 2>/dev/null
+    ip addr flush dev $IFACE 2>/dev/null
+    ip link set $IFACE down 2>/dev/null
+
+    log_qmi "========================================="
+    log_qmi "  QMI切断完了"
+    log_qmi "========================================="
+}
+
+# 診断情報
+qmi_diagnose() {
+    log_qmi "========================================="
+    log_qmi "  QMI診断情報"
+    log_qmi "========================================="
+
+    log_qmi "--- デバイス情報 ---"
+    qmicli -d $DEVICE --dms-get-manufacturer 2>&1 | tee -a $LOG_FILE
+    qmicli -d $DEVICE --dms-get-model 2>&1 | tee -a $LOG_FILE
+    qmicli -d $DEVICE --dms-get-revision 2>&1 | tee -a $LOG_FILE
+    qmicli -d $DEVICE --dms-get-ids 2>&1 | tee -a $LOG_FILE
+
+    log_qmi "--- SIM状態 ---"
+    qmicli -d $DEVICE --uim-get-card-status 2>&1 | tee -a $LOG_FILE
+
+    log_qmi "--- ネットワーク状態 ---"
+    qmicli -d $DEVICE --nas-get-serving-system 2>&1 | tee -a $LOG_FILE
+    qmicli -d $DEVICE --nas-get-signal-strength 2>&1 | tee -a $LOG_FILE
+    qmicli -d $DEVICE --nas-get-home-network 2>&1 | tee -a $LOG_FILE
+
+    log_qmi "--- WDS状態 ---"
+    qmicli -d $DEVICE --wds-get-packet-service-status 2>&1 | tee -a $LOG_FILE
+    qmicli -d $DEVICE --wds-get-current-settings 2>&1 | tee -a $LOG_FILE
+
+    log_qmi "--- インターフェース状態 ---"
+    ip addr show $IFACE 2>&1 | tee -a $LOG_FILE
+
+    log_qmi "--- ルーティング ---"
+    ip route show 2>&1 | tee -a $LOG_FILE
+}
+
+# メイン処理
+case "$1" in
+    "connect")
+        qmi_connect
+        exit $?
+        ;;
+    "disconnect")
+        qmi_disconnect
+        exit $?
+        ;;
+    "diagnose")
+        qmi_diagnose
+        exit $?
+        ;;
+    *)
+        echo "Usage: $0 {connect|disconnect|diagnose}"
+        echo "  connect    - QMI接続実行"
+        echo "  disconnect - QMI切断"
+        echo "  diagnose   - 診断情報取得"
+        exit 1
+        ;;
+esac

@@ -1,0 +1,18 @@
+# /etc/dhcpcd.conf に追加する内容
+# =====================================================
+# LTE (wwan0) 設定 - 重要！
+# dhcpcdがwwan0を管理しないようにする
+# これがないと、リンクローカルアドレス(169.254.x.x)が
+# 自動割り当てされ、LTE通信が不安定になる
+# =====================================================
+denyinterfaces wwan0
+
+# DNS設定をLTEスクリプトが管理するため、dhcpcdの書き換えを防止
+nohook resolv.conf
+
+# GoogleDNSを常に使用（DHCPのDNSより優先）
+static domain_name_servers=8.8.8.8 8.8.4.4
+
+# WiFiインターフェース設定
+interface wlan0
+metric 100

@@ -1,18 +1,22 @@
 /**
- * FoxSense One - 親機ファームウェア
+ * FoxSense One - 親機ファームウェア (v2: デバイス分離対応)
  * LILYGO T-SIM7080G-S3 + TWELITE DIP（親機）+ BME280
  *
  * システム構成:
  * - 親機: ESP32-S3 + SIM7080G(LTE) + TWELITE DIP + BME280
  * - 子機: TWELITE DIP + BME280（複数台）
  *
- * 動作フロー:
- * 1. 10分毎にディープスリープから起床
- * 2. TWELITE経由で子機に起床信号を送信
- * 3. 自身のBME280データを取得
- * 4. 全子機からのデータ受信を待機
- * 5. 全データ揃ったらLTEでサーバー送信
- * 6. ディープスリープへ
+ * v2動作フロー:
+ * 1. ディープスリープから起床
+ * 2. ハードウェア初期化（BME280, TWELITE）
+ * 3. モデム初期化・LTE接続
+ * 4. サーバーから設定取得（登録子機リスト + parentIdHash）
+ * 5. ペアリング待ちの子機がいる場合 → ペアリングモード実行
+ * 6. v2起床信号送信（parentIdHash入り）
+ * 7. 親機センサーデータ取得
+ * 8. 子機データ収集（parentIdHash検証付き）
+ * 9. 全データをサーバー送信
+ * 10. ディープスリープへ
  */
 
 #include <Arduino.h>
@@ -29,13 +33,6 @@
 #define MEASUREMENT_INTERVAL_MIN 10  // 10分間隔
 #define NTP_SYNC_INTERVAL_SEC (24 * 60 * 60)  // 24時間
 
-// TWELITEプロトコル定義
-#define TWELITE_CMD_WAKE    0x01    // 起床コマンド
-#define TWELITE_CMD_DATA    0x02    // データ応答
-#define TWELITE_CMD_ACK     0x03    // 確認応答
-#define TWELITE_HEADER      0xA5    // パケットヘッダー
-#define TWELITE_FOOTER      0x5A    // パケットフッター
-
 // 子機データ構造体
 struct ChildData {
     uint32_t deviceId;      // 子機ID
@@ -45,6 +42,8 @@ struct ChildData {
     uint8_t battery;        // バッテリーレベル
     bool received;          // データ受信済みフラグ
     unsigned long timestamp;// 受信時刻
+    uint8_t logicalId;      // 論理ID
+    bool needsPairing;      // ペアリング必要フラグ
 };
 
 // RTCメモリに保存するデータ（ディープスリープ後も保持）
@@ -53,15 +52,27 @@ RTC_DATA_ATTR time_t lastNtpSyncTime = 0;
 RTC_DATA_ATTR bool ntpSynced = false;
 RTC_DATA_ATTR int consecutiveFailures = 0;
 
-// 登録済み子機リスト
-const uint32_t registeredChildren[MAX_CHILD_DEVICES] = {
-    CHILD_ID_1, CHILD_ID_2, CHILD_ID_3, CHILD_ID_4,
-    CHILD_ID_5, CHILD_ID_6, CHILD_ID_7, CHILD_ID_8
-};
+// v2: RTCキャッシュ変数（サーバー設定）
+RTC_DATA_ATTR uint32_t cachedParentIdHash = 0;
+RTC_DATA_ATTR uint32_t cachedChildIds[MAX_CHILD_DEVICES] = {0};
+RTC_DATA_ATTR uint8_t cachedChildLogicalIds[MAX_CHILD_DEVICES] = {0};
+RTC_DATA_ATTR uint8_t cachedChildCount = 0;
+RTC_DATA_ATTR uint32_t lastConfigFetch = 0;       // 最後に設定取得したブート回数
+RTC_DATA_ATTR bool configFetched = false;          // 設定取得済みフラグ
 
 // 子機データ配列
 ChildData childDataList[MAX_CHILD_DEVICES];
 int activeChildCount = 0;
+bool hasPendingChildren = false;  // ペアリング待ち子機の存在フラグ
+
+// ペアリング待ち子機情報（サーバーから取得）
+struct PendingChild {
+    uint32_t deviceId;
+    uint8_t logicalId;
+    char deviceIdHex[9];  // "a1b2c3d4\0"
+};
+PendingChild pendingChildren[MAX_CHILD_DEVICES];
+int pendingChildCount = 0;
 
 // センサー・通信オブジェクト
 Adafruit_BME280 bme;
@@ -101,11 +112,47 @@ uint64_t calculateSleepDuration();
 
 // TWELITE関数
 void initTwelite();
-void sendWakeSignal();
+void sendWakeSignalV2(uint32_t parentIdHash);
 bool collectChildData();
-void parseChildPacket(uint8_t* buffer, int length);
+void parseChildPacketV2(uint8_t* buffer, int length);
 bool isAllChildDataReceived();
-int countActiveChildren();
+
+// v2新規関数
+uint8_t computeChecksum(uint8_t* buffer, int length);
+bool fetchConfigFromServer();
+void sendPairingCommand(uint32_t parentIdHash, uint32_t targetChildId, uint8_t logicalId);
+bool waitForPairingResponse(uint32_t targetChildId);
+bool reportPairingResult(const char* childDeviceIdHex, const char* status);
+void executePairingMode();
+uint32_t computeParentIdHashLocal(const char* deviceId);
+
+/**
+ * parentIdHashをローカルで計算（SHA-256の先頭4バイト相当）
+ * サーバーから取得したハッシュを使用するが、フォールバック用
+ * 注意: 簡易FNV-1aハッシュを使用。サーバーではSHA-256を使用するため
+ *       必ずサーバーから取得した値を使うこと
+ */
+uint32_t computeParentIdHashLocal(const char* deviceId) {
+    // FNV-1a hash（サーバーのSHA-256とは異なる。フォールバック専用）
+    uint32_t hash = 2166136261u;
+    while (*deviceId) {
+        hash ^= (uint8_t)*deviceId++;
+        hash *= 16777619u;
+    }
+    return hash;
+}
+
+/**
+ * XORチェックサム計算
+ * buffer[1]からbuffer[length-1]までのXOR
+ */
+uint8_t computeChecksum(uint8_t* buffer, int length) {
+    uint8_t checksum = 0;
+    for (int i = 1; i < length; i++) {
+        checksum ^= buffer[i];
+    }
+    return checksum;
+}
 
 void setup() {
     // シリアル初期化
@@ -115,11 +162,12 @@ void setup() {
     bootCount++;
 
     Serial.println("\n=============================================");
-    Serial.println("  FoxSense One - Parent Node");
+    Serial.println("  FoxSense One - Parent Node (v2)");
     Serial.println("  LILYGO T-SIM7080G-S3 + TWELITE");
     Serial.println("=============================================");
     Serial.printf("Boot count: %d\n", bootCount);
     Serial.printf("Device ID: %s (Parent)\n", DEVICE_ID);
+    Serial.printf("Protocol: v%d\n", PROTOCOL_VERSION);
 
     // 起床理由を確認
     esp_sleep_wakeup_cause_t wakeup_reason = esp_sleep_get_wakeup_cause();
@@ -131,18 +179,8 @@ void setup() {
             Serial.println("Wakeup: Power on / Reset");
             ntpSynced = false;
             lastNtpSyncTime = 0;
+            configFetched = false;  // 電源オン時は設定を再取得
             break;
-    }
-
-    // 子機データ初期化
-    activeChildCount = countActiveChildren();
-    Serial.printf("[TWELITE] Active children: %d\n", activeChildCount);
-
-    for (int i = 0; i < MAX_CHILD_DEVICES; i++) {
-        childDataList[i].deviceId = registeredChildren[i];
-        childDataList[i].received = false;
-        childDataList[i].temperature = 0;
-        childDataList[i].humidity = 0;
     }
 
     // ピン初期化
@@ -176,34 +214,6 @@ void setup() {
     // TWELITE初期化
     initTwelite();
 
-    // 子機に起床信号送信
-    Serial.println("\n[TWELITE] Sending wake signal to children...");
-    sendWakeSignal();
-
-    // 親機のセンサーデータ取得
-    Serial.println("\n[SENSOR] Reading parent BME280...");
-    parentData.temperature = bme.readTemperature();
-    parentData.humidity = bme.readHumidity();
-
-    if (isnan(parentData.temperature) || parentData.temperature < -40 || parentData.temperature > 85) {
-        Serial.println("[WARN] Invalid parent sensor data");
-        parentData.temperature = 0;
-        parentData.humidity = 0;
-    }
-
-    Serial.printf("  Parent Temp: %.2f C\n", parentData.temperature);
-    Serial.printf("  Parent Humidity: %.2f %%\n", parentData.humidity);
-
-    // 子機データ収集（タイムアウトまで待機）
-    if (activeChildCount > 0) {
-        Serial.println("\n[TWELITE] Collecting data from children...");
-        bool allReceived = collectChildData();
-
-        if (!allReceived) {
-            Serial.println("[WARN] Not all children responded");
-        }
-    }
-
     // モデムシリアル初期化
     modemSerial.begin(MODEM_BAUD_RATE, SERIAL_8N1, MODEM_RX_PIN, MODEM_TX_PIN);
     delay(500);
@@ -213,6 +223,32 @@ void setup() {
     if (!initModem()) {
         Serial.println("[ERROR] Modem init failed");
         consecutiveFailures++;
+
+        // モデム失敗時でもキャッシュがあれば子機データ収集は試行
+        if (configFetched && cachedParentIdHash != 0) {
+            Serial.println("[INFO] Using cached config for child data collection");
+            // 子機データ初期化（キャッシュから）
+            activeChildCount = cachedChildCount;
+            for (int i = 0; i < MAX_CHILD_DEVICES; i++) {
+                childDataList[i].deviceId = cachedChildIds[i];
+                childDataList[i].logicalId = cachedChildLogicalIds[i];
+                childDataList[i].received = false;
+                childDataList[i].temperature = 0;
+                childDataList[i].humidity = 0;
+                childDataList[i].needsPairing = false;
+            }
+
+            sendWakeSignalV2(cachedParentIdHash);
+
+            parentData.temperature = bme.readTemperature();
+            parentData.humidity = bme.readHumidity();
+
+            if (activeChildCount > 0) {
+                collectChildData();
+            }
+            // データはサーバー送信できないため、次回送信に期待
+        }
+
         if (consecutiveFailures >= 5) {
             goToDeepSleep(MEASUREMENT_INTERVAL_MIN * 60 * 6);
         } else {
@@ -237,6 +273,82 @@ void setup() {
         }
     }
 
+    // ★ サーバーから設定取得
+    bool needConfigFetch = !configFetched ||
+                           (bootCount - lastConfigFetch >= CONFIG_FETCH_INTERVAL);
+
+    if (needConfigFetch) {
+        Serial.println("\n[CONFIG] Fetching device config from server...");
+        if (fetchConfigFromServer()) {
+            lastConfigFetch = bootCount;
+            configFetched = true;
+            Serial.printf("[CONFIG] parentIdHash: 0x%08X, children: %d\n",
+                          cachedParentIdHash, cachedChildCount);
+        } else {
+            Serial.println("[WARN] Config fetch failed, using cached values");
+            if (!configFetched) {
+                // キャッシュもない場合はローカルハッシュ使用
+                cachedParentIdHash = computeParentIdHashLocal(DEVICE_ID);
+                Serial.printf("[WARN] Using local hash fallback: 0x%08X\n", cachedParentIdHash);
+            }
+        }
+    } else {
+        Serial.printf("[CONFIG] Using cached config (fetched at boot %d)\n", lastConfigFetch);
+    }
+
+    // 子機データ初期化（サーバー/キャッシュから）
+    activeChildCount = 0;
+    hasPendingChildren = false;
+    pendingChildCount = 0;
+
+    for (int i = 0; i < MAX_CHILD_DEVICES; i++) {
+        childDataList[i].deviceId = cachedChildIds[i];
+        childDataList[i].logicalId = cachedChildLogicalIds[i];
+        childDataList[i].received = false;
+        childDataList[i].temperature = 0;
+        childDataList[i].humidity = 0;
+        childDataList[i].needsPairing = false;
+
+        if (cachedChildIds[i] != 0x00000000) {
+            activeChildCount++;
+        }
+    }
+
+    Serial.printf("[TWELITE] Active children: %d\n", activeChildCount);
+
+    // ペアリングモード実行（PENDING子機がある場合）
+    if (hasPendingChildren && pendingChildCount > 0) {
+        executePairingMode();
+    }
+
+    // v2起床信号送信
+    Serial.println("\n[TWELITE] Sending v2 wake signal...");
+    sendWakeSignalV2(cachedParentIdHash);
+
+    // 親機のセンサーデータ取得
+    Serial.println("\n[SENSOR] Reading parent BME280...");
+    parentData.temperature = bme.readTemperature();
+    parentData.humidity = bme.readHumidity();
+
+    if (isnan(parentData.temperature) || parentData.temperature < -40 || parentData.temperature > 85) {
+        Serial.println("[WARN] Invalid parent sensor data");
+        parentData.temperature = 0;
+        parentData.humidity = 0;
+    }
+
+    Serial.printf("  Parent Temp: %.2f C\n", parentData.temperature);
+    Serial.printf("  Parent Humidity: %.2f %%\n", parentData.humidity);
+
+    // 子機データ収集（タイムアウトまで待機）
+    if (activeChildCount > 0) {
+        Serial.println("\n[TWELITE] Collecting data from children (v2)...");
+        bool allReceived = collectChildData();
+
+        if (!allReceived) {
+            Serial.println("[WARN] Not all children responded");
+        }
+    }
+
     // 全データをサーバーに送信
     Serial.println("\n[HTTP] Sending all data to server...");
     if (sendAllDataToServer()) {
@@ -253,8 +365,7 @@ void setup() {
 
     // 次の定時までのスリープ時間を計算
     uint64_t sleepDuration = calculateSleepDuration();
-    Serial.printf("\n[SLEEP] Going to deep sleep for %llu seconds (next: XX:%02d:00)...\n",
-                  sleepDuration, (int)((sleepDuration / 60 + (millis() / 1000 / 60)) % 60));
+    Serial.printf("\n[SLEEP] Going to deep sleep for %llu seconds...\n", sleepDuration);
     goToDeepSleep(sleepDuration);
 }
 
@@ -263,19 +374,6 @@ void loop() {
 }
 
 // ===== TWELITE関連関数 =====
-
-/**
- * アクティブな子機数をカウント
- */
-int countActiveChildren() {
-    int count = 0;
-    for (int i = 0; i < MAX_CHILD_DEVICES; i++) {
-        if (registeredChildren[i] != 0x00000000) {
-            count++;
-        }
-    }
-    return count;
-}
 
 /**
  * TWELITE初期化
@@ -297,33 +395,42 @@ void initTwelite() {
 }
 
 /**
- * 子機に起床信号を送信
+ * v2起床信号送信（parentIdHash入り）
+ * フォーマット: [0xA5][VERSION][CMD_WAKE][PARENT_ID_HASH_4bytes][TIMESTAMP_4bytes][CHECKSUM][0x5A]
+ * 合計: 13バイト
  */
-void sendWakeSignal() {
-    // TWELITEパケット構築
-    // フォーマット: [HEADER][CMD][TIMESTAMP_4bytes][FOOTER]
-    uint8_t packet[8];
+void sendWakeSignalV2(uint32_t parentIdHash) {
+    uint8_t packet[13];
     uint32_t ts = millis();
 
     packet[0] = TWELITE_HEADER;
-    packet[1] = TWELITE_CMD_WAKE;
-    packet[2] = (ts >> 24) & 0xFF;
-    packet[3] = (ts >> 16) & 0xFF;
-    packet[4] = (ts >> 8) & 0xFF;
-    packet[5] = ts & 0xFF;
-    packet[6] = TWELITE_FOOTER;
+    packet[1] = PROTOCOL_VERSION;
+    packet[2] = TWELITE_CMD_WAKE;
+    // parentIdHash (big-endian)
+    packet[3] = (parentIdHash >> 24) & 0xFF;
+    packet[4] = (parentIdHash >> 16) & 0xFF;
+    packet[5] = (parentIdHash >> 8) & 0xFF;
+    packet[6] = parentIdHash & 0xFF;
+    // timestamp (big-endian)
+    packet[7] = (ts >> 24) & 0xFF;
+    packet[8] = (ts >> 16) & 0xFF;
+    packet[9] = (ts >> 8) & 0xFF;
+    packet[10] = ts & 0xFF;
+    // checksum (XOR of bytes 1..10)
+    packet[11] = computeChecksum(packet, 11);
+    packet[12] = TWELITE_FOOTER;
 
     // 複数回送信（確実性のため）
     for (int i = 0; i < 3; i++) {
-        tweliteSerial.write(packet, 7);
+        tweliteSerial.write(packet, 13);
         delay(WAKE_SIGNAL_INTERVAL);
     }
 
-    Serial.printf("[TWELITE] Wake signal sent (timestamp: %lu)\n", ts);
+    Serial.printf("[TWELITE] v2 Wake signal sent (hash: 0x%08X, ts: %lu)\n", parentIdHash, ts);
 }
 
 /**
- * 子機からデータを収集
+ * 子機からデータを収集（v2: parentIdHash検証付き）
  */
 bool collectChildData() {
     unsigned long startTime = millis();
@@ -342,8 +449,8 @@ bool collectChildData() {
             buffer[bufferIndex++] = b;
 
             // フッター検出 → パケット解析
-            if (b == TWELITE_FOOTER && bufferIndex >= 15) {
-                parseChildPacket(buffer, bufferIndex);
+            if (b == TWELITE_FOOTER && bufferIndex >= 13) {
+                parseChildPacketV2(buffer, bufferIndex);
                 bufferIndex = 0;
 
                 // 全子機からデータ受信完了チェック
@@ -365,44 +472,91 @@ bool collectChildData() {
 }
 
 /**
- * 子機パケット解析
- * フォーマット: [HEADER][CMD][DEVICE_ID_4bytes][TEMP_2bytes][HUMID_2bytes][RSSI][BATTERY][FOOTER]
+ * v2子機パケット解析（parentIdHash検証付き）
+ * フォーマット: [0xA5][VERSION][CMD_DATA][PARENT_ID_HASH_4bytes][CHILD_ID_4bytes][TEMP_2bytes][HUMID_2bytes][RSSI][BATTERY][CHECKSUM][0x5A]
+ * 合計: 19バイト
  */
-void parseChildPacket(uint8_t* buffer, int length) {
-    if (length < 15 || buffer[0] != TWELITE_HEADER || buffer[1] != TWELITE_CMD_DATA) {
+void parseChildPacketV2(uint8_t* buffer, int length) {
+    // v2パケット: 最低19バイト
+    if (length >= 19 && buffer[1] == PROTOCOL_VERSION && buffer[2] == TWELITE_CMD_DATA) {
+        // チェックサム検証
+        uint8_t expectedChecksum = computeChecksum(buffer, length - 2);
+        if (buffer[length - 2] != expectedChecksum) {
+            Serial.println("[TWELITE] v2 checksum mismatch, ignoring packet");
+            return;
+        }
+
+        // parentIdHash検証
+        uint32_t receivedHash = ((uint32_t)buffer[3] << 24) |
+                                ((uint32_t)buffer[4] << 16) |
+                                ((uint32_t)buffer[5] << 8) |
+                                (uint32_t)buffer[6];
+
+        if (receivedHash != cachedParentIdHash) {
+            Serial.printf("[TWELITE] v2 parentIdHash mismatch: received 0x%08X, expected 0x%08X\n",
+                          receivedHash, cachedParentIdHash);
+            return;
+        }
+
+        // 子機ID取得
+        uint32_t deviceId = ((uint32_t)buffer[7] << 24) |
+                            ((uint32_t)buffer[8] << 16) |
+                            ((uint32_t)buffer[9] << 8) |
+                            (uint32_t)buffer[10];
+
+        // センサーデータ取得
+        int16_t tempRaw = (buffer[11] << 8) | buffer[12];
+        float temperature = tempRaw / 100.0;
+        int16_t humidRaw = (buffer[13] << 8) | buffer[14];
+        float humidity = humidRaw / 100.0;
+        int8_t rssi = (int8_t)buffer[15];
+        uint8_t battery = buffer[16];
+
+        Serial.printf("[TWELITE] v2 Received from 0x%08X: %.2fC, %.2f%%, RSSI:%d, Bat:%d%%\n",
+                      deviceId, temperature, humidity, rssi, battery);
+
+        // 該当する子機データを更新
+        for (int i = 0; i < MAX_CHILD_DEVICES; i++) {
+            if (childDataList[i].deviceId == deviceId) {
+                childDataList[i].temperature = temperature;
+                childDataList[i].humidity = humidity;
+                childDataList[i].rssi = rssi;
+                childDataList[i].battery = battery;
+                childDataList[i].received = true;
+                childDataList[i].timestamp = millis();
+                break;
+            }
+        }
         return;
     }
 
-    // デバイスID取得
-    uint32_t deviceId = ((uint32_t)buffer[2] << 24) |
-                        ((uint32_t)buffer[3] << 16) |
-                        ((uint32_t)buffer[4] << 8) |
-                        (uint32_t)buffer[5];
+    // v1パケット互換（後方互換性）
+    if (length >= 12 && buffer[1] == TWELITE_CMD_DATA) {
+        uint32_t deviceId = ((uint32_t)buffer[2] << 24) |
+                            ((uint32_t)buffer[3] << 16) |
+                            ((uint32_t)buffer[4] << 8) |
+                            (uint32_t)buffer[5];
 
-    // 温度（x100で整数化されている）
-    int16_t tempRaw = (buffer[6] << 8) | buffer[7];
-    float temperature = tempRaw / 100.0;
+        int16_t tempRaw = (buffer[6] << 8) | buffer[7];
+        float temperature = tempRaw / 100.0;
+        int16_t humidRaw = (buffer[8] << 8) | buffer[9];
+        float humidity = humidRaw / 100.0;
+        int8_t rssi = (int8_t)buffer[10];
+        uint8_t battery = buffer[11];
 
-    // 湿度（x100で整数化されている）
-    int16_t humidRaw = (buffer[8] << 8) | buffer[9];
-    float humidity = humidRaw / 100.0;
+        Serial.printf("[TWELITE] v1 Received from 0x%08X: %.2fC, %.2f%%, RSSI:%d, Bat:%d%%\n",
+                      deviceId, temperature, humidity, rssi, battery);
 
-    int8_t rssi = (int8_t)buffer[10];
-    uint8_t battery = buffer[11];
-
-    Serial.printf("[TWELITE] Received from 0x%08X: %.2fC, %.2f%%, RSSI:%d, Bat:%d%%\n",
-                  deviceId, temperature, humidity, rssi, battery);
-
-    // 該当する子機データを更新
-    for (int i = 0; i < MAX_CHILD_DEVICES; i++) {
-        if (childDataList[i].deviceId == deviceId) {
-            childDataList[i].temperature = temperature;
-            childDataList[i].humidity = humidity;
-            childDataList[i].rssi = rssi;
-            childDataList[i].battery = battery;
-            childDataList[i].received = true;
-            childDataList[i].timestamp = millis();
-            break;
+        for (int i = 0; i < MAX_CHILD_DEVICES; i++) {
+            if (childDataList[i].deviceId == deviceId) {
+                childDataList[i].temperature = temperature;
+                childDataList[i].humidity = humidity;
+                childDataList[i].rssi = rssi;
+                childDataList[i].battery = battery;
+                childDataList[i].received = true;
+                childDataList[i].timestamp = millis();
+                break;
+            }
         }
     }
 }
@@ -412,11 +566,376 @@ void parseChildPacket(uint8_t* buffer, int length) {
  */
 bool isAllChildDataReceived() {
     for (int i = 0; i < MAX_CHILD_DEVICES; i++) {
-        if (registeredChildren[i] != 0x00000000 && !childDataList[i].received) {
+        if (cachedChildIds[i] != 0x00000000 && !childDataList[i].received) {
             return false;
         }
     }
     return true;
+}
+
+// ===== v2: サーバー設定取得 =====
+
+/**
+ * サーバーからデバイス設定を取得（GET /api/devices/config/:deviceId?secret=xxx）
+ * レスポンスJSONをパースしてRTCキャッシュに保存
+ */
+bool fetchConfigFromServer() {
+    // HTTP GET リクエスト
+    String configPath = String(SERVER_CONFIG_PATH) + DEVICE_ID + "?secret=" + DEVICE_SECRET;
+    String url = String("https://") + SERVER_HOST + configPath;
+
+    sendATCommand("AT+SHDISC", 2000);
+    delay(500);
+
+    sendATCommand("AT+SHCONF=\"URL\",\"" + url + "\"", 3000);
+    sendATCommand("AT+SHCONF=\"BODYLEN\",2048", 2000);
+    sendATCommand("AT+SHCONF=\"HEADERLEN\",350", 2000);
+    sendATCommand("AT+CSSLCFG=\"sslversion\",0,3", 2000);
+    sendATCommand("AT+SHSSL=1,\"\"", 2000);
+
+    String response = sendATCommand("AT+SHCONN", 30000);
+    if (response.indexOf("OK") < 0) {
+        Serial.println("[CONFIG] Connection failed");
+        return false;
+    }
+
+    response = sendATCommand("AT+SHSTATE?", 3000);
+    if (response.indexOf("+SHSTATE: 1") < 0) {
+        sendATCommand("AT+SHDISC", 2000);
+        return false;
+    }
+
+    sendATCommand("AT+SHCHEAD", 2000);
+    sendATCommand("AT+SHAHEAD=\"Accept\",\"application/json\"", 2000);
+
+    // GET リクエスト (method 1 = GET)
+    response = sendATCommand("AT+SHREQ=\"" + configPath + "\",1", 60000);
+
+    bool success = false;
+    int bodyLen = 0;
+
+    if (response.indexOf("+SHREQ:") >= 0) {
+        // レスポンスからステータスコードとボディ長を取得
+        int idx = response.indexOf(",");
+        if (idx > 0) {
+            int idx2 = response.indexOf(",", idx + 1);
+            if (idx2 > idx) {
+                String statusCode = response.substring(idx + 1, idx2);
+                statusCode.trim();
+                String bodyLenStr = response.substring(idx2 + 1);
+                bodyLenStr.trim();
+                bodyLen = bodyLenStr.toInt();
+                Serial.printf("[CONFIG] HTTP Status: %s, Body: %d bytes\n", statusCode.c_str(), bodyLen);
+                if (statusCode == "200" && bodyLen > 0) {
+                    success = true;
+                }
+            }
+        }
+    }
+
+    if (success && bodyLen > 0) {
+        // ボディ読み取り
+        String readCmd = "AT+SHREAD=0," + String(bodyLen);
+        response = sendATCommand(readCmd, 10000);
+
+        // JSONパース（簡易パーサー）
+        // レスポンス例: {"success":true,"data":{"deviceId":"foxsense-001","parentIdHash":2849513012,...}}
+        Serial.println("[CONFIG] Response: " + response);
+
+        // parentIdHash取得
+        int hashIdx = response.indexOf("\"parentIdHash\":");
+        if (hashIdx >= 0) {
+            int hashStart = hashIdx + 15;
+            int hashEnd = response.indexOf(",", hashStart);
+            if (hashEnd < 0) hashEnd = response.indexOf("}", hashStart);
+            if (hashEnd > hashStart) {
+                String hashStr = response.substring(hashStart, hashEnd);
+                hashStr.trim();
+                cachedParentIdHash = (uint32_t)strtoul(hashStr.c_str(), NULL, 10);
+                Serial.printf("[CONFIG] parentIdHash: 0x%08X\n", cachedParentIdHash);
+            }
+        }
+
+        // 子機リストパース
+        int childrenIdx = response.indexOf("\"children\":[");
+        if (childrenIdx >= 0) {
+            // 既存キャッシュクリア
+            cachedChildCount = 0;
+            pendingChildCount = 0;
+            for (int i = 0; i < MAX_CHILD_DEVICES; i++) {
+                cachedChildIds[i] = 0;
+                cachedChildLogicalIds[i] = 0;
+            }
+
+            // 各子機エントリをパース
+            int searchPos = childrenIdx + 12;
+            int childIdx = 0;
+
+            while (childIdx < MAX_CHILD_DEVICES) {
+                int objStart = response.indexOf("{", searchPos);
+                int objEnd = response.indexOf("}", objStart);
+                if (objStart < 0 || objEnd < 0) break;
+
+                String childObj = response.substring(objStart, objEnd + 1);
+
+                // deviceIdNum取得
+                int didIdx = childObj.indexOf("\"deviceIdNum\":");
+                uint32_t childDeviceId = 0;
+                if (didIdx >= 0) {
+                    int didStart = didIdx + 14;
+                    int didEnd = childObj.indexOf(",", didStart);
+                    if (didEnd < 0) didEnd = childObj.indexOf("}", didStart);
+                    String didStr = childObj.substring(didStart, didEnd);
+                    didStr.trim();
+                    childDeviceId = (uint32_t)strtoul(didStr.c_str(), NULL, 10);
+                }
+
+                // logicalId取得
+                int lidIdx = childObj.indexOf("\"logicalId\":");
+                uint8_t logicalId = childIdx;
+                if (lidIdx >= 0) {
+                    int lidStart = lidIdx + 12;
+                    int lidEnd = childObj.indexOf(",", lidStart);
+                    if (lidEnd < 0) lidEnd = childObj.indexOf("}", lidStart);
+                    String lidStr = childObj.substring(lidStart, lidEnd);
+                    lidStr.trim();
+                    logicalId = (uint8_t)lidStr.toInt();
+                }
+
+                // pairingStatus取得
+                int psIdx = childObj.indexOf("\"pairingStatus\":\"");
+                String pairingStatus = "PAIRED";
+                if (psIdx >= 0) {
+                    int psStart = psIdx + 17;
+                    int psEnd = childObj.indexOf("\"", psStart);
+                    if (psEnd > psStart) {
+                        pairingStatus = childObj.substring(psStart, psEnd);
+                    }
+                }
+
+                // deviceId(hex文字列)取得
+                int dhIdx = childObj.indexOf("\"deviceId\":\"");
+                String deviceIdHex = "";
+                if (dhIdx >= 0) {
+                    int dhStart = dhIdx + 12;
+                    int dhEnd = childObj.indexOf("\"", dhStart);
+                    if (dhEnd > dhStart) {
+                        deviceIdHex = childObj.substring(dhStart, dhEnd);
+                    }
+                }
+
+                if (childDeviceId != 0) {
+                    cachedChildIds[childIdx] = childDeviceId;
+                    cachedChildLogicalIds[childIdx] = logicalId;
+                    cachedChildCount++;
+
+                    Serial.printf("[CONFIG] Child[%d]: 0x%08X (logical:%d, status:%s)\n",
+                                  childIdx, childDeviceId, logicalId, pairingStatus.c_str());
+
+                    // ペアリング待ち子機を記録
+                    if (pairingStatus == "PENDING") {
+                        hasPendingChildren = true;
+                        if (pendingChildCount < MAX_CHILD_DEVICES) {
+                            pendingChildren[pendingChildCount].deviceId = childDeviceId;
+                            pendingChildren[pendingChildCount].logicalId = logicalId;
+                            deviceIdHex.toCharArray(pendingChildren[pendingChildCount].deviceIdHex, 9);
+                            pendingChildCount++;
+                        }
+                    }
+
+                    childIdx++;
+                }
+
+                searchPos = objEnd + 1;
+            }
+        }
+    }
+
+    sendATCommand("AT+SHDISC", 2000);
+    return success && cachedParentIdHash != 0;
+}
+
+// ===== v2: ペアリングモード =====
+
+/**
+ * ペアリングモード実行
+ * PENDING状態の子機に対してペアリング要求を送信
+ */
+void executePairingMode() {
+    Serial.printf("\n[PAIRING] Starting pairing mode (%d pending children)\n", pendingChildCount);
+
+    for (int i = 0; i < pendingChildCount; i++) {
+        Serial.printf("[PAIRING] Pairing child 0x%08X (logical:%d)...\n",
+                      pendingChildren[i].deviceId, pendingChildren[i].logicalId);
+
+        sendPairingCommand(cachedParentIdHash, pendingChildren[i].deviceId, pendingChildren[i].logicalId);
+
+        // ペアリング応答待ち
+        if (waitForPairingResponse(pendingChildren[i].deviceId)) {
+            Serial.printf("[PAIRING] Child 0x%08X paired successfully!\n", pendingChildren[i].deviceId);
+            reportPairingResult(pendingChildren[i].deviceIdHex, "PAIRED");
+        } else {
+            Serial.printf("[PAIRING] Child 0x%08X pairing timeout\n", pendingChildren[i].deviceId);
+            reportPairingResult(pendingChildren[i].deviceIdHex, "FAILED");
+        }
+    }
+
+    Serial.println("[PAIRING] Pairing mode complete");
+}
+
+/**
+ * ペアリング要求パケット送信
+ * フォーマット: [0xA5][VERSION][CMD_PAIR][PARENT_ID_HASH_4bytes][TARGET_CHILD_ID_4bytes][LOGICAL_ID][CHECKSUM][0x5A]
+ * 合計: 14バイト
+ */
+void sendPairingCommand(uint32_t parentIdHash, uint32_t targetChildId, uint8_t logicalId) {
+    uint8_t packet[14];
+
+    packet[0] = TWELITE_HEADER;
+    packet[1] = PROTOCOL_VERSION;
+    packet[2] = TWELITE_CMD_PAIR;
+    // parentIdHash
+    packet[3] = (parentIdHash >> 24) & 0xFF;
+    packet[4] = (parentIdHash >> 16) & 0xFF;
+    packet[5] = (parentIdHash >> 8) & 0xFF;
+    packet[6] = parentIdHash & 0xFF;
+    // targetChildId
+    packet[7] = (targetChildId >> 24) & 0xFF;
+    packet[8] = (targetChildId >> 16) & 0xFF;
+    packet[9] = (targetChildId >> 8) & 0xFF;
+    packet[10] = targetChildId & 0xFF;
+    // logicalId
+    packet[11] = logicalId;
+    // checksum
+    packet[12] = computeChecksum(packet, 12);
+    packet[13] = TWELITE_FOOTER;
+
+    // 3回送信
+    for (int i = 0; i < 3; i++) {
+        tweliteSerial.write(packet, 14);
+        delay(WAKE_SIGNAL_INTERVAL);
+    }
+}
+
+/**
+ * ペアリング応答待ち
+ * フォーマット: [0xA5][VERSION][CMD_PAIR_ACK][PARENT_ID_HASH_4bytes][CHILD_ID_4bytes][STATUS][CHECKSUM][0x5A]
+ * 合計: 14バイト
+ */
+bool waitForPairingResponse(uint32_t targetChildId) {
+    unsigned long startTime = millis();
+    uint8_t buffer[64];
+    int bufferIndex = 0;
+
+    while (millis() - startTime < PAIRING_RESPONSE_TIMEOUT) {
+        while (tweliteSerial.available()) {
+            uint8_t b = tweliteSerial.read();
+
+            if (bufferIndex == 0 && b != TWELITE_HEADER) {
+                continue;
+            }
+
+            buffer[bufferIndex++] = b;
+
+            if (b == TWELITE_FOOTER && bufferIndex >= 14) {
+                // ペアリング応答チェック
+                if (buffer[1] == PROTOCOL_VERSION && buffer[2] == TWELITE_CMD_PAIR_ACK) {
+                    // チェックサム検証
+                    uint8_t expectedChecksum = computeChecksum(buffer, bufferIndex - 2);
+                    if (buffer[bufferIndex - 2] != expectedChecksum) {
+                        bufferIndex = 0;
+                        continue;
+                    }
+
+                    // parentIdHash検証
+                    uint32_t receivedHash = ((uint32_t)buffer[3] << 24) |
+                                            ((uint32_t)buffer[4] << 16) |
+                                            ((uint32_t)buffer[5] << 8) |
+                                            (uint32_t)buffer[6];
+
+                    uint32_t childId = ((uint32_t)buffer[7] << 24) |
+                                       ((uint32_t)buffer[8] << 16) |
+                                       ((uint32_t)buffer[9] << 8) |
+                                       (uint32_t)buffer[10];
+
+                    uint8_t status = buffer[11];
+
+                    if (receivedHash == cachedParentIdHash && childId == targetChildId && status == 0x01) {
+                        return true;  // ペアリング成功
+                    }
+                }
+                bufferIndex = 0;
+            }
+
+            if (bufferIndex >= sizeof(buffer)) {
+                bufferIndex = 0;
+            }
+        }
+        delay(10);
+    }
+
+    return false;
+}
+
+/**
+ * ペアリング結果をサーバーに報告
+ */
+bool reportPairingResult(const char* childDeviceIdHex, const char* status) {
+    String pairingPath = String(SERVER_CONFIG_PATH) + DEVICE_ID + "/pairing-result";
+
+    // JSONペイロード構築
+    String payload = "{";
+    payload += "\"childDeviceId\":\"" + String(childDeviceIdHex) + "\",";
+    payload += "\"status\":\"" + String(status) + "\",";
+    payload += "\"secret\":\"" + String(DEVICE_SECRET) + "\"";
+    payload += "}";
+
+    sendATCommand("AT+SHDISC", 2000);
+    delay(500);
+
+    String url = String("https://") + SERVER_HOST + pairingPath;
+    sendATCommand("AT+SHCONF=\"URL\",\"" + url + "\"", 3000);
+    sendATCommand("AT+SHCONF=\"BODYLEN\",1024", 2000);
+    sendATCommand("AT+SHCONF=\"HEADERLEN\",350", 2000);
+    sendATCommand("AT+CSSLCFG=\"sslversion\",0,3", 2000);
+    sendATCommand("AT+SHSSL=1,\"\"", 2000);
+
+    String response = sendATCommand("AT+SHCONN", 30000);
+    if (response.indexOf("OK") < 0) {
+        return false;
+    }
+
+    response = sendATCommand("AT+SHSTATE?", 3000);
+    if (response.indexOf("+SHSTATE: 1") < 0) {
+        sendATCommand("AT+SHDISC", 2000);
+        return false;
+    }
+
+    sendATCommand("AT+SHCHEAD", 2000);
+    sendATCommand("AT+SHAHEAD=\"Content-Type\",\"application/json\"", 2000);
+
+    sendATCommand("AT+SHBOD=" + String(payload.length()) + ",10000", 3000);
+    delay(100);
+    modemSerial.print(payload);
+    delay(1000);
+
+    response = sendATCommand("AT+SHREQ=\"" + pairingPath + "\",3", 60000);
+
+    bool success = false;
+    if (response.indexOf("+SHREQ:") >= 0) {
+        int idx = response.indexOf(",");
+        if (idx > 0) {
+            int idx2 = response.indexOf(",", idx + 1);
+            if (idx2 > idx) {
+                String statusCode = response.substring(idx + 1, idx2);
+                statusCode.trim();
+                success = (statusCode == "200");
+            }
+        }
+    }
+
+    sendATCommand("AT+SHDISC", 2000);
+    return success;
 }
 
 // ===== モデム関連関数 =====
@@ -452,6 +971,7 @@ bool initModem() {
     Serial.println("[MODEM] AT OK");
 
     sendATCommand("ATE0", 1000);
+    sendATCommand("AT+CMEE=2", 1000);  // 詳細エラーコード有効化
 
     String response = sendATCommand("AT+CPIN?", 5000);
     if (response.indexOf("READY") < 0) {
@@ -460,9 +980,17 @@ bool initModem() {
     }
     Serial.println("[MODEM] SIM ready");
 
+    // APN設定はラジオ有効化前に行う（shell参考: at_only_lte_connect.sh）
+    String apnCmd = String("AT+CGDCONT=1,\"IP\",\"") + LTE_APN + "\"";
+    sendATCommand(apnCmd, 3000);
+    // SIM7080G固有: アプリケーション層コンテキストにAPNをマッピング
+    String cncfgCmd = String("AT+CNCFG=0,1,\"") + LTE_APN + "\"";
+    sendATCommand(cncfgCmd, 3000);
+
     sendATCommand("AT+CFUN=1", 5000);
     delay(2000);
-    sendATCommand("AT+CMNB=1", 3000);
+    // Cat-M1 + NB-IoT 両対応（1=NB-IoTのみ では接続できない場合がある）
+    sendATCommand("AT+CMNB=3", 3000);
     sendATCommand("AT+COPS=0", 10000);
 
     Serial.println("[MODEM] Waiting for network...");
@@ -498,25 +1026,39 @@ bool initModem() {
 
 bool connectNetwork() {
     Serial.println("[MODEM] Connecting...");
-    sendATCommand("AT+CNACT=0,0", 3000);
+
+    // 既存の接続をクリア
+    sendATCommand("AT+CNACT=0,0", 5000);
     delay(1000);
 
-    String apnCmd = String("AT+CGDCONT=1,\"IP\",\"") + LTE_APN + "\"";
-    sendATCommand(apnCmd, 3000);
-
-    sendATCommand("AT+CNACT=0,1", 30000);
-    delay(2000);
-
-    String response = sendATCommand("AT+CNACT?", 5000);
-    if (response.indexOf("+CNACT: 0,1") >= 0) {
-        int start = response.indexOf("\"") + 1;
-        int end = response.indexOf("\"", start);
-        if (start > 0 && end > start) {
-            modemState.ipAddress = response.substring(start, end);
-            Serial.println("[MODEM] IP: " + modemState.ipAddress);
-        }
-        return true;
+    // PDP Context有効化要求（AT+CNACT=0,1はOKを即返し、接続は非同期で確立）
+    String response = sendATCommand("AT+CNACT=0,1", 5000);
+    if (response.indexOf("ERROR") >= 0) {
+        Serial.println("[MODEM] CNACT activate failed");
+        return false;
     }
+
+    // 接続確立まで最大30秒ポーリング（shell参考: AT+CGACT後のAT+CGCONTRDP=1確認）
+    Serial.println("[MODEM] Waiting for PDP context activation...");
+    unsigned long waitStart = millis();
+    while (millis() - waitStart < 30000) {
+        delay(3000);
+        response = sendATCommand("AT+CNACT?", 5000);
+        if (response.indexOf("+CNACT: 0,1") >= 0) {
+            int start = response.indexOf("\"") + 1;
+            int end = response.indexOf("\"", start);
+            if (start > 0 && end > start) {
+                modemState.ipAddress = response.substring(start, end);
+                if (modemState.ipAddress.length() > 0 && modemState.ipAddress != "0.0.0.0") {
+                    Serial.println("[MODEM] IP: " + modemState.ipAddress);
+                    return true;
+                }
+            }
+        }
+        Serial.print(".");
+    }
+
+    Serial.println("\n[MODEM] PDP context activation timeout");
     return false;
 }
 
@@ -580,12 +1122,16 @@ bool sendAllDataToServer() {
     payload += "\"children\":[";
     bool first = true;
     for (int i = 0; i < MAX_CHILD_DEVICES; i++) {
-        if (registeredChildren[i] != 0x00000000) {
+        if (cachedChildIds[i] != 0x00000000) {
             if (!first) payload += ",";
             first = false;
 
+            // デバイスIDを8桁16進数文字列に変換
+            char hexId[9];
+            snprintf(hexId, sizeof(hexId), "%08x", cachedChildIds[i]);
+
             payload += "{";
-            payload += "\"device_id\":\"" + String(registeredChildren[i], HEX) + "\",";
+            payload += "\"device_id\":\"" + String(hexId) + "\",";
             payload += "\"temperature\":" + String(childDataList[i].temperature, 2) + ",";
             payload += "\"humidity\":" + String(childDataList[i].humidity, 2) + ",";
             payload += "\"rssi\":" + String(childDataList[i].rssi) + ",";
@@ -666,7 +1212,8 @@ String sendATCommand(const String& cmd, unsigned long timeout) {
         }
         if (response.indexOf("OK") >= 0 || response.indexOf("ERROR") >= 0 ||
             response.indexOf("+SHREQ:") >= 0 || response.indexOf(">") >= 0 ||
-            response.indexOf("+CNTP:") >= 0) {
+            response.indexOf("+CNTP:") >= 0 || response.indexOf("+SHREAD:") >= 0 ||
+            response.indexOf("+APP PDP:") >= 0) {  // SIM7080G PDP非同期通知
             break;
         }
         delay(10);
@@ -750,8 +1297,6 @@ String getTimestamp() {
 
 /**
  * 次の定時（10分刻み）までのスリープ時間を計算
- * 例: 現在10:03 → 次は10:10 → 7分後
- *     現在10:10 → 次は10:20 → 10分後
  */
 uint64_t calculateSleepDuration() {
     time_t now;
@@ -762,10 +1307,8 @@ uint64_t calculateSleepDuration() {
     int currentMinute = timeinfo.tm_min;
     int currentSecond = timeinfo.tm_sec;
 
-    // 次の10分刻みの分を計算
     int nextMinute = ((currentMinute / MEASUREMENT_INTERVAL_MIN) + 1) * MEASUREMENT_INTERVAL_MIN;
 
-    // 次の定時までの秒数を計算
     int minutesToSleep = nextMinute - currentMinute;
     if (minutesToSleep <= 0) {
         minutesToSleep += MEASUREMENT_INTERVAL_MIN;
@@ -777,6 +1320,11 @@ uint64_t calculateSleepDuration() {
     secondsToSleep -= 30;
     if (secondsToSleep < 60) {
         secondsToSleep += MEASUREMENT_INTERVAL_MIN * 60;
+    }
+
+    // 負値ガード: uint64_tへのキャスト前に最低値を保証
+    if (secondsToSleep <= 0) {
+        secondsToSleep = MEASUREMENT_INTERVAL_MIN * 60;
     }
 
     Serial.printf("[SLEEP] Current: %02d:%02d:%02d, Next measurement at XX:%02d:00\n",

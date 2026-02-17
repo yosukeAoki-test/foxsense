@@ -1,0 +1,121 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+// 開発用: SQLite、本番用: PostgreSQL
+// 切り替えは.envのDATABASE_URLで行う
+// SQLite: DATABASE_URL="file:./dev.db"
+// PostgreSQL: DATABASE_URL="postgresql://user:pass@host:5432/db"
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         String   @default("USER")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  subscription  Subscription?
+  parentDevices ParentDevice[]
+  refreshTokens RefreshToken[]
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model Subscription {
+  id                   String   @id @default(uuid())
+  userId               String   @unique
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stripeCustomerId     String?
+  stripeSubscriptionId String?
+  plan                 String
+  status               String
+  currentPeriodStart   DateTime
+  currentPeriodEnd     DateTime
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+}
+
+model ParentDevice {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deviceId     String   @unique
+  deviceSecret String   @default(uuid())
+  name         String
+  location     String?
+  soracomSimId String?
+  simStatus    String   @default("INACTIVE")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  childDevices  ChildDevice[]
+  sensorData    SensorData[]
+  alertSettings AlertSettings?
+
+  @@index([userId])
+}
+
+model ChildDevice {
+  id            String       @id @default(uuid())
+  parentId      String
+  parent        ParentDevice @relation(fields: [parentId], references: [id], onDelete: Cascade)
+  deviceId      String       @unique
+  logicalId     Int?
+  pairingStatus String       @default("PENDING")
+  name          String
+  location      String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  sensorData SensorData[]
+
+  @@index([parentId])
+}
+
+model SensorData {
+  id          String        @id @default(uuid())
+  parentId    String?
+  parent      ParentDevice? @relation(fields: [parentId], references: [id], onDelete: Cascade)
+  childId     String?
+  child       ChildDevice?  @relation(fields: [childId], references: [id], onDelete: Cascade)
+  deviceType  String
+  temperature Float
+  humidity    Float
+  battery     Float?
+  rssi        Int?
+  timestamp   DateTime      @default(now())
+
+  @@index([parentId, timestamp])
+  @@index([childId, timestamp])
+}
+
+model AlertSettings {
+  id            String       @id @default(uuid())
+  parentId      String       @unique
+  parent        ParentDevice @relation(fields: [parentId], references: [id], onDelete: Cascade)
+  tempMin       Float        @default(-5)
+  tempMax       Float        @default(40)
+  humidityMin   Float        @default(20)
+  humidityMax   Float        @default(90)
+  frostWarning  Float        @default(3)
+  frostCritical Float        @default(0)
+  emailEnabled  Boolean      @default(true)
+  lineEnabled   Boolean      @default(false)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+}

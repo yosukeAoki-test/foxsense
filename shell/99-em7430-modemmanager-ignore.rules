@@ -1,0 +1,11 @@
+# EM7430をModemManagerから除外
+# ファイル配置先: /etc/udev/rules.d/99-em7430-modemmanager-ignore.rules
+#
+# ModemManagerがEM7430にアクセスするのを防ぎ、
+# mbimcliとの競合を回避します。
+
+# Sierra Wireless EM7430 (Vendor:Product = 1199:907d)
+SUBSYSTEM=="usb", ATTRS{idVendor}=="1199", ATTRS{idProduct}=="907d", ENV{ID_MM_DEVICE_IGNORE}="1"
+
+# 追加: cdc-wdm0デバイスもModemManagerから除外
+SUBSYSTEM=="usb", DRIVER=="cdc_mbim", ENV{ID_MM_DEVICE_IGNORE}="1"

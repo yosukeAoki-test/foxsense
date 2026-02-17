@@ -7,6 +7,10 @@
 
 // デバイス識別
 #define DEVICE_ID "foxsense-001"           // デバイスID（サーバー登録用）
+#define DEVICE_SECRET "CHANGE_ME"          // デバイスシークレット（サーバー認証用）
+
+// プロトコルバージョン
+#define PROTOCOL_VERSION 0x02              // v2: parentIdHash対応
 
 // 動作モード設定
 #define USE_TEST_MODE false                // true=30秒間隔テスト, false=10分間隔本番
@@ -43,17 +47,20 @@
 #define MAX_CHILD_DEVICES 8                // 最大子機数
 #define CHILD_RESPONSE_TIMEOUT 30000       // 子機応答タイムアウト (ms)
 #define WAKE_SIGNAL_INTERVAL 100           // 起床信号送信間隔 (ms)
+#define PAIRING_RESPONSE_TIMEOUT 10000     // ペアリング応答タイムアウト (ms)
 
-// 登録済み子機ID（0x00000000は未登録）
-// TWELITEのシリアル番号下位4バイトを使用
-#define CHILD_ID_1 0x00000000              // 子機1
-#define CHILD_ID_2 0x00000000              // 子機2
-#define CHILD_ID_3 0x00000000              // 子機3
-#define CHILD_ID_4 0x00000000              // 子機4
-#define CHILD_ID_5 0x00000000              // 子機5
-#define CHILD_ID_6 0x00000000              // 子機6
-#define CHILD_ID_7 0x00000000              // 子機7
-#define CHILD_ID_8 0x00000000              // 子機8
+// サーバー設定取得間隔（ブート回数ベース）
+// 10分間隔 × 36回 = 約6時間ごとにサーバーから設定再取得
+#define CONFIG_FETCH_INTERVAL 36
+
+// TWELITEプロトコルコマンド定義
+#define TWELITE_HEADER      0xA5           // パケットヘッダー
+#define TWELITE_FOOTER      0x5A           // パケットフッター
+#define TWELITE_CMD_WAKE    0x01           // 起床コマンド（v1互換）
+#define TWELITE_CMD_DATA    0x02           // データ応答（v1互換）
+#define TWELITE_CMD_ACK     0x03           // 確認応答
+#define TWELITE_CMD_PAIR    0x10           // ペアリング要求
+#define TWELITE_CMD_PAIR_ACK 0x11          // ペアリング応答
 
 // ===== バッテリー監視設定 =====
 #define BATTERY_VOLTAGE_DIVIDER_RATIO 2.0  // 分圧回路比 (実電圧÷測定値)
@@ -73,9 +80,10 @@
 #define LTE_APN_PASS "sora"                // APNパスワード
 
 // サーバー設定
-#define SERVER_HOST "smart-agri-vision.net"   // データ送信先サーバー
-#define SERVER_PORT 443                       // HTTPSポート
-#define SERVER_PATH "/foxsense-one/api/data"  // APIエンドポイント
+#define SERVER_HOST "foxsense.smart-agri-vision.net"  // データ送信先サーバー
+#define SERVER_PORT 443                               // HTTPSポート
+#define SERVER_PATH "/api/data"                       // データ送信APIエンドポイント
+#define SERVER_CONFIG_PATH "/api/devices/config/"     // デバイス設定取得APIパス
 
 // ===== LTE自動復旧設定 =====
 #define LTE_MAX_RETRY_COUNT 3              // 最大リトライ回数

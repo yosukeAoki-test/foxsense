@@ -1,0 +1,13 @@
+[Unit]
+Description=SORACOM MBIM Connection
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/soracom-connect.sh
+ExecStartPost=/usr/local/bin/soracom-ip-setup.sh
+RemainAfterExit=true
+TimeoutStartSec=120
+
+[Install]
+WantedBy=multi-user.target

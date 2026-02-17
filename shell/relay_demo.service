@@ -1,0 +1,12 @@
+[Unit]
+Description=Relay Demo - 30秒ごとにリレー作動
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /root/agri-iot/shell/relay_demo.py --gpio 26 --interval 30 --duration 3
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

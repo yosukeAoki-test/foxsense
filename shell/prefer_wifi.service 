@@ -1,0 +1,12 @@
+[Unit]
+Description=Prefer Wi-Fi over LTE route setup
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/prefer_wifi.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
