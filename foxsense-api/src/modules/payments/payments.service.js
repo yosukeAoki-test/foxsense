@@ -2,6 +2,7 @@ import Stripe from 'stripe';
 import prisma from '../../config/db.js';
 import config from '../../config/index.js';
 import { AppError } from '../../middleware/errorHandler.js';
+import { grantCoins } from '../foxcoins/foxcoins.service.js';
 
 // テストモード: Stripe APIキーが未設定の場合はモック動作
 const isTestMode = !config.stripe.secretKey || config.stripe.secretKey.startsWith('sk_test_xxx');
@@ -206,7 +207,16 @@ export const handleWebhook = async (payload, signature) => {
   switch (event.type) {
     case 'checkout.session.completed': {
       const session = event.data.object;
-      const { userId, plan } = session.metadata;
+      const { type, userId, packageId, coins, price } = session.metadata;
+
+      // FoxCoin 購入完了
+      if (type === 'foxcoin') {
+        await grantCoins(userId, parseInt(coins), packageId, parseInt(price), 'Stripe決済');
+        break;
+      }
+
+      // 従来のサブスクリプション処理
+      const { plan } = session.metadata;
 
       await prisma.subscription.upsert({
         where: { userId },

@@ -5,8 +5,7 @@ import './index.css'
 import App from './App.jsx'
 import Login from './components/Login.jsx'
 import Register from './components/Register.jsx'
-import PricingPlans from './components/PricingPlans.jsx'
-import SubscriptionManagement from './components/SubscriptionManagement.jsx'
+import AdminPage from './components/AdminPage.jsx'
 import { AuthProvider, useAuth } from './contexts/AuthContext.jsx'
 
 // 認証が必要なルートを保護するコンポーネント
@@ -27,6 +26,22 @@ const ProtectedRoute = ({ children }) => {
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
   }
+
+  return children;
+};
+
+// ADMIN 権限が必要なルート
+const AdminRoute = ({ children }) => {
+  const { isAuthenticated, isLoading, user } = useAuth();
+
+  if (isLoading) return (
+    <div className="min-h-screen flex items-center justify-center">
+      <div className="w-12 h-12 border-4 border-gray-200 border-t-gray-500 rounded-full animate-spin" />
+    </div>
+  );
+
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  if (user?.role !== 'ADMIN') return <Navigate to="/" replace />;
 
   return children;
 };
@@ -58,9 +73,6 @@ createRoot(document.getElementById('root')).render(
     <BrowserRouter>
       <AuthProvider>
         <Routes>
-          {/* 公開ルート（認証不要） */}
-          <Route path="/pricing" element={<PricingPlans />} />
-
           {/* 認証済みユーザーはリダイレクト */}
           <Route
             path="/login"
@@ -88,28 +100,21 @@ createRoot(document.getElementById('root')).render(
               </ProtectedRoute>
             }
           />
+          {/* FoxCoin 購入完了 */}
           <Route
-            path="/subscription"
-            element={
-              <ProtectedRoute>
-                <SubscriptionManagement />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/subscription/success"
+            path="/foxcoins/success"
             element={
               <ProtectedRoute>
                 <div className="min-h-screen bg-green-50 flex items-center justify-center p-4">
                   <div className="bg-white rounded-xl shadow-lg p-8 text-center max-w-md">
-                    <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <svg className="w-8 h-8 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    <div className="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <svg className="w-8 h-8 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
                     </div>
-                    <h1 className="text-2xl font-bold text-gray-900 mb-2">決済完了</h1>
-                    <p className="text-gray-600 mb-6">FoxSenseへのご登録ありがとうございます。</p>
-                    <a href="/" className="inline-block bg-green-600 hover:bg-green-700 text-white font-medium py-2.5 px-6 rounded-lg transition-colors">
+                    <h1 className="text-2xl font-bold text-gray-900 mb-2">購入完了</h1>
+                    <p className="text-gray-600 mb-6">FoxCoinが翌日から有効になります。</p>
+                    <a href="/" className="inline-block bg-yellow-500 hover:bg-yellow-600 text-white font-medium py-2.5 px-6 rounded-lg transition-colors">
                       ダッシュボードへ
                     </a>
                   </div>
@@ -117,23 +122,14 @@ createRoot(document.getElementById('root')).render(
               </ProtectedRoute>
             }
           />
+
+          {/* 管理画面 */}
           <Route
-            path="/subscription/cancel"
+            path="/admin"
             element={
-              <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-                <div className="bg-white rounded-xl shadow-lg p-8 text-center max-w-md">
-                  <div className="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <svg className="w-8 h-8 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                    </svg>
-                  </div>
-                  <h1 className="text-2xl font-bold text-gray-900 mb-2">決済がキャンセルされました</h1>
-                  <p className="text-gray-600 mb-6">お支払いは完了していません。</p>
-                  <a href="/pricing" className="inline-block bg-green-600 hover:bg-green-700 text-white font-medium py-2.5 px-6 rounded-lg transition-colors">
-                    プラン選択に戻る
-                  </a>
-                </div>
-              </div>
+              <AdminRoute>
+                <AdminPage />
+              </AdminRoute>
             }
           />
 

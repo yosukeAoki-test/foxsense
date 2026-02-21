@@ -33,7 +33,11 @@ const Register = () => {
       await register(email, password, name);
       navigate('/');
     } catch (err) {
-      setError(err.response?.data?.message || 'アカウント作成に失敗しました');
+      if (err.response?.status === 409) {
+        setError('このメールアドレスはすでに登録されています');
+      } else {
+        setError(err.response?.data?.message || 'アカウント作成に失敗しました');
+      }
     } finally {
       setIsLoading(false);
     }

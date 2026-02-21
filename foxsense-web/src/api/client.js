@@ -121,15 +121,15 @@ export const deleteParentDevice = async (parentId) => {
   return response.data;
 };
 
-// ===== 子機API =====
+// ===== 子機API (ユーザー所有) =====
 
-export const getChildDevices = async (parentId) => {
-  const response = await client.get(`/devices/parents/${parentId}/children`);
+export const getAllChildDevices = async () => {
+  const response = await client.get('/devices/children');
   return response.data.data;
 };
 
-export const registerChildDevice = async (parentId, childData) => {
-  const response = await client.post(`/devices/parents/${parentId}/children`, childData);
+export const registerChildDevice = async (childData) => {
+  const response = await client.post('/devices/children', childData);
   return response.data.data;
 };
 
@@ -138,9 +138,26 @@ export const updateChildDevice = async (childId, data) => {
   return response.data.data;
 };
 
-export const deleteChildDevice = async (parentId, childId) => {
+export const deleteChildDevice = async (childId) => {
   const response = await client.delete(`/devices/children/${childId}`);
   return response.data;
+};
+
+// ===== 紐付けAPI =====
+
+export const assignChildToParent = async (parentId, childId) => {
+  const response = await client.post(`/devices/parents/${parentId}/assign`, { childId });
+  return response.data.data;
+};
+
+export const unassignChild = async (assignmentId) => {
+  const response = await client.delete(`/devices/assignments/${assignmentId}`);
+  return response.data.data;
+};
+
+export const getAssignmentHistory = async (childId) => {
+  const response = await client.get(`/devices/children/${childId}/history`);
+  return response.data.data;
 };
 
 // ===== センサーデータAPI =====
@@ -176,30 +193,6 @@ export const updateAlertSettings = async (parentId, settings) => {
   return response.data.data;
 };
 
-// ===== 決済API =====
-
-export const paymentsApi = {
-  createCheckout: async (plan) => {
-    const response = await client.post('/payments/create-checkout', { plan });
-    return response.data.data;
-  },
-
-  getSubscription: async () => {
-    const response = await client.get('/payments/subscription');
-    return response.data.data;
-  },
-
-  cancelSubscription: async () => {
-    const response = await client.post('/payments/cancel');
-    return response.data.data;
-  },
-
-  createPortal: async () => {
-    const response = await client.post('/payments/portal');
-    return response.data.data;
-  },
-};
-
 // ===== SORACOM API =====
 
 export const soracomApi = {
@@ -233,6 +226,30 @@ export const soracomApi = {
     return response.data.data;
   },
 };
+
+// ===== FoxCoin API =====
+
+export const foxCoinApi = {
+  getBalance: async () => {
+    const response = await client.get('/foxcoins/balance');
+    return response.data.data;
+  },
+  getPackages: async () => {
+    const response = await client.get('/foxcoins/packages');
+    return response.data.data;
+  },
+  getHistory: async () => {
+    const response = await client.get('/foxcoins/history');
+    return response.data.data;
+  },
+  createCheckout: async (packageId) => {
+    const response = await client.post('/foxcoins/checkout', { packageId });
+    return response.data.data;
+  },
+};
+
+// client インスタンスをデフォルトエクスポート（AdminPage用）
+export default client;
 
 // ===== ローカルストレージ（デモ用） =====
 
@@ -489,5 +506,3 @@ export const saveAlertsMock = (alerts) => {
   stored.alerts = alerts;
   saveToStorage(stored);
 };
-
-export default client;

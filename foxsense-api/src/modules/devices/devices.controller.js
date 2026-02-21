@@ -27,14 +27,14 @@ export const deleteParentDevice = asyncHandler(async (req, res) => {
   res.json({ success: true, message: 'Device deleted' });
 });
 
-// Child Devices
-export const getChildDevices = asyncHandler(async (req, res) => {
-  const children = await devicesService.getChildDevices(req.params.parentId, req.user.id);
+// Child Devices (ユーザー所有)
+export const getAllChildDevices = asyncHandler(async (req, res) => {
+  const children = await devicesService.getAllChildDevices(req.user.id);
   res.json({ success: true, data: children });
 });
 
 export const createChildDevice = asyncHandler(async (req, res) => {
-  const child = await devicesService.createChildDevice(req.params.parentId, req.user.id, req.body);
+  const child = await devicesService.createChildDevice(req.user.id, req.body);
   res.status(201).json({ success: true, data: child });
 });
 
@@ -48,6 +48,26 @@ export const deleteChildDevice = asyncHandler(async (req, res) => {
   res.json({ success: true, message: 'Child device deleted' });
 });
 
+// Assignments (紐付け管理)
+export const assignChild = asyncHandler(async (req, res) => {
+  const { childId } = req.body;
+  if (!childId) {
+    return res.status(400).json({ success: false, message: 'childId is required' });
+  }
+  const assignment = await devicesService.assignChildToParent(req.params.parentId, childId, req.user.id);
+  res.status(201).json({ success: true, data: assignment });
+});
+
+export const unassignChild = asyncHandler(async (req, res) => {
+  const result = await devicesService.unassignChild(req.params.assignmentId, req.user.id);
+  res.json({ success: true, data: result });
+});
+
+export const getAssignmentHistory = asyncHandler(async (req, res) => {
+  const history = await devicesService.getAssignmentHistory(req.params.childId, req.user.id);
+  res.json({ success: true, data: history });
+});
+
 // Alert Settings
 export const getAlertSettings = asyncHandler(async (req, res) => {
   const settings = await devicesService.getAlertSettings(req.params.parentId, req.user.id);
@@ -59,7 +79,7 @@ export const updateAlertSettings = asyncHandler(async (req, res) => {
   res.json({ success: true, data: settings });
 });
 
-// Device Config (デバイス認証エンドポイント)
+// Device Config (ファームウェア認証エンドポイント)
 export const getDeviceConfig = asyncHandler(async (req, res) => {
   const { deviceId } = req.params;
   const { secret } = req.query;

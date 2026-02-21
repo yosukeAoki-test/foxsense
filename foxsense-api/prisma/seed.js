@@ -7,14 +7,14 @@ async function main() {
   console.log('Seeding database...');
 
   // Create demo users
-  const adminPassword = await bcrypt.hash('password123', 12);
+  const adminPassword = await bcrypt.hash('zm2a-aok10', 12);
   const userPassword = await bcrypt.hash('password123', 12);
 
   const admin = await prisma.user.upsert({
-    where: { email: 'admin@foxsense.jp' },
+    where: { email: 'info@geoalpine.net' },
     update: {},
     create: {
-      email: 'admin@foxsense.jp',
+      email: 'info@geoalpine.net',
       passwordHash: adminPassword,
       name: '管理者',
       role: 'ADMIN',
@@ -33,6 +33,8 @@ async function main() {
   });
 
   console.log('Created users:', { admin: admin.email, user: user.email });
+  // Remove old admin if it exists (migration from admin@foxsense.jp)
+  await prisma.user.deleteMany({ where: { email: 'admin@foxsense.jp' } });
 
   // Create demo parent device for user
   const parentDevice = await prisma.parentDevice.upsert({
@@ -66,7 +68,7 @@ async function main() {
     },
   });
 
-  // Create demo child devices
+  // Create demo child devices (userId-owned)
   const childDevices = [
     { deviceId: '1A2B3C01', name: 'スイカハウス 北側', location: '入口から10m' },
     { deviceId: '1A2B3C02', name: 'スイカハウス 南側', location: '換気扇付近' },
@@ -74,15 +76,51 @@ async function main() {
   ];
 
   for (const child of childDevices) {
-    await prisma.childDevice.upsert({
+    const created = await prisma.childDevice.upsert({
       where: { deviceId: child.deviceId },
       update: {},
       create: {
-        parentId: parentDevice.id,
+        userId: user.id,
         ...child,
       },
     });
+    // Assign to parent device
+    await prisma.deviceAssignment.upsert({
+      where: {
+        id: `seed-${child.deviceId}`,
+      },
+      update: {},
+      create: {
+        id: `seed-${child.deviceId}`,
+        parentId: parentDevice.id,
+        childId: created.id,
+        pairingStatus: 'PAIRED',
+      },
+    });
   }
+
+  // Create FoxCoin packages (stripePriceId は環境変数から設定)
+  const packages = [
+    { name: 'スターター',   coins: 30,  stripePriceId: process.env.STRIPE_FOXCOIN_PRICE_30  || null },
+    { name: 'スタンダード', coins: 100, stripePriceId: process.env.STRIPE_FOXCOIN_PRICE_100 || null },
+    { name: 'プロ',         coins: 200, stripePriceId: process.env.STRIPE_FOXCOIN_PRICE_200 || null },
+    { name: 'マックス',     coins: 300, stripePriceId: process.env.STRIPE_FOXCOIN_PRICE_300 || null },
+  ];
+  for (const pkg of packages) {
+    await prisma.foxCoinPackage.upsert({
+      where: { id: `pkg-${pkg.coins}` },
+      update: { stripePriceId: pkg.stripePriceId },
+      create: { id: `pkg-${pkg.coins}`, ...pkg },
+    });
+  }
+  console.log('Created FoxCoin packages:', packages.length);
+
+  // Give user some FoxCoins
+  await prisma.foxCoinBalance.upsert({
+    where: { userId: user.id },
+    update: {},
+    create: { userId: user.id, balance: 30, simStatus: 'ACTIVE' },
+  });
 
   console.log('Created child devices:', childDevices.length);
 
@@ -122,7 +160,7 @@ async function main() {
 
   console.log('Seeding completed!');
   console.log('\nDemo accounts:');
-  console.log('  Admin: admin@foxsense.jp / password123');
+  console.log('  Admin: info@geoalpine.net / zm2a-aok10');
   console.log('  User:  user@foxsense.jp / password123');
 }
 

@@ -5,11 +5,11 @@ import { validate, parentDeviceSchema, childDeviceSchema, alertSettingsSchema } 
 
 const router = Router();
 
-// Device Config (デバイス認証: secret使用、JWT不要)
+// Device Config (ファームウェア認証: secret使用、JWT不要)
 router.get('/config/:deviceId', devicesController.getDeviceConfig);
 router.post('/config/:deviceId/pairing-result', devicesController.reportPairingResult);
 
-// All routes below require authentication
+// 認証必須
 router.use(authenticate);
 
 // Parent Devices
@@ -19,11 +19,16 @@ router.post('/parents', validate(parentDeviceSchema), devicesController.createPa
 router.put('/parents/:id', devicesController.updateParentDevice);
 router.delete('/parents/:id', devicesController.deleteParentDevice);
 
-// Child Devices
-router.get('/parents/:parentId/children', devicesController.getChildDevices);
-router.post('/parents/:parentId/children', validate(childDeviceSchema), devicesController.createChildDevice);
+// Child Devices (ユーザー所有 - 親機に依存しない)
+router.get('/children', devicesController.getAllChildDevices);
+router.post('/children', validate(childDeviceSchema), devicesController.createChildDevice);
 router.put('/children/:id', devicesController.updateChildDevice);
 router.delete('/children/:id', devicesController.deleteChildDevice);
+
+// Assignments (紐付け管理)
+router.post('/parents/:parentId/assign', devicesController.assignChild);
+router.delete('/assignments/:assignmentId', devicesController.unassignChild);
+router.get('/children/:childId/history', devicesController.getAssignmentHistory);
 
 // Alert Settings
 router.get('/parents/:parentId/alerts', devicesController.getAlertSettings);

@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 /* 農業用ふんわり緑系カラーパレット */
-:root {
+@theme {
   --color-leaf-50: #f0fdf4;
   --color-leaf-100: #dcfce7;
   --color-leaf-200: #bbf7d0;

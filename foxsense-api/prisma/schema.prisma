@@ -20,9 +20,13 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  subscription  Subscription?
-  parentDevices ParentDevice[]
-  refreshTokens RefreshToken[]
+  subscription    Subscription?
+  parentDevices   ParentDevice[]
+  childDevices    ChildDevice[]
+  refreshTokens   RefreshToken[]
+  foxCoinBalance  FoxCoinBalance?
+  foxCoinPurchases FoxCoinPurchase[]
+  foxCoinLogs     FoxCoinLog[]
 }
 
 model RefreshToken {
@@ -63,28 +67,45 @@ model ParentDevice {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  childDevices  ChildDevice[]
+  assignments   DeviceAssignment[]
   sensorData    SensorData[]
   alertSettings AlertSettings?
 
   @@index([userId])
 }
 
+// 子機はユーザー所有（特定の親機に紐付かない）
 model ChildDevice {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deviceId  String   @unique
+  name      String
+  location  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assignments DeviceAssignment[]
+  sensorData  SensorData[]
+
+  @@index([userId])
+}
+
+// 親機と子機の紐付け履歴
+// unassignedAt が null = 現在有効な紐付け
+model DeviceAssignment {
   id            String       @id @default(uuid())
   parentId      String
   parent        ParentDevice @relation(fields: [parentId], references: [id], onDelete: Cascade)
-  deviceId      String       @unique
+  childId       String
+  child         ChildDevice  @relation(fields: [childId], references: [id], onDelete: Cascade)
   logicalId     Int?
   pairingStatus String       @default("PENDING")
-  name          String
-  location      String?
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
-
-  sensorData SensorData[]
+  assignedAt    DateTime     @default(now())
+  unassignedAt  DateTime?    // null = 現在有効
 
   @@index([parentId])
+  @@index([childId])
 }
 
 model SensorData {
@@ -102,6 +123,66 @@ model SensorData {
 
   @@index([parentId, timestamp])
   @@index([childId, timestamp])
+}
+
+// ===== FoxCoin システム =====
+
+// 販売パッケージ (30 / 100 / 200 / 300 FoxCoin)
+model FoxCoinPackage {
+  id             String   @id @default(uuid())
+  name           String   // 例: "スターター", "スタンダード"
+  coins          Int      // 30, 100, 200, 300
+  price          Int      @default(0) // 円（0=未設定）
+  stripePriceId  String?  // Stripe Price ID (price_xxx)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  purchases FoxCoinPurchase[]
+}
+
+// ユーザーの FoxCoin 残高と SIM 状態
+model FoxCoinBalance {
+  id             String    @id @default(uuid())
+  userId         String    @unique
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  balance        Int       @default(0)   // 残 FoxCoin
+  simStatus      String    @default("INACTIVE") // ACTIVE | SUSPENDED | INACTIVE
+  lastDeductedAt DateTime? // 最後に1枚消費した日
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
+// 購入履歴
+model FoxCoinPurchase {
+  id          String          @id @default(uuid())
+  userId      String
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  packageId   String?
+  package     FoxCoinPackage? @relation(fields: [packageId], references: [id])
+  coins       Int             // 付与枚数
+  price       Int             // 購入時の金額（円）
+  note        String?         // 備考（管理者付与など）
+  activatedAt DateTime        // 有効開始日（購入翌日）
+  purchasedAt DateTime        @default(now())
+
+  @@index([userId])
+}
+
+// FoxCoin 増減ログ（購入・日次消費・管理者操作）
+model FoxCoinLog {
+  id            String   @id @default(uuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type          String   // PURCHASE | DAILY_DEDUCT | ADMIN_GRANT | ADMIN_DEDUCT
+  coins         Int      // 正数=付与、負数=消費
+  balanceBefore Int
+  balanceAfter  Int
+  note          String?
+  createdAt     DateTime @default(now())
+
+  @@index([userId])
+  @@index([createdAt])
 }
 
 model AlertSettings {

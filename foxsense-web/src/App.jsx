@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { format, addDays } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import Dashboard from './components/Dashboard';
@@ -7,9 +7,9 @@ import AlertSettings from './components/AlertSettings';
 import DeviceRegistration from './components/DeviceRegistration';
 import CropManagement from './components/CropManagement';
 import SettingsModal from './components/SettingsModal';
-import { getMockData, registerChildMock, deleteChildMock, saveAlertsMock } from './api/client';
+import { getMockData, saveAlertsMock, getParentDevices, deleteChildDevice, foxCoinApi } from './api/client';
 import { useAuth } from './contexts/AuthContext';
-import { Settings, RefreshCw, Plus, Sprout, Snowflake, AlertTriangle, X, Flower2, LogOut, User } from 'lucide-react';
+import { Settings, RefreshCw, Plus, Sprout, Snowflake, AlertTriangle, X, Flower2, LogOut, User, Radio, ChevronDown, Coins, ShieldCheck, Loader2 } from 'lucide-react';
 
 // 作物ごとの積算温度要件（CropManagementと同じ）
 const CROP_GDD_REQUIREMENTS = {
@@ -24,6 +24,12 @@ const CROP_GDD_REQUIREMENTS = {
 function App() {
   const { user, logout } = useAuth();
   const [mockData, setMockData] = useState(null);
+  const [parentDevices, setParentDevices] = useState([]);
+  const [selectedParent, setSelectedParent] = useState(null);
+  const [showParentMenu, setShowParentMenu] = useState(false);
+  const [foxCoinBalance, setFoxCoinBalance] = useState(null);
+  const [showFoxCoinShop, setShowFoxCoinShop] = useState(false);
+  const [purchasingPkg, setPurchasingPkg] = useState(null);
   const [selectedDevice, setSelectedDevice] = useState(null);
   const [showAlertSettings, setShowAlertSettings] = useState(false);
   const [showDeviceRegistration, setShowDeviceRegistration] = useState(false);
@@ -34,9 +40,31 @@ function App() {
     return saved ? JSON.parse(saved) : [];
   });
 
+  // 親機一覧をAPIから取得
+  const loadParentDevices = useCallback(async () => {
+    try {
+      const devices = await getParentDevices();
+      setParentDevices(devices);
+      if (!selectedParent && devices.length > 0) {
+        setSelectedParent(devices[0]);
+      } else if (selectedParent) {
+        const updated = devices.find(d => d.id === selectedParent.id);
+        if (updated) setSelectedParent(updated);
+      }
+    } catch {
+      // APIエラー時はモックを使用
+    }
+  }, [selectedParent]);
+
+  // FoxCoin 残高取得
+  useEffect(() => {
+    foxCoinApi.getBalance().then(setFoxCoinBalance).catch(() => {});
+  }, []);
+
   // 初期データ読み込み
   useEffect(() => {
     loadData();
+    loadParentDevices();
   }, []);
 
   // 霜予測アラート計算
@@ -153,44 +181,52 @@ function App() {
   const loadData = () => {
     const data = getMockData();
     setMockData(data);
-    // 選択デバイスがなければ親機を選択
     if (!selectedDevice && data.parent) {
       setSelectedDevice(data.parent);
     } else if (selectedDevice) {
-      // 選択中のデバイスを更新
-      const updated = data.devices.find(d => d.id === selectedDevice.id);
+      const updated = data.devices?.find(d => d.id === selectedDevice.id);
       if (updated) setSelectedDevice(updated);
     }
   };
+
+  // FoxCoin 購入
+  const handleFoxCoinPurchase = async (packageId) => {
+    setPurchasingPkg(packageId);
+    try {
+      const { url } = await foxCoinApi.createCheckout(packageId);
+      window.location.href = url;
+    } catch (err) {
+      alert(err.response?.data?.message || '購入ページへの遷移に失敗しました');
+    } finally {
+      setPurchasingPkg(null);
+    }
+  };
+
+  // 子機削除
+  const handleDeleteChild = useCallback(async (childId) => {
+    try {
+      await deleteChildDevice(childId);
+      loadData();
+      loadParentDevices();
+    } catch (err) {
+      console.error('子機削除失敗:', err);
+    }
+  }, []);
 
   // データ更新
   const handleRefresh = () => {
     setIsRefreshing(true);
     setTimeout(() => {
       loadData();
+      loadParentDevices();
       setIsRefreshing(false);
     }, 500);
   };
 
-  // 子機登録
-  const handleRegisterChild = (childData) => {
-    registerChildMock(childData);
+  // デバイス管理モーダルで変更があった時
+  const handleDeviceRefresh = () => {
+    loadParentDevices();
     loadData();
-  };
-
-  // 子機削除
-  const handleDeleteChild = (deviceId) => {
-    const device = mockData.children.find(c => c.id === deviceId);
-    const deviceName = device?.name || deviceId;
-
-    if (window.confirm(`「${deviceName}」を削除しますか？\n\nこの操作は取り消せません。`)) {
-      deleteChildMock(deviceId);
-      // 削除した子機が選択中だった場合は親機を選択
-      if (selectedDevice?.id === deviceId) {
-        setSelectedDevice(mockData.parent);
-      }
-      loadData();
-    }
   };
 
   // アラート設定保存
@@ -225,12 +261,42 @@ function App() {
             </div>
           </div>
           <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+            {/* 親機セレクター */}
+            {parentDevices.length > 0 && (
+              <div className="relative">
+                <button
+                  onClick={() => setShowParentMenu(prev => !prev)}
+                  className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-medium transition-colors border border-blue-200 max-w-[140px]"
+                >
+                  <Radio className="w-3.5 h-3.5 flex-shrink-0" />
+                  <span className="truncate">{selectedParent?.name || '親機選択'}</span>
+                  <ChevronDown className="w-3 h-3 flex-shrink-0" />
+                </button>
+                {showParentMenu && (
+                  <div className="absolute right-0 top-full mt-1 bg-white rounded-xl shadow-lg border border-gray-100 z-50 min-w-[180px] overflow-hidden">
+                    {parentDevices.map(p => (
+                      <button key={p.id} onClick={() => { setSelectedParent(p); setShowParentMenu(false); }}
+                        className={`w-full text-left px-3 py-2.5 text-sm hover:bg-gray-50 transition-colors ${selectedParent?.id === p.id ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700'}`}>
+                        <div className="font-medium">{p.name}</div>
+                        <div className="text-xs text-gray-400 font-mono">{p.deviceId}</div>
+                      </button>
+                    ))}
+                    <div className="border-t border-gray-100">
+                      <button onClick={() => { setShowDeviceRegistration(true); setShowParentMenu(false); }}
+                        className="w-full text-left px-3 py-2.5 text-sm text-green-600 hover:bg-green-50 transition-colors flex items-center gap-2">
+                        <Plus className="w-3.5 h-3.5" />親機を追加...
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
             <button
               onClick={() => setShowDeviceRegistration(true)}
               className="p-2 sm:p-3 rounded-lg sm:rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white shadow-lg shadow-orange-500/30 transition-all flex items-center gap-1 sm:gap-2"
             >
               <Plus className="w-4 h-4 sm:w-5 sm:h-5" />
-              <span className="hidden sm:inline text-xs sm:text-sm font-medium">子機追加</span>
+              <span className="hidden sm:inline text-xs sm:text-sm font-medium">デバイス管理</span>
             </button>
             <button
               onClick={() => setShowCropManagement(true)}
@@ -256,12 +322,36 @@ function App() {
             >
               <Settings className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
+            {/* FoxCoin 残高（クリックで購入） */}
+            {foxCoinBalance !== null && (
+              <button
+                onClick={() => setShowFoxCoinShop(true)}
+                className={`flex items-center gap-1.5 px-2.5 py-2 rounded-lg text-xs font-medium border transition-opacity hover:opacity-80 ${
+                  foxCoinBalance.simStatus === 'ACTIVE' ? 'bg-yellow-50 border-yellow-200 text-yellow-700' :
+                  foxCoinBalance.simStatus === 'SUSPENDED' ? 'bg-red-50 border-red-200 text-red-600' :
+                  'bg-gray-50 border-gray-200 text-gray-500'
+                }`}
+                title="FoxCoinを購入"
+              >
+                <Coins className="w-3.5 h-3.5" />
+                <span className="font-bold">{foxCoinBalance.balance}</span>
+                <span className="hidden sm:inline">FC</span>
+              </button>
+            )}
+
             {/* ユーザー情報・ログアウト */}
             <div className="flex items-center gap-1 sm:gap-2 ml-1 sm:ml-2 pl-2 sm:pl-3 border-l border-gray-200">
               <div className="hidden sm:flex items-center gap-1.5 text-sm text-gray-600">
                 <User className="w-4 h-4" />
                 <span className="max-w-[100px] truncate">{user?.name}</span>
               </div>
+              {user?.role === 'ADMIN' && (
+                <a href="/admin"
+                  className="p-2 sm:p-3 rounded-lg sm:rounded-xl bg-white/80 hover:bg-purple-50 text-gray-500 hover:text-purple-600 shadow-sm transition-all"
+                  title="管理画面">
+                  <ShieldCheck className="w-4 h-4 sm:w-5 sm:h-5" />
+                </a>
+              )}
               <button
                 onClick={logout}
                 className="p-2 sm:p-3 rounded-lg sm:rounded-xl bg-white/80 hover:bg-red-50 text-gray-500 hover:text-red-500 shadow-sm transition-all"
@@ -355,18 +445,36 @@ function App() {
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <div className="text-sm">
-              <span className="text-gray-500">親機: </span>
-              <span className="font-medium text-gray-700">{mockData.parent.name}</span>
-              <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${
-                mockData.parent.isOnline
-                  ? 'bg-leaf-100 text-leaf-700'
-                  : 'bg-gray-100 text-gray-500'
-              }`}>
-                {mockData.parent.isOnline ? 'オンライン' : 'オフライン'}
-              </span>
+              {selectedParent ? (
+                <>
+                  <span className="text-gray-500">選択中の親機: </span>
+                  <span className="font-medium text-gray-700">{selectedParent.name}</span>
+                  <span className="ml-2 text-xs text-gray-400 font-mono">{selectedParent.deviceId}</span>
+                  <span className="ml-2 px-2 py-0.5 rounded-full text-xs bg-blue-100 text-blue-700">
+                    子機 {selectedParent.activeChildren?.length || 0}台紐付け中
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="text-gray-500">親機: </span>
+                  <span className="font-medium text-gray-700">{mockData.parent.name}</span>
+                  <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${
+                    mockData.parent.isOnline ? 'bg-leaf-100 text-leaf-700' : 'bg-gray-100 text-gray-500'
+                  }`}>
+                    {mockData.parent.isOnline ? 'オンライン' : 'オフライン'}
+                  </span>
+                </>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-4 text-sm">
+            {parentDevices.length > 0 && (
+              <div>
+                <span className="text-gray-500">登録親機: </span>
+                <span className="font-bold text-blue-600">{parentDevices.length}</span>
+                <span className="text-gray-500">台</span>
+              </div>
+            )}
             <div>
               <span className="text-gray-500">登録子機: </span>
               <span className="font-bold text-leaf-600">{mockData.children.length}</span>
@@ -423,15 +531,51 @@ function App() {
         />
       )}
 
-      {/* デバイス登録モーダル */}
+      {/* デバイス管理モーダル */}
       {showDeviceRegistration && (
         <DeviceRegistration
-          parentId={mockData.parent.id}
-          registeredDevices={mockData.registeredChildren}
           onClose={() => setShowDeviceRegistration(false)}
-          onRegister={handleRegisterChild}
-          onDelete={handleDeleteChild}
+          onRefresh={handleDeviceRefresh}
         />
+      )}
+
+      {/* FoxCoin 購入モーダル */}
+      {showFoxCoinShop && foxCoinBalance && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="font-bold text-gray-900">FoxCoin 購入</h3>
+                <p className="text-xs text-gray-500 mt-0.5">残高: <span className="font-bold text-yellow-600">{foxCoinBalance.balance} FC</span></p>
+              </div>
+              <button onClick={() => setShowFoxCoinShop(false)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="space-y-2">
+              {(foxCoinBalance.packages || []).map(pkg => (
+                <div key={pkg.id} className="flex items-center justify-between p-3 border rounded-xl hover:border-yellow-300 transition-colors">
+                  <div>
+                    <div className="font-semibold text-gray-800">{pkg.name}</div>
+                    <div className="text-sm text-yellow-600 font-bold">{pkg.coins} FC</div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {pkg.price > 0 && <span className="text-sm text-gray-500">¥{pkg.price.toLocaleString()}</span>}
+                    <button
+                      onClick={() => handleFoxCoinPurchase(pkg.id)}
+                      disabled={!!purchasingPkg || !pkg.stripePriceId}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-yellow-500 hover:bg-yellow-600 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
+                    >
+                      {purchasingPkg === pkg.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Coins className="w-3.5 h-3.5" />}
+                      {pkg.stripePriceId ? '購入' : '準備中'}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-gray-400 mt-4 text-center">Stripe の安全な決済画面に移動します</p>
+          </div>
+        </div>
       )}
 
       {/* 栽培管理モーダル */}
