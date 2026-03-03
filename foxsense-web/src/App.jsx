@@ -7,7 +7,7 @@ import AlertSettings from './components/AlertSettings';
 import DeviceRegistration from './components/DeviceRegistration';
 import CropManagement from './components/CropManagement';
 import SettingsModal from './components/SettingsModal';
-import { getMockData, saveAlertsMock, getParentDevices, deleteChildDevice, foxCoinApi } from './api/client';
+import { getParentDevices, deleteChildDevice, foxCoinApi, getLatestData, getHistoryData, getAlertSettings, updateAlertSettings } from './api/client';
 import { useAuth } from './contexts/AuthContext';
 import { Settings, RefreshCw, Plus, Sprout, Snowflake, AlertTriangle, X, Flower2, LogOut, User, Radio, ChevronDown, Coins, ShieldCheck, Loader2 } from 'lucide-react';
 
@@ -35,6 +35,7 @@ function App() {
   const [showDeviceRegistration, setShowDeviceRegistration] = useState(false);
   const [showCropManagement, setShowCropManagement] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isLoadingInitial, setIsLoadingInitial] = useState(true);
   const [dismissedAlerts, setDismissedAlerts] = useState(() => {
     const saved = sessionStorage.getItem('foxsense_dismissed_alerts');
     return saved ? JSON.parse(saved) : [];
@@ -52,7 +53,9 @@ function App() {
         if (updated) setSelectedParent(updated);
       }
     } catch {
-      // APIエラー時はモックを使用
+      // エラー時は何もしない
+    } finally {
+      setIsLoadingInitial(false);
     }
   }, [selectedParent]);
 
@@ -61,11 +64,106 @@ function App() {
     foxCoinApi.getBalance().then(setFoxCoinBalance).catch(() => {});
   }, []);
 
-  // 初期データ読み込み
+  // 初回起動時に親機一覧だけ取得
   useEffect(() => {
-    loadData();
     loadParentDevices();
   }, []);
+
+  // selectedParent が決まったらセンサーデータ取得
+  useEffect(() => {
+    if (selectedParent) {
+      loadData();
+    } else {
+      setMockData(null);
+    }
+  }, [selectedParent?.id]);
+
+  // センサーデータ・アラート設定を実APIから取得
+  const loadData = useCallback(async () => {
+    if (!selectedParent) return;
+    try {
+      const [latestApiData, parentHistory, alertSettings] = await Promise.all([
+        getLatestData(selectedParent.id),
+        getHistoryData(selectedParent.id, '30d', 'parent'),
+        getAlertSettings(selectedParent.id),
+      ]);
+
+      const activeChildren = selectedParent.activeChildren || [];
+      const childHistoriesArr = await Promise.all(
+        activeChildren.map(child => getHistoryData(child.id, '30d', 'child').catch(() => []))
+      );
+
+      const historyByDevice = { [selectedParent.id]: parentHistory || [] };
+      activeChildren.forEach((child, i) => {
+        historyByDevice[child.id] = childHistoriesArr[i] || [];
+      });
+
+      const latest = {};
+      if (latestApiData?.parent) {
+        latest[selectedParent.id] = {
+          temperature: latestApiData.parent.temperature,
+          humidity: latestApiData.parent.humidity,
+          timestamp: latestApiData.parent.timestamp,
+        };
+      }
+      Object.entries(latestApiData?.children || {}).forEach(([childId, data]) => {
+        latest[childId] = { temperature: data.temperature, humidity: data.humidity, timestamp: data.timestamp };
+      });
+
+      const parent = {
+        id: selectedParent.id,
+        deviceId: selectedParent.deviceId,
+        name: selectedParent.name,
+        location: selectedParent.location || '',
+        soracomSimId: selectedParent.soracomSimId,
+        isOnline: !!latestApiData?.parent,
+        lastSeen: latestApiData?.parent?.timestamp || null,
+        battery: latestApiData?.parent?.battery ?? null,
+        signal: latestApiData?.parent?.rssi ?? null,
+        latestData: latestApiData?.parent
+          ? { temperature: latestApiData.parent.temperature, humidity: latestApiData.parent.humidity, timestamp: latestApiData.parent.timestamp }
+          : null,
+      };
+
+      const children = activeChildren.map(child => {
+        const childLatest = latestApiData?.children?.[child.id];
+        return {
+          id: child.id,
+          deviceId: child.deviceId,
+          name: child.name,
+          location: child.location || '',
+          isOnline: !!childLatest,
+          lastSeen: childLatest?.timestamp || null,
+          battery: childLatest?.battery ?? null,
+          rssi: childLatest?.rssi ?? null,
+          latestData: childLatest
+            ? { temperature: childLatest.temperature, humidity: childLatest.humidity, timestamp: childLatest.timestamp }
+            : null,
+        };
+      });
+
+      const allDevices = [parent, ...children];
+      const data = {
+        parent,
+        children,
+        devices: allDevices,
+        latest,
+        history: parentHistory || [],
+        historyByDevice,
+        alerts: alertSettings || { tempMin: 15, tempMax: 35, humidityMin: 40, humidityMax: 85, frostWarning: 3, frostCritical: 0, emailEnabled: true, lineEnabled: false },
+      };
+
+      setMockData(data);
+      if (!selectedDevice) {
+        setSelectedDevice(parent);
+      } else {
+        const updated = allDevices.find(d => d.id === selectedDevice.id);
+        if (updated) setSelectedDevice(updated);
+      }
+    } catch (err) {
+      console.error('データ取得失敗:', err);
+    }
+  }, [selectedParent?.id]);
 
   // 霜予測アラート計算
   const frostAlert = useMemo(() => {
@@ -178,17 +276,6 @@ function App() {
     return alerts;
   }, [frostAlert, harvestAlerts, dismissedAlerts]);
 
-  const loadData = () => {
-    const data = getMockData();
-    setMockData(data);
-    if (!selectedDevice && data.parent) {
-      setSelectedDevice(data.parent);
-    } else if (selectedDevice) {
-      const updated = data.devices?.find(d => d.id === selectedDevice.id);
-      if (updated) setSelectedDevice(updated);
-    }
-  };
-
   // FoxCoin 購入
   const handleFoxCoinPurchase = async (packageId) => {
     setPurchasingPkg(packageId);
@@ -214,13 +301,10 @@ function App() {
   }, []);
 
   // データ更新
-  const handleRefresh = () => {
+  const handleRefresh = async () => {
     setIsRefreshing(true);
-    setTimeout(() => {
-      loadData();
-      loadParentDevices();
-      setIsRefreshing(false);
-    }, 500);
+    await Promise.all([loadData(), loadParentDevices()]);
+    setIsRefreshing(false);
   };
 
   // デバイス管理モーダルで変更があった時
@@ -230,11 +314,48 @@ function App() {
   };
 
   // アラート設定保存
-  const handleSaveAlerts = (newAlerts) => {
-    saveAlertsMock(newAlerts);
-    setMockData(prev => ({ ...prev, alerts: newAlerts }));
-    setShowAlertSettings(false);
+  const handleSaveAlerts = async (newAlerts) => {
+    try {
+      await updateAlertSettings(selectedParent.id, newAlerts);
+      setMockData(prev => ({ ...prev, alerts: newAlerts }));
+      setShowAlertSettings(false);
+    } catch {
+      alert('アラート設定の保存に失敗しました');
+    }
   };
+
+  if (isLoadingInitial) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-leaf-600 text-xl">読み込み中...</div>
+      </div>
+    );
+  }
+
+  if (parentDevices.length === 0) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <div className="text-center max-w-sm">
+          <Radio className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+          <h2 className="text-xl font-bold text-gray-700 mb-2">親機が未登録です</h2>
+          <p className="text-gray-500 text-sm mb-6">デバイス管理から親機を登録してください</p>
+          <button
+            onClick={() => setShowDeviceRegistration(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white rounded-xl font-medium shadow-lg shadow-orange-500/30 mx-auto"
+          >
+            <Plus className="w-4 h-4" />
+            デバイス管理
+          </button>
+          {showDeviceRegistration && (
+            <DeviceRegistration
+              onClose={() => setShowDeviceRegistration(false)}
+              onRefresh={() => { loadParentDevices(); }}
+            />
+          )}
+        </div>
+      </div>
+    );
+  }
 
   if (!mockData) {
     return (
@@ -525,7 +646,7 @@ function App() {
       {showAlertSettings && (
         <SettingsModal
           alerts={mockData.alerts}
-          parentDevice={mockData.parent}
+          parentDevice={selectedParent}
           onClose={() => setShowAlertSettings(false)}
           onSaveAlerts={handleSaveAlerts}
         />
