@@ -322,7 +322,7 @@ function App() {
   return (
     <div className="min-h-screen p-3 sm:p-4 md:p-8">
       {/* ヘッダー */}
-      <header className="mb-4 sm:mb-6 md:mb-8 fade-in">
+      <header className="relative z-10 mb-4 sm:mb-6 md:mb-8 fade-in">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             <img
@@ -348,7 +348,7 @@ function App() {
                   <ChevronDown className="w-3 h-3 flex-shrink-0" />
                 </button>
                 {showParentMenu && (
-                  <div className="absolute right-0 top-full mt-1 bg-white rounded-xl shadow-lg border border-gray-100 z-50 min-w-[180px] overflow-hidden">
+                  <div className="absolute right-0 top-full mt-1 bg-white rounded-xl shadow-lg border border-gray-100 z-50 min-w-[180px] overflow-hidden max-h-72 overflow-y-auto">
                     {parentDevices.map(p => (
                       <button key={p.id} onClick={() => { setSelectedParent(p); setShowParentMenu(false); }}
                         className={`w-full text-left px-3 py-2.5 text-sm hover:bg-gray-50 transition-colors ${selectedParent?.id === p.id ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700'}`}>
