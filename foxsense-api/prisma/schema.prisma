@@ -8,20 +8,21 @@ datasource db {
 }
 
 model User {
-  id               String            @id @default(uuid())
-  email            String            @unique
-  passwordHash     String
-  name             String
-  role             String            @default("USER")
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
-  childDevices     ChildDevice[]
-  foxCoinBalance   FoxCoinBalance?
-  foxCoinLogs      FoxCoinLog[]
-  foxCoinPurchases FoxCoinPurchase[]
-  parentDevices    ParentDevice[]
-  refreshTokens    RefreshToken[]
-  subscription     Subscription?
+  id                   String                @id @default(uuid())
+  email                String                @unique
+  passwordHash         String
+  name                 String
+  role                 String                @default("USER")
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  childDevices         ChildDevice[]
+  foxCoinBalance       FoxCoinBalance?
+  foxCoinLogs          FoxCoinLog[]
+  foxCoinPurchases     FoxCoinPurchase[]
+  parentDevices        ParentDevice[]
+  passwordResetTokens  PasswordResetToken[]
+  refreshTokens        RefreshToken[]
+  subscription         Subscription?
 }
 
 model RefreshToken {
@@ -166,6 +167,18 @@ model FoxCoinLog {
 
   @@index([userId])
   @@index([createdAt])
+}
+
+model PasswordResetToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model DeviceInventory {
