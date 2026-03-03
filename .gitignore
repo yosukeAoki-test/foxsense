@@ -23,3 +23,19 @@ Thumbs.db
 *.o
 *.a
 *.so
+
+# 環境変数・機密情報
+.env
+.env.*
+*.env
+sigfox_token.txt
+
+# データベース
+*.db
+*.sqlite
+
+# バックアップ
+*.backup
+
+# Claude作業ファイル
+shell/
