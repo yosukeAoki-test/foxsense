@@ -241,7 +241,6 @@ const SimManagement = ({ deviceId, soracomSimId }) => {
           </div>
         </div>
       )}
-    </div>
 
       {/* 解約確認ダイアログ */}
       {showTerminateConfirm && (
