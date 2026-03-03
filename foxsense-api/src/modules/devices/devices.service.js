@@ -1,6 +1,7 @@
 import prisma from '../../config/db.js';
 import { AppError } from '../../middleware/errorHandler.js';
 import { computeParentIdHash, hashToHex } from '../../utils/deviceHash.js';
+import { getSimByImsi } from '../soracom/soracom.service.js';
 
 // ===== Parent Devices =====
 
@@ -76,7 +77,32 @@ export const createParentDevice = async (userId, data) => {
     where: { deviceId: data.deviceId },
   });
   if (existing) {
-    throw new AppError('Device ID already registered', 409);
+    throw new AppError('このデバイスIDはすでに登録されています', 409);
+  }
+
+  // 在庫照合: DeviceInventoryにあれば claimed に更新、なければエラー
+  let resolvedSimId = data.soracomSimId ?? null;
+  const inventoryCount = await prisma.deviceInventory.count({ where: { type: 'PARENT' } });
+  if (inventoryCount > 0) {
+    const invItem = await prisma.deviceInventory.findUnique({ where: { deviceId: data.deviceId } });
+    if (!invItem || invItem.type !== 'PARENT') {
+      throw new AppError('このデバイスIDは登録されていません。ラベルのIDをご確認ください。', 400);
+    }
+    if (invItem.claimed) {
+      throw new AppError('このデバイスIDはすでに別のユーザーに登録されています', 409);
+    }
+    await prisma.deviceInventory.update({
+      where: { id: invItem.id },
+      data: { claimed: true, claimedAt: new Date() },
+    });
+    if (invItem.imsi) {
+      try {
+        const sim = await getSimByImsi(invItem.imsi);
+        resolvedSimId = sim.simId;
+      } catch (e) {
+        console.warn('SORACOM SIM lookup failed:', e.message);
+      }
+    }
   }
 
   return prisma.parentDevice.create({
@@ -85,7 +111,7 @@ export const createParentDevice = async (userId, data) => {
       deviceId: data.deviceId,
       name: data.name,
       location: data.location,
-      soracomSimId: data.soracomSimId,
+      soracomSimId: resolvedSimId,
       alertSettings: { create: {} },
     },
     include: { alertSettings: true },
@@ -150,7 +176,23 @@ export const createChildDevice = async (userId, data) => {
     where: { deviceId: data.deviceId },
   });
   if (existing) {
-    throw new AppError('Device ID already registered', 409);
+    throw new AppError('このデバイスIDはすでに登録されています', 409);
+  }
+
+  // 在庫照合: DeviceInventoryにあれば claimed に更新、なければエラー
+  const inventoryCount = await prisma.deviceInventory.count({ where: { type: 'CHILD' } });
+  if (inventoryCount > 0) {
+    const invItem = await prisma.deviceInventory.findUnique({ where: { deviceId: data.deviceId } });
+    if (!invItem || invItem.type !== 'CHILD') {
+      throw new AppError('このデバイスIDは登録されていません。ラベルのIDをご確認ください。', 400);
+    }
+    if (invItem.claimed) {
+      throw new AppError('このデバイスIDはすでに別のユーザーに登録されています', 409);
+    }
+    await prisma.deviceInventory.update({
+      where: { id: invItem.id },
+      data: { claimed: true, claimedAt: new Date() },
+    });
   }
 
   return prisma.childDevice.create({

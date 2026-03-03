@@ -58,7 +58,7 @@ const SettingsModal = ({ alerts, parentDevice, onClose, onSaveAlerts }) => {
           {activeTab === 'sim' && (
             <SimManagement
               deviceId={parentDevice?.id}
-              soracomSimId={parentDevice?.soracomSimId || `mock_sim_${parentDevice?.deviceId}`}
+              soracomSimId={parentDevice?.soracomSimId}
             />
           )}
         </div>

@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import prisma from '../../config/db.js';
 import config from '../../config/index.js';
 import { AppError } from '../../middleware/errorHandler.js';
+import { sendPasswordResetEmail } from '../../utils/email.js';
 
 const SALT_ROUNDS = 12;
 
@@ -144,6 +145,59 @@ export const refreshAccessToken = async (refreshToken) => {
       role: storedToken.user.role,
     },
   };
+};
+
+export const requestPasswordReset = async (email) => {
+  const user = await prisma.user.findUnique({ where: { email } });
+
+  // メール存在確認を漏らさないため、ユーザーが存在しなくても成功を返す
+  if (!user) return;
+
+  // 古いトークンを削除
+  await prisma.passwordResetToken.deleteMany({ where: { userId: user.id } });
+
+  // 新しいトークンを生成（64文字の16進数 = 32バイト）
+  const token = crypto.randomBytes(32).toString('hex');
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1時間後
+
+  await prisma.passwordResetToken.create({
+    data: { token, userId: user.id, expiresAt },
+  });
+
+  const resetUrl = `${config.frontendUrl}/reset-password?token=${token}`;
+
+  try {
+    await sendPasswordResetEmail({ to: user.email, resetUrl });
+  } catch (err) {
+    console.error('[Auth] Failed to send password reset email:', err.message);
+    // メール送信失敗はAPI エラーにしない（トークンは生成済み）
+  }
+};
+
+export const resetPassword = async (token, newPassword) => {
+  const record = await prisma.passwordResetToken.findUnique({
+    where: { token },
+    include: { user: true },
+  });
+
+  if (!record || record.used || record.expiresAt < new Date()) {
+    throw new AppError('無効または期限切れのリセットリンクです', 400);
+  }
+
+  const passwordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
+
+  await prisma.$transaction([
+    prisma.user.update({
+      where: { id: record.userId },
+      data: { passwordHash },
+    }),
+    prisma.passwordResetToken.update({
+      where: { id: record.id },
+      data: { used: true },
+    }),
+    // 全リフレッシュトークンを無効化（セキュリティ）
+    prisma.refreshToken.deleteMany({ where: { userId: record.userId } }),
+  ]);
 };
 
 export const getCurrentUser = async (userId) => {

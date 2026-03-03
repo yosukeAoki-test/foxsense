@@ -55,6 +55,26 @@ export const createPackage = asyncHandler(async (req, res) => {
   res.status(201).json({ success: true, data });
 });
 
+// Inventory
+export const getInventory = asyncHandler(async (req, res) => {
+  const data = await adminService.getInventory({ type: req.query.type });
+  res.json({ success: true, data });
+});
+
+export const bulkCreateInventory = asyncHandler(async (req, res) => {
+  const { devices } = req.body;
+  if (!Array.isArray(devices)) {
+    return res.status(400).json({ success: false, message: 'devices must be an array' });
+  }
+  const data = await adminService.bulkCreateInventory(devices);
+  res.status(201).json({ success: true, data });
+});
+
+export const deleteInventoryItem = asyncHandler(async (req, res) => {
+  await adminService.deleteInventoryItem(req.params.id);
+  res.json({ success: true, message: '削除しました' });
+});
+
 export const changePassword = asyncHandler(async (req, res) => {
   const { currentPassword, newPassword } = req.body;
   if (!currentPassword || !newPassword) {

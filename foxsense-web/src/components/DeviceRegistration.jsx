@@ -88,6 +88,26 @@ const AddParentView = ({ onBack, onSuccess }) => {
   const [location, setLocation] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [inputMode, setInputMode] = useState('form'); // 'form' | 'qr'
+
+  const { scanning, error: qrError, setError: setQrError, start: startQr, stop: stopQr } = useQrScanner(
+    (id) => {
+      setDeviceId(id);
+      setInputMode('form');
+    }
+  );
+
+  const handleStartQr = async () => {
+    setError('');
+    setQrError('');
+    setInputMode('qr');
+    await startQr('qr-reader-parent');
+  };
+
+  const handleCancelQr = () => {
+    stopQr();
+    setInputMode('form');
+  };
 
   const handleSubmit = async () => {
     if (!name.trim() || !deviceId.trim()) {
@@ -105,6 +125,8 @@ const AddParentView = ({ onBack, onSuccess }) => {
     }
   };
 
+  const displayError = error || qrError;
+
   return (
     <div>
       <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 mb-4">
@@ -113,55 +135,91 @@ const AddParentView = ({ onBack, onSuccess }) => {
       <h3 className="font-semibold text-gray-900 mb-1">親機を追加</h3>
       <p className="text-xs text-gray-400 mb-4">デバイス本体に貼付されたIDを入力してください</p>
 
-      {error && (
+      {displayError && (
         <div className="flex items-center gap-2 p-2.5 bg-red-50 rounded-xl text-red-600 text-sm mb-3">
-          <AlertCircle className="w-4 h-4 flex-shrink-0" />{error}
+          <AlertCircle className="w-4 h-4 flex-shrink-0" />{displayError}
         </div>
       )}
-      <div className="space-y-3">
+
+      {inputMode === 'qr' ? (
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">
-            デバイスID <span className="text-red-500">*</span>
-          </label>
-          <input
-            type="text"
-            value={deviceId}
-            onChange={e => setDeviceId(e.target.value)}
-            placeholder="例: foxsense-001"
-            className="w-full px-3 py-2.5 rounded-xl border border-gray-200 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 outline-none font-mono text-sm"
-          />
+          <div id="qr-reader-parent" className="w-full rounded-xl overflow-hidden bg-black" />
+          {scanning && (
+            <p className="text-center text-xs text-gray-500 mt-2 flex items-center justify-center gap-1.5">
+              <Camera className="w-3.5 h-3.5 animate-pulse" />親機のQRコードをカメラに向けてください
+            </p>
+          )}
+          <button
+            onClick={handleCancelQr}
+            className="w-full mt-3 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm hover:bg-gray-50"
+          >
+            キャンセル
+          </button>
         </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">
-            名前 <span className="text-red-500">*</span>
-          </label>
-          <input
-            type="text"
-            value={name}
-            onChange={e => setName(e.target.value)}
-            placeholder="例: スイカハウス 親機"
-            className="w-full px-3 py-2.5 rounded-xl border border-gray-200 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 outline-none text-sm"
-          />
+      ) : (
+        <div className="space-y-3">
+          {deviceId && (
+            <div className="flex items-center gap-2 p-2.5 bg-green-50 rounded-xl text-green-700 text-sm">
+              <Check className="w-4 h-4" />QRコードを読み取りました
+            </div>
+          )}
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">
+              デバイスID <span className="text-red-500">*</span>
+            </label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={deviceId}
+                onChange={e => setDeviceId(e.target.value.toUpperCase().replace(/[^0-9A-F]/g, '').slice(0, 8))}
+                placeholder="例: 1A2B3C4D"
+                className={`flex-1 px-3 py-2.5 rounded-xl border font-mono text-sm outline-none transition-colors ${
+                  deviceId.length === 8
+                    ? 'border-green-300 bg-green-50 text-green-800'
+                    : 'border-gray-200 focus:border-blue-400 focus:ring-2 focus:ring-blue-100'
+                }`}
+              />
+              <button
+                onClick={handleStartQr}
+                className="px-3 py-2.5 rounded-xl border border-gray-200 text-gray-500 hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                title="QRコードをスキャン"
+              >
+                <Camera className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">
+              名前 <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              placeholder="例: スイカハウス 親機"
+              className="w-full px-3 py-2.5 rounded-xl border border-gray-200 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 outline-none text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">設置場所（任意）</label>
+            <input
+              type="text"
+              value={location}
+              onChange={e => setLocation(e.target.value)}
+              placeholder="例: ハウス入口"
+              className="w-full px-3 py-2.5 rounded-xl border border-gray-200 focus:border-gray-300 outline-none text-sm"
+            />
+          </div>
+          <button
+            onClick={handleSubmit}
+            disabled={!name.trim() || deviceId.length !== 8 || loading}
+            className="w-full py-3 rounded-xl bg-blue-600 text-white font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+          >
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Radio className="w-4 h-4" />}
+            登録する
+          </button>
         </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">設置場所（任意）</label>
-          <input
-            type="text"
-            value={location}
-            onChange={e => setLocation(e.target.value)}
-            placeholder="例: ハウス入口"
-            className="w-full px-3 py-2.5 rounded-xl border border-gray-200 focus:border-gray-300 outline-none text-sm"
-          />
-        </div>
-        <button
-          onClick={handleSubmit}
-          disabled={!name.trim() || !deviceId.trim() || loading}
-          className="w-full py-3 rounded-xl bg-blue-600 text-white font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
-        >
-          {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Radio className="w-4 h-4" />}
-          登録する
-        </button>
-      </div>
+      )}
     </div>
   );
 };

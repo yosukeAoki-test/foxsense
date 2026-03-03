@@ -28,6 +28,15 @@ const config = {
     authKey: process.env.SORACOM_AUTH_KEY,
     apiUrl: process.env.SORACOM_API_URL || 'https://api.soracom.io/v1',
   },
+
+  email: {
+    host: process.env.SMTP_HOST,
+    port: parseInt(process.env.SMTP_PORT || '587'),
+    secure: process.env.SMTP_SECURE === 'true',
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
+    from: process.env.SMTP_FROM || 'noreply@foxsense.jp',
+  },
 };
 
 export default config;

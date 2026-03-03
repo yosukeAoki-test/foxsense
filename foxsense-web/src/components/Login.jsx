@@ -97,6 +97,13 @@ const Login = () => {
               </div>
             </div>
 
+            {/* パスワードを忘れた方 */}
+            <div className="flex justify-end">
+              <Link to="/forgot-password" className="text-xs text-gray-400 hover:text-leaf-600 transition-colors">
+                パスワードをお忘れの方
+              </Link>
+            </div>
+
             {/* ログインボタン */}
             <button
               type="submit"

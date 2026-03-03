@@ -167,6 +167,47 @@ export const createPackage = async (data) => {
   });
 };
 
+// ===== デバイス在庫管理 =====
+
+export const getInventory = async ({ type } = {}) => {
+  return prisma.deviceInventory.findMany({
+    where: type ? { type } : undefined,
+    orderBy: { createdAt: 'desc' },
+  });
+};
+
+export const bulkCreateInventory = async (devices) => {
+  // devices: Array<{ deviceId: string, type: 'PARENT' | 'CHILD' }>
+  if (!Array.isArray(devices) || devices.length === 0) {
+    throw new AppError('デバイスリストが空です', 400);
+  }
+  if (devices.length > 200) {
+    throw new AppError('一度に登録できるのは200件までです', 400);
+  }
+
+  const created = [];
+  const skipped = [];
+
+  for (const d of devices) {
+    const exists = await prisma.deviceInventory.findUnique({ where: { deviceId: d.deviceId } });
+    if (exists) { skipped.push(d.deviceId); continue; }
+    const existing = await prisma.parentDevice.findUnique({ where: { deviceId: d.deviceId } })
+      || await prisma.childDevice.findUnique({ where: { deviceId: d.deviceId } });
+    if (existing) { skipped.push(d.deviceId); continue; }
+    const item = await prisma.deviceInventory.create({ data: { deviceId: d.deviceId, type: d.type, imsi: d.imsi ?? null } });
+    created.push(item);
+  }
+
+  return { created: created.length, skipped: skipped.length, items: created };
+};
+
+export const deleteInventoryItem = async (id) => {
+  const item = await prisma.deviceInventory.findUnique({ where: { id } });
+  if (!item) throw new AppError('在庫IDが見つかりません', 404);
+  if (item.claimed) throw new AppError('登録済みのデバイスは削除できません', 400);
+  await prisma.deviceInventory.delete({ where: { id } });
+};
+
 // ===== パスワード変更 =====
 
 export const changePassword = async (userId, currentPassword, newPassword) => {

@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tepra BLE Explorer</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f8fafc; color: #1e293b; min-height: 100vh; }
+  header { background: #0f172a; color: #fff; padding: 16px 24px; display: flex; align-items: center; gap: 12px; }
+  header h1 { font-size: 18px; font-weight: 700; }
+  header span { font-size: 12px; color: #94a3b8; }
+  .badge { font-size: 11px; padding: 2px 8px; border-radius: 999px; font-weight: 600; }
+  .badge-connected { background: #16a34a; color: #fff; }
+  .badge-disconnected { background: #475569; color: #fff; }
+  .badge-error { background: #dc2626; color: #fff; }
+
+  main { max-width: 1100px; margin: 0 auto; padding: 24px 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 720px) { main { grid-template-columns: 1fr; } }
+
+  .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; }
+  .card-header { padding: 12px 16px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; font-size: 13px; font-weight: 600; color: #475569; display: flex; align-items: center; gap-8px; justify-content: space-between; }
+  .card-header span { display: flex; align-items: center; gap: 6px; }
+  .card-body { padding: 16px; }
+
+  button { cursor: pointer; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; padding: 8px 16px; transition: background 0.15s, opacity 0.15s; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-primary { background: #2563eb; color: #fff; }
+  .btn-primary:hover:not(:disabled) { background: #1d4ed8; }
+  .btn-danger { background: #dc2626; color: #fff; }
+  .btn-danger:hover:not(:disabled) { background: #b91c1c; }
+  .btn-ghost { background: transparent; border: 1px solid #e2e8f0; color: #475569; }
+  .btn-ghost:hover:not(:disabled) { background: #f1f5f9; }
+  .btn-green { background: #16a34a; color: #fff; }
+  .btn-green:hover:not(:disabled) { background: #15803d; }
+  .btn-purple { background: #7c3aed; color: #fff; }
+  .btn-purple:hover:not(:disabled) { background: #6d28d9; }
+  .btn-sm { padding: 4px 10px; font-size: 11px; border-radius: 6px; }
+
+  .connect-area { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; }
+  #status-text { font-size: 13px; color: #64748b; }
+
+  /* サービスツリー */
+  .service-tree { font-size: 12px; }
+  .service-node { margin-bottom: 10px; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; }
+  .service-uuid { background: #eff6ff; padding: 8px 12px; font-family: monospace; font-size: 11px; color: #1d4ed8; font-weight: 600; display: flex; align-items: center; justify-content: space-between; }
+  .service-known { font-size: 10px; color: #6b7280; margin-left: 8px; font-family: sans-serif; font-weight: normal; }
+  .char-list { divide-y: 1px solid #f1f5f9; }
+  .char-item { padding: 8px 12px; border-top: 1px solid #f1f5f9; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .char-item:hover { background: #fafafa; }
+  .char-uuid { font-family: monospace; font-size: 11px; color: #374151; flex: 1; min-width: 200px; }
+  .prop-tag { font-size: 10px; padding: 1px 6px; border-radius: 4px; font-weight: 600; }
+  .prop-read { background: #dbeafe; color: #1d4ed8; }
+  .prop-write { background: #fce7f3; color: #9d174d; }
+  .prop-notify { background: #d1fae5; color: #065f46; }
+  .prop-indicate { background: #fef3c7; color: #92400e; }
+  .char-actions { display: flex; gap: 4px; }
+  .selected-char { background: #eff6ff; }
+
+  /* 送信パネル */
+  .write-panel { display: flex; flex-direction: column; gap: 8px; }
+  .write-panel label { font-size: 12px; font-weight: 600; color: #374151; }
+  .write-panel input, .write-panel textarea {
+    width: 100%; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 12px;
+    font-family: monospace; font-size: 13px; outline: none;
+    transition: border-color 0.15s;
+  }
+  .write-panel input:focus, .write-panel textarea:focus { border-color: #2563eb; }
+  .write-panel textarea { resize: vertical; min-height: 72px; }
+  .preset-btns { display: flex; flex-wrap: wrap; gap: 6px; }
+
+  /* ログ */
+  #log { font-family: 'Courier New', monospace; font-size: 11px; background: #0f172a; color: #e2e8f0; padding: 12px; border-radius: 8px; height: 320px; overflow-y: auto; line-height: 1.6; }
+  .log-info { color: #94a3b8; }
+  .log-success { color: #4ade80; }
+  .log-error { color: #f87171; }
+  .log-warn { color: #facc15; }
+  .log-data { color: #7dd3fc; }
+  .log-send { color: #c084fc; }
+  .log-recv { color: #34d399; }
+  .log-time { color: #475569; margin-right: 6px; }
+
+  /* プリントテスト */
+  .print-test { display: flex; flex-direction: column; gap: 10px; }
+  .print-test canvas { border: 1px solid #e2e8f0; border-radius: 6px; }
+  .protocol-section { background: #fafafa; border: 1px dashed #e2e8f0; border-radius: 8px; padding: 12px; }
+  .protocol-section h4 { font-size: 12px; font-weight: 600; color: #475569; margin-bottom: 8px; }
+  .hint { font-size: 11px; color: #9ca3af; line-height: 1.5; }
+
+  .no-bt { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 16px; text-align: center; color: #dc2626; }
+  .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; animation: spin 0.7s linear infinite; vertical-align: middle; margin-right: 6px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .full-col { grid-column: 1 / -1; }
+  .info-box { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 12px 16px; font-size: 12px; color: #1e40af; line-height: 1.6; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🔵 Tepra BLE Explorer</h1>
+  <span>SR-R2500P プロトコル探索ツール</span>
+  <span id="conn-badge" class="badge badge-disconnected">未接続</span>
+</header>
+
+<main>
+  <!-- 接続パネル -->
+  <div class="card" style="grid-column: 1 / -1;">
+    <div class="card-body">
+      <div class="connect-area">
+        <button class="btn-primary" id="btn-connect">🔍 すべてのBLEデバイスを表示</button>
+        <button class="btn-ghost" id="btn-connect-service">サービスUUIDで絞り込む</button>
+        <button class="btn-danger" id="btn-disconnect" disabled>切断</button>
+      </div>
+      <div id="status-text" style="font-size:13px;color:#64748b;margin-bottom:8px;">Chrome / Edge を使用してください（HTTPS必須）</div>
+      <div class="info-box">
+        <strong>手順：</strong>
+        ① テプラの電源ON・スマホアプリ（TEPRA LINK 2）を<b>完全に閉じる</b><br>
+        ② 「すべてのBLEデバイスを表示」を押す<br>
+        ③ ポップアップに「不明なデバイス」が複数出る → 近くのBT機器を全部切って絞り込む<br>
+        ④ テプラと思われるデバイスを選択 → ログにUUIDが出れば成功
+      </div>
+    </div>
+  </div>
+
+  <!-- サービスツリー -->
+  <div class="card" style="grid-column: 1 / -1;">
+    <div class="card-header">
+      <span>📡 サービス一覧</span>
+      <span id="svc-count" style="font-size:11px;color:#94a3b8;"></span>
+    </div>
+    <div class="card-body">
+      <div id="service-tree" class="service-tree">
+        <p style="color:#9ca3af;font-size:13px;">接続後にサービスが表示されます</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 送信パネル -->
+  <div class="card">
+    <div class="card-header"><span>✏️ 送信 (Write)</span></div>
+    <div class="card-body">
+      <div class="write-panel">
+        <label>選択中のキャラクタリスティック</label>
+        <input id="selected-char-uuid" readonly placeholder="ツリーからキャラクタリスティックを選択" style="background:#f8fafc;cursor:default;" />
+
+        <label>送信データ (16進数 スペース区切り)</label>
+        <textarea id="write-hex" placeholder="例: 1B 40 0A  （ESC @ LF）"></textarea>
+
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn-ghost" id="btn-read" disabled>← Read</button>
+          <button class="btn-primary" id="btn-write" disabled>→ Write</button>
+          <button class="btn-ghost" id="btn-write-nr" disabled>→ Write (No Response)</button>
+          <button class="btn-green" id="btn-notify" disabled>🔔 NOTIFY 購読</button>
+        </div>
+
+        <div>
+          <label style="margin-bottom:6px;display:block;">プリセットコマンド</label>
+          <div class="preset-btns" id="preset-btns">
+            <button class="btn-ghost btn-sm" data-hex="00 00 00 00 00 00 00 00 00 00 00 00">Wake (12×0x00)</button>
+            <button class="btn-ghost btn-sm" data-hex="1B 40">ESC @ (初期化)</button>
+            <button class="btn-ghost btn-sm" data-hex="1B 69 53">ESC i S (ステータス)</button>
+            <button class="btn-ghost btn-sm" data-hex="0C">FF (印刷実行)</button>
+            <button class="btn-ghost btn-sm" data-hex="1A">SUB (テープ送り)</button>
+            <button class="btn-ghost btn-sm" data-hex="00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00">Wake (64×0x00)</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- プロトコルテスト -->
+  <div class="card">
+    <div class="card-header"><span>🧪 プロトコルテスト</span></div>
+    <div class="card-body">
+      <div class="print-test">
+
+        <div class="protocol-section">
+          <h4>Tepra Lite LR30 プロトコル (Service: 0xFFF0)</h4>
+          <p class="hint">LR30と同じ Service UUID が見つかった場合に試します。<br>TX: 0xFFF2 に送信 / RX: 0xFFF1 でNotify購読</p>
+          <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
+            <button class="btn-purple btn-sm" id="btn-lr30-connect">LR30 サービスを探す</button>
+            <button class="btn-purple btn-sm" id="btn-lr30-wake" disabled>Wake シーケンス送信</button>
+            <button class="btn-purple btn-sm" id="btn-lr30-status" disabled>ステータス要求</button>
+          </div>
+        </div>
+
+        <div class="protocol-section">
+          <h4>テスト印刷 (実験的)</h4>
+          <p class="hint">LR30プロトコルでの最小テスト印刷。<br>18mm テープ（128dot幅）の単純な横線パターンを送ります。</p>
+          <canvas id="preview-canvas" width="384" height="96" style="width:100%;max-width:384px;height:auto;margin:8px 0;"></canvas>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="btn-green btn-sm" id="btn-preview">プレビュー更新</button>
+            <button class="btn-green btn-sm" id="btn-test-print" disabled>🖨️ テスト印刷送信</button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ログ -->
+  <div class="card full-col">
+    <div class="card-header">
+      <span>📋 通信ログ</span>
+      <button class="btn-ghost btn-sm" id="btn-clear-log">クリア</button>
+    </div>
+    <div class="card-body">
+      <div id="log"></div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+// ===== 既知のサービスUUID名称マップ =====
+const KNOWN_SERVICES = {
+  '00001800-0000-1000-8000-00805f9b34fb': 'Generic Access',
+  '00001801-0000-1000-8000-00805f9b34fb': 'Generic Attribute',
+  '0000180a-0000-1000-8000-00805f9b34fb': 'Device Information',
+  '0000180f-0000-1000-8000-00805f9b34fb': 'Battery Service',
+  '0000ffe0-0000-1000-8000-00805f9b34fb': 'BLE UART (0xFFE0)',
+  '0000fff0-0000-1000-8000-00805f9b34fb': 'Tepra LR30 / Generic (0xFFF0)',
+  '6e400001-b5a3-f393-e0a9-e50e24dcca9e': 'Nordic UART Service',
+};
+const KNOWN_CHARS = {
+  '00002a00-0000-1000-8000-00805f9b34fb': 'Device Name',
+  '00002a01-0000-1000-8000-00805f9b34fb': 'Appearance',
+  '00002a19-0000-1000-8000-00805f9b34fb': 'Battery Level',
+  '00002a24-0000-1000-8000-00805f9b34fb': 'Model Number',
+  '00002a25-0000-1000-8000-00805f9b34fb': 'Serial Number',
+  '00002a27-0000-1000-8000-00805f9b34fb': 'Hardware Revision',
+  '00002a29-0000-1000-8000-00805f9b34fb': 'Manufacturer Name',
+  '0000fff1-0000-1000-8000-00805f9b34fb': 'LR30 RX (Notify)',
+  '0000fff2-0000-1000-8000-00805f9b34fb': 'LR30 TX (Write)',
+  '0000ffe1-0000-1000-8000-00805f9b34fb': 'BLE UART TX/RX',
+  '6e400002-b5a3-f393-e0a9-e50e24dcca9e': 'NUS RX',
+  '6e400003-b5a3-f393-e0a9-e50e24dcca9e': 'NUS TX (Notify)',
+};
+
+// 探索候補サービスUUID（広めに列挙）
+const CANDIDATE_SERVICES = [
+  '00001800-0000-1000-8000-00805f9b34fb',
+  '00001801-0000-1000-8000-00805f9b34fb',
+  '0000180a-0000-1000-8000-00805f9b34fb',
+  '0000180f-0000-1000-8000-00805f9b34fb',
+  '0000ffe0-0000-1000-8000-00805f9b34fb',
+  '0000ffe1-0000-1000-8000-00805f9b34fb',
+  '0000ffe2-0000-1000-8000-00805f9b34fb',
+  '0000fff0-0000-1000-8000-00805f9b34fb',
+  '0000fff1-0000-1000-8000-00805f9b34fb',
+  '0000fff2-0000-1000-8000-00805f9b34fb',
+  '0000fff3-0000-1000-8000-00805f9b34fb',
+  '0000ff00-0000-1000-8000-00805f9b34fb',
+  '0000ff01-0000-1000-8000-00805f9b34fb',
+  '0000ff02-0000-1000-8000-00805f9b34fb',
+  '6e400001-b5a3-f393-e0a9-e50e24dcca9e',
+  '6e400002-b5a3-f393-e0a9-e50e24dcca9e',
+  '6e400003-b5a3-f393-e0a9-e50e24dcca9e',
+  'e7810a71-73ae-499d-8c15-faa9aef0c3f2',
+];
+
+// ===== State =====
+let device = null, server = null;
+let discoveredServices = [];
+let selectedCharObj = null;
+let lr30Tx = null, lr30Rx = null;
+
+// ===== ログ =====
+function log(msg, type = 'info') {
+  const el = document.getElementById('log');
+  const now = new Date().toLocaleTimeString('ja-JP', { hour12: false });
+  const line = document.createElement('div');
+  line.innerHTML = `<span class="log-time">${now}</span><span class="log-${type}">${escHtml(msg)}</span>`;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+}
+function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function hexStr(buf) { return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0').toUpperCase()).join(' '); }
+function parseHex(str) {
+  const bytes = str.trim().split(/[\s,]+/).map(h => parseInt(h, 16)).filter(n => !isNaN(n));
+  return new Uint8Array(bytes);
+}
+
+// ===== 接続・切断 =====
+async function connect(mode = 'all') {
+  if (!navigator.bluetooth) {
+    log('Web Bluetooth API が使用できません。Chrome/Edge (HTTPS) で開いてください。', 'error');
+    return;
+  }
+  setBtnState('connecting');
+  try {
+    let requestOptions;
+    if (mode === 'service') {
+      // サービスUUIDで絞り込み（0xFFF0 = LR30と同じ可能性）
+      requestOptions = {
+        filters: [
+          { services: ['0000fff0-0000-1000-8000-00805f9b34fb'] },
+          { services: ['0000ffe0-0000-1000-8000-00805f9b34fb'] },
+          { services: ['6e400001-b5a3-f393-e0a9-e50e24dcca9e'] },
+        ],
+        optionalServices: CANDIDATE_SERVICES,
+      };
+      log('サービスUUID (0xFFF0 / 0xFFE0 / NUS) でフィルタしてスキャン中...', 'info');
+    } else {
+      // 全デバイス表示
+      requestOptions = {
+        acceptAllDevices: true,
+        optionalServices: CANDIDATE_SERVICES,
+      };
+      log('全BLEデバイスをスキャン中...（ポップアップからテプラを選んでください）', 'info');
+    }
+    device = await navigator.bluetooth.requestDevice(requestOptions);
+    log(`デバイス発見: "${device.name || '(名前なし)'}"  ID: ${device.id}`, 'success');
+    device.addEventListener('gattserverdisconnected', onDisconnect);
+
+    log('GATT サーバーに接続中...', 'info');
+    server = await device.gatt.connect();
+    log('GATT 接続完了 ✓', 'success');
+
+    log('プライマリサービスを探索中...', 'info');
+    const svcs = await server.getPrimaryServices();
+    log(`${svcs.length} 個のサービスを検出`, svcs.length > 0 ? 'success' : 'warn');
+
+    discoveredServices = [];
+    for (const svc of svcs) {
+      const svcName = KNOWN_SERVICES[svc.uuid] || '';
+      log(`┌ SERVICE: ${svc.uuid}${svcName ? '  (' + svcName + ')' : ''}`, 'data');
+      const chars = await svc.getCharacteristics();
+      const charData = [];
+      for (const c of chars) {
+        const props = getProps(c);
+        const cName = KNOWN_CHARS[c.uuid] || '';
+        log(`│  CHAR: ${c.uuid}  [${props.join(', ')}]${cName ? '  → ' + cName : ''}`, 'data');
+        charData.push({ uuid: c.uuid, props, char: c });
+      }
+      log('└─', 'data');
+      discoveredServices.push({ uuid: svc.uuid, chars: charData });
+    }
+
+    renderServices();
+    setBtnState('connected');
+    document.getElementById('status-text').textContent = `接続: ${device.name || '(名前なし)'}`;
+  } catch (e) {
+    if (e.name === 'NotFoundError' || e.message.includes('cancelled')) {
+      log('スキャンをキャンセルしました', 'warn');
+    } else {
+      log(`接続エラー: ${e.message}`, 'error');
+    }
+    setBtnState('disconnected');
+  }
+}
+
+function disconnect() {
+  if (device && device.gatt.connected) {
+    device.gatt.disconnect();
+  }
+  onDisconnect();
+}
+
+function onDisconnect() {
+  log('切断されました', 'warn');
+  device = null; server = null;
+  discoveredServices = [];
+  selectedCharObj = null;
+  lr30Tx = null; lr30Rx = null;
+  renderServices();
+  setBtnState('disconnected');
+  document.getElementById('status-text').textContent = 'Chrome / Edge を使用してください（HTTPS必須）';
+  document.getElementById('selected-char-uuid').value = '';
+  document.getElementById('btn-write').disabled = true;
+  document.getElementById('btn-write-nr').disabled = true;
+  document.getElementById('btn-notify').disabled = true;
+  document.getElementById('btn-lr30-wake').disabled = true;
+  document.getElementById('btn-lr30-status').disabled = true;
+  document.getElementById('btn-test-print').disabled = true;
+}
+
+function getProps(c) {
+  const p = c.properties;
+  return [
+    p.read && 'READ',
+    p.write && 'WRITE',
+    p.writeWithoutResponse && 'WRITE_NO_RESP',
+    p.notify && 'NOTIFY',
+    p.indicate && 'INDICATE',
+  ].filter(Boolean);
+}
+
+function setBtnState(state) {
+  const btnConn = document.getElementById('btn-connect');
+  const btnDisc = document.getElementById('btn-disconnect');
+  const badge = document.getElementById('conn-badge');
+  if (state === 'connecting') {
+    btnConn.disabled = true;
+    btnConn.innerHTML = '<span class="spinner"></span>接続中...';
+    btnDisc.disabled = true;
+    badge.textContent = '接続中'; badge.className = 'badge badge-disconnected';
+  } else if (state === 'connected') {
+    btnConn.disabled = true;
+    btnConn.innerHTML = '✅ 接続済み';
+    btnDisc.disabled = false;
+    badge.textContent = '接続中'; badge.className = 'badge badge-connected';
+  } else {
+    btnConn.disabled = false;
+    btnConn.innerHTML = '🔍 デバイスをスキャン';
+    btnDisc.disabled = true;
+    badge.textContent = '未接続'; badge.className = 'badge badge-disconnected';
+  }
+}
+
+// ===== サービスツリー描画 =====
+function renderServices() {
+  const tree = document.getElementById('service-tree');
+  const count = document.getElementById('svc-count');
+  if (discoveredServices.length === 0) {
+    tree.innerHTML = '<p style="color:#9ca3af;font-size:13px;">接続後にサービスが表示されます</p>';
+    count.textContent = '';
+    return;
+  }
+  count.textContent = `${discoveredServices.length} サービス`;
+  tree.innerHTML = discoveredServices.map((svc, si) => {
+    const svcName = KNOWN_SERVICES[svc.uuid] || '';
+    const chars = svc.chars.map((c, ci) => {
+      const cName = KNOWN_CHARS[c.uuid] || '';
+      const propTags = c.props.map(p => {
+        const cls = p.includes('WRITE') ? 'prop-write' : p === 'NOTIFY' || p === 'INDICATE' ? 'prop-notify' : 'prop-read';
+        return `<span class="prop-tag ${cls}">${p.replace('_NO_RESP','*')}</span>`;
+      }).join('');
+      const canWrite = c.props.includes('WRITE') || c.props.includes('WRITE_NO_RESP');
+      const canNotify = c.props.includes('NOTIFY') || c.props.includes('INDICATE');
+      const canRead = c.props.includes('READ');
+      return `
+        <div class="char-item" id="char-${si}-${ci}" onclick="selectChar(${si},${ci})">
+          <div class="char-uuid">
+            ${c.uuid}${cName ? `<br><span style="color:#6b7280;font-size:10px;">${cName}</span>` : ''}
+          </div>
+          <div style="display:flex;gap:3px;flex-wrap:wrap;">${propTags}</div>
+          <div class="char-actions">
+            ${canRead ? `<button class="btn-ghost btn-sm" onclick="event.stopPropagation();readChar(${si},${ci})">読取</button>` : ''}
+            ${canNotify ? `<button class="btn-green btn-sm" onclick="event.stopPropagation();subscribeChar(${si},${ci})">Notify</button>` : ''}
+          </div>
+        </div>`;
+    }).join('');
+    return `
+      <div class="service-node">
+        <div class="service-uuid">
+          ${svc.uuid}
+          ${svcName ? `<span class="service-known">${svcName}</span>` : ''}
+        </div>
+        <div class="char-list">${chars}</div>
+      </div>`;
+  }).join('');
+}
+
+function selectChar(si, ci) {
+  document.querySelectorAll('.char-item').forEach(el => el.classList.remove('selected-char'));
+  document.getElementById(`char-${si}-${ci}`).classList.add('selected-char');
+  selectedCharObj = discoveredServices[si].chars[ci];
+  document.getElementById('selected-char-uuid').value = selectedCharObj.uuid;
+  const canNotify = selectedCharObj.props.includes('NOTIFY');
+  document.getElementById('btn-read').disabled = !selectedCharObj.props.includes('READ');
+  document.getElementById('btn-write').disabled = !selectedCharObj.props.includes('WRITE');
+  document.getElementById('btn-write-nr').disabled = !selectedCharObj.props.includes('WRITE_NO_RESP');
+  document.getElementById('btn-notify').disabled = !canNotify;
+}
+
+// ===== READ / WRITE / NOTIFY =====
+async function readChar(si, ci) {
+  log(`READ 試行中... [service:${si} char:${ci}]`, 'info');
+  try {
+    const svc = discoveredServices[si];
+    if (!svc) { log(`サービスが見つかりません (si=${si})`, 'error'); return; }
+    const c = svc.chars[ci];
+    if (!c) { log(`キャラクタリスティックが見つかりません (ci=${ci})`, 'error'); return; }
+    if (!server || !server.connected) { log('GATT 未接続', 'error'); return; }
+    const val = await c.char.readValue();
+    const hex = hexStr(val.buffer);
+    const txt = new TextDecoder('utf-8').decode(val.buffer);
+    log(`← READ [${c.uuid.slice(-4)}]: ${hex}`, 'recv');
+    log(`← TEXT: "${txt}"`, 'recv');
+  } catch (e) {
+    log(`READ エラー: ${e.name} — ${e.message}`, 'error');
+  }
+}
+
+async function subscribeChar(si, ci) {
+  const c = discoveredServices[si].chars[ci];
+  try {
+    await c.char.startNotifications();
+    c.char.addEventListener('characteristicvaluechanged', e => {
+      const hex = hexStr(e.target.value.buffer);
+      log(`← NOTIFY [${c.uuid.slice(-4)}]: ${hex}`, 'recv');
+    });
+    log(`🔔 NOTIFY 購読開始: ${c.uuid}`, 'success');
+  } catch (e) { log(`NOTIFY エラー: ${e.message}`, 'error'); }
+}
+
+document.getElementById('btn-read').addEventListener('click', async () => {
+  if (!selectedCharObj) return;
+  log(`READ 試行中... [${selectedCharObj.uuid}]`, 'info');
+  try {
+    const val = await selectedCharObj.char.readValue();
+    const hex = hexStr(val.buffer);
+    const txt = new TextDecoder('utf-8').decode(val.buffer);
+    log(`← READ [${selectedCharObj.uuid.slice(-4)}]: ${hex}`, 'recv');
+    log(`← TEXT: "${txt}"`, 'recv');
+  } catch (e) {
+    log(`READ エラー: ${e.name} — ${e.message}`, 'error');
+  }
+});
+
+document.getElementById('btn-write').addEventListener('click', async () => {
+  if (!selectedCharObj) return;
+  const hex = document.getElementById('write-hex').value;
+  try {
+    const data = parseHex(hex);
+    await selectedCharObj.char.writeValue(data);
+    log(`→ WRITE [${selectedCharObj.uuid.slice(-4)}]: ${hexStr(data.buffer)}`, 'send');
+  } catch (e) { log(`WRITE エラー: ${e.message}`, 'error'); }
+});
+
+document.getElementById('btn-write-nr').addEventListener('click', async () => {
+  if (!selectedCharObj) return;
+  const hex = document.getElementById('write-hex').value;
+  try {
+    const data = parseHex(hex);
+    await selectedCharObj.char.writeValueWithoutResponse(data);
+    log(`→ WRITE_NR [${selectedCharObj.uuid.slice(-4)}]: ${hexStr(data.buffer)}`, 'send');
+  } catch (e) { log(`WRITE_NR エラー: ${e.message}`, 'error'); }
+});
+
+document.getElementById('btn-notify').addEventListener('click', async () => {
+  if (!selectedCharObj) return;
+  await subscribeChar(
+    discoveredServices.findIndex(s => s.chars.includes(selectedCharObj)),
+    discoveredServices.flatMap(s => s.chars).indexOf(selectedCharObj)
+  );
+});
+
+// プリセットボタン
+document.getElementById('preset-btns').addEventListener('click', e => {
+  const btn = e.target.closest('[data-hex]');
+  if (btn) document.getElementById('write-hex').value = btn.dataset.hex;
+});
+
+// ===== LR30 プロトコルテスト =====
+document.getElementById('btn-lr30-connect').addEventListener('click', async () => {
+  if (!server) { log('先にデバイスに接続してください', 'warn'); return; }
+  const svc = discoveredServices.find(s => s.uuid.includes('fff0'));
+  if (!svc) {
+    log('0xFFF0 サービスが見つかりません。SR-R2500P は別のサービスUUIDを使用している可能性があります。', 'warn');
+    log('ログに表示されているサービスUUIDを確認してください。', 'info');
+    return;
+  }
+  log('0xFFF0 サービスを発見！', 'success');
+  lr30Tx = svc.chars.find(c => c.uuid.includes('fff2'));
+  lr30Rx = svc.chars.find(c => c.uuid.includes('fff1'));
+  if (lr30Rx) {
+    await subscribeChar(
+      discoveredServices.indexOf(svc),
+      svc.chars.indexOf(lr30Rx)
+    );
+  }
+  document.getElementById('btn-lr30-wake').disabled = !lr30Tx;
+  document.getElementById('btn-lr30-status').disabled = !lr30Tx;
+  document.getElementById('btn-test-print').disabled = !lr30Tx;
+  log(`TX char: ${lr30Tx?.uuid || 'なし'}`, 'info');
+  log(`RX char: ${lr30Rx?.uuid || 'なし'}`, 'info');
+});
+
+document.getElementById('btn-lr30-wake').addEventListener('click', async () => {
+  if (!lr30Tx) return;
+  const wake = new Uint8Array(64).fill(0x00);
+  try {
+    await lr30Tx.char.writeValueWithoutResponse(wake);
+    log(`→ LR30 Wake (64×0x00) 送信`, 'send');
+  } catch (e) { log(`Wake エラー: ${e.message}`, 'error'); }
+});
+
+document.getElementById('btn-lr30-status').addEventListener('click', async () => {
+  if (!lr30Tx) return;
+  // ESC i S = ステータス要求 (Brother/Tepra共通コマンド)
+  const cmd = new Uint8Array([0x1B, 0x69, 0x53]);
+  try {
+    await lr30Tx.char.writeValueWithoutResponse(cmd);
+    log(`→ LR30 Status request [1B 69 53] 送信`, 'send');
+  } catch (e) { log(`Status エラー: ${e.message}`, 'error'); }
+});
+
+// ===== テスト印刷 =====
+function renderPreview() {
+  const canvas = document.getElementById('preview-canvas');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#000';
+  ctx.font = 'bold 20px monospace';
+  ctx.fillText('FoxSense Test', 10, 30);
+  ctx.font = '14px monospace';
+  ctx.fillText('AB12CD34', 10, 55);
+  // QR代わりのチェッカー
+  for (let y = 65; y < 90; y += 5) {
+    for (let x = 10; x < 90; x += 5) {
+      if ((Math.floor(x/5) + Math.floor(y/5)) % 2 === 0) {
+        ctx.fillRect(x, y, 5, 5);
+      }
+    }
+  }
+}
+
+document.getElementById('btn-preview').addEventListener('click', renderPreview);
+
+document.getElementById('btn-test-print').addEventListener('click', async () => {
+  if (!lr30Tx) return;
+  log('テスト印刷データを生成中...', 'info');
+  const canvas = document.getElementById('preview-canvas');
+  const ctx = canvas.getContext('2d');
+  const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+  // 1bit ラスターに変換（各行を canvas.width/8 バイト）
+  const rasterLines = [];
+  for (let y = 0; y < canvas.height; y++) {
+    const lineBytes = [];
+    for (let x = 0; x < canvas.width; x += 8) {
+      let byte = 0;
+      for (let bit = 0; bit < 8; bit++) {
+        const px = (y * canvas.width + (x + bit)) * 4;
+        const r = imgData.data[px], g = imgData.data[px+1], b = imgData.data[px+2];
+        const lum = (r * 299 + g * 587 + b * 114) / 1000;
+        if (lum < 128) byte |= (0x80 >> bit);
+      }
+      lineBytes.push(byte);
+    }
+    rasterLines.push(lineBytes);
+  }
+
+  try {
+    // LR30スタイル: ESC @ → ラスターデータ → FF
+    const init = new Uint8Array([0x1B, 0x40]); // ESC @
+    await lr30Tx.char.writeValueWithoutResponse(init);
+    log(`→ ESC @ (初期化) 送信`, 'send');
+
+    // ラスターモード切替 (ESC i R 0x01)
+    const rasterMode = new Uint8Array([0x1B, 0x69, 0x52, 0x01]);
+    await lr30Tx.char.writeValueWithoutResponse(rasterMode);
+    log(`→ ラスターモード切替 送信`, 'send');
+
+    for (let i = 0; i < rasterLines.length; i++) {
+      // ESC * m n1 n2 data... (ラスター行)
+      const line = rasterLines[i];
+      const cmd = [0x47, line.length & 0xFF, (line.length >> 8) & 0xFF, ...line];
+      await lr30Tx.char.writeValueWithoutResponse(new Uint8Array(cmd));
+    }
+    log(`→ ${rasterLines.length} ラスター行送信完了`, 'send');
+
+    const print = new Uint8Array([0x1A]); // SUB = 印刷
+    await lr30Tx.char.writeValueWithoutResponse(print);
+    log(`→ 印刷コマンド [1A] 送信`, 'send');
+    log('テスト印刷コマンド送信完了。テプラの反応を確認してください。', 'success');
+  } catch (e) { log(`印刷エラー: ${e.message}`, 'error'); }
+});
+
+// ===== イベント =====
+document.getElementById('btn-connect').addEventListener('click', () => connect('all'));
+document.getElementById('btn-connect-service').addEventListener('click', () => connect('service'));
+document.getElementById('btn-disconnect').addEventListener('click', disconnect);
+document.getElementById('btn-clear-log').addEventListener('click', () => { document.getElementById('log').innerHTML = ''; });
+
+// Web Bluetooth 対応チェック
+window.addEventListener('load', () => {
+  renderPreview();
+  if (!navigator.bluetooth) {
+    log('⚠ Web Bluetooth API が使用できません。Chrome または Edge (HTTPS) でアクセスしてください。', 'error');
+    document.getElementById('btn-connect').disabled = true;
+  } else {
+    log('Web Bluetooth API が利用可能です ✓', 'success');
+    log('テプラの電源を入れてペアリングモードにしてから「デバイスをスキャン」を押してください。', 'info');
+  }
+});
+</script>
+</body>
+</html>

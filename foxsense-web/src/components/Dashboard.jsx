@@ -52,32 +52,38 @@ const Dashboard = ({ device, latestData, historyData, alerts, isParent, onDelete
             </div>
 
             {/* バッテリー */}
-            <div className="flex items-center gap-1">
-              <Battery
-                className={`w-3 h-3 sm:w-4 sm:h-4 ${
-                  device.battery > 20 ? 'text-leaf-500' : 'text-red-500'
-                }`}
-              />
-              <span
-                className={`text-xs sm:text-sm ${
-                  device.battery > 20 ? 'text-gray-600' : 'text-red-500'
-                }`}
-              >
-                {device.battery}%
-              </span>
-            </div>
+            {device.battery != null && (
+              <div className="flex items-center gap-1">
+                <Battery
+                  className={`w-3 h-3 sm:w-4 sm:h-4 ${
+                    device.battery > 20 ? 'text-leaf-500' : 'text-red-500'
+                  }`}
+                />
+                <span
+                  className={`text-xs sm:text-sm ${
+                    device.battery > 20 ? 'text-gray-600' : 'text-red-500'
+                  }`}
+                >
+                  {device.battery}%
+                </span>
+              </div>
+            )}
 
             {/* 電波強度 */}
             {isParent ? (
-              <div className="flex items-center gap-1">
-                <Wifi className="w-3 h-3 sm:w-4 sm:h-4 text-blue-500" />
-                <span className="text-xs sm:text-sm text-gray-600">LTE {device.signal}</span>
-              </div>
+              device.signal != null && (
+                <div className="flex items-center gap-1">
+                  <Wifi className="w-3 h-3 sm:w-4 sm:h-4 text-blue-500" />
+                  <span className="text-xs sm:text-sm text-gray-600">LTE {device.signal}</span>
+                </div>
+              )
             ) : (
-              <div className="flex items-center gap-1">
-                <Radio className="w-3 h-3 sm:w-4 sm:h-4 text-leaf-500" />
-                <span className="text-xs sm:text-sm text-gray-600">{device.rssi} dBm</span>
-              </div>
+              device.rssi != null && (
+                <div className="flex items-center gap-1">
+                  <Radio className="w-3 h-3 sm:w-4 sm:h-4 text-leaf-500" />
+                  <span className="text-xs sm:text-sm text-gray-600">{device.rssi} dBm</span>
+                </div>
+              )
             )}
 
             {/* 最終更新 */}

@@ -23,6 +23,11 @@ router.get('/packages', adminController.getPackages);
 router.post('/packages', adminController.createPackage);
 router.put('/packages/:id', adminController.updatePackage);
 
+// Inventory (デバイス在庫)
+router.get('/inventory', adminController.getInventory);
+router.post('/inventory', adminController.bulkCreateInventory);
+router.delete('/inventory/:id', adminController.deleteInventoryItem);
+
 // Profile
 router.put('/me/password', adminController.changePassword);
 

@@ -48,6 +48,7 @@ const SimManagement = ({ deviceId, soracomSimId }) => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState('');
   const [showUsage, setShowUsage] = useState(false);
+  const [showTerminateConfirm, setShowTerminateConfirm] = useState(false);
 
   useEffect(() => {
     if (soracomSimId) {
@@ -87,12 +88,6 @@ const SimManagement = ({ deviceId, soracomSimId }) => {
       terminate: '解約',
     };
 
-    if (action === 'terminate') {
-      if (!window.confirm('本当にSIMを解約しますか？この操作は取り消せません。')) {
-        return;
-      }
-    }
-
     setIsProcessing(true);
     setError('');
 
@@ -109,6 +104,7 @@ const SimManagement = ({ deviceId, soracomSimId }) => {
       setError(`${actionLabels[action]}に失敗しました`);
     } finally {
       setIsProcessing(false);
+      setShowTerminateConfirm(false);
     }
   };
 
@@ -204,11 +200,11 @@ const SimManagement = ({ deviceId, soracomSimId }) => {
 
           {simDetails?.status?.toLowerCase() !== 'terminated' && (
             <button
-              onClick={() => handleAction('terminate')}
+              onClick={() => setShowTerminateConfirm(true)}
               disabled={isProcessing}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg disabled:opacity-50"
             >
-              {isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : <XCircle className="w-4 h-4" />}
+              <XCircle className="w-4 h-4" />
               解約
             </button>
           )}
@@ -242,6 +238,44 @@ const SimManagement = ({ deviceId, soracomSimId }) => {
             ) : (
               <p className="text-gray-500 text-sm">データがありません</p>
             )}
+          </div>
+        </div>
+      )}
+    </div>
+
+      {/* 解約確認ダイアログ */}
+      {showTerminateConfirm && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+                <XCircle className="w-5 h-5 text-red-600" />
+              </div>
+              <h3 className="font-bold text-gray-900">SIMを解約しますか？</h3>
+            </div>
+            <p className="text-sm text-gray-600 mb-1">
+              この操作は<span className="font-semibold text-red-600">取り消せません。</span>
+            </p>
+            <p className="text-sm text-gray-500 mb-6">
+              解約後はSIMによる通信ができなくなり、デバイスからのデータ送信が停止します。
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowTerminateConfirm(false)}
+                disabled={isProcessing}
+                className="flex-1 px-4 py-2.5 border border-gray-300 hover:bg-gray-50 text-gray-700 font-medium rounded-xl transition-colors disabled:opacity-50"
+              >
+                キャンセル
+              </button>
+              <button
+                onClick={() => handleAction('terminate')}
+                disabled={isProcessing}
+                className="flex-1 px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white font-medium rounded-xl transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                本当に解約する
+              </button>
+            </div>
           </div>
         </div>
       )}

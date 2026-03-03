@@ -73,20 +73,26 @@ const DeviceList = ({ parent, children, selectedDevice, onSelectDevice, latestDa
 
             {/* デバイス情報 */}
             <div className="flex items-center gap-3 mt-1.5 text-xs text-gray-400">
-              <div className="flex items-center gap-1">
-                <Battery className="w-3 h-3" />
-                <span>{device.battery}%</span>
-              </div>
+              {device.battery != null && (
+                <div className="flex items-center gap-1">
+                  <Battery className="w-3 h-3" />
+                  <span>{device.battery}%</span>
+                </div>
+              )}
               {isParent ? (
-                <div className="flex items-center gap-1">
-                  <Wifi className="w-3 h-3" />
-                  <span>LTE {device.signal}</span>
-                </div>
+                device.signal != null && (
+                  <div className="flex items-center gap-1">
+                    <Wifi className="w-3 h-3" />
+                    <span>LTE {device.signal}</span>
+                  </div>
+                )
               ) : (
-                <div className="flex items-center gap-1">
-                  <Radio className="w-3 h-3" />
-                  <span>{device.rssi} dBm</span>
-                </div>
+                device.rssi != null && (
+                  <div className="flex items-center gap-1">
+                    <Radio className="w-3 h-3" />
+                    <span>{device.rssi} dBm</span>
+                  </div>
+                )
               )}
             </div>
           </div>

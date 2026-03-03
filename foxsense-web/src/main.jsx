@@ -7,6 +7,12 @@ import Login from './components/Login.jsx'
 import Register from './components/Register.jsx'
 import AdminPage from './components/AdminPage.jsx'
 import { AuthProvider, useAuth } from './contexts/AuthContext.jsx'
+import ForgotPassword from './components/ForgotPassword.jsx'
+import ResetPassword from './components/ResetPassword.jsx'
+import DashboardPage from './pages/DashboardPage.jsx'
+import DevicesPage from './pages/DevicesPage.jsx'
+import SettingsPage from './pages/SettingsPage.jsx'
+import CropsPage from './pages/CropsPage.jsx'
 
 // 認証が必要なルートを保護するコンポーネント
 const ProtectedRoute = ({ children }) => {
@@ -90,6 +96,8 @@ createRoot(document.getElementById('root')).render(
               </PublicOnlyRoute>
             }
           />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
 
           {/* 認証が必要なルート */}
           <Route
@@ -99,7 +107,12 @@ createRoot(document.getElementById('root')).render(
                 <App />
               </ProtectedRoute>
             }
-          />
+          >
+            <Route index element={<DashboardPage />} />
+            <Route path="devices" element={<DevicesPage />} />
+            <Route path="settings" element={<SettingsPage />} />
+            <Route path="crops" element={<CropsPage />} />
+          </Route>
           {/* FoxCoin 購入完了 */}
           <Route
             path="/foxcoins/success"

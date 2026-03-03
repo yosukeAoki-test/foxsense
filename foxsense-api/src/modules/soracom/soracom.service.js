@@ -50,6 +50,16 @@ const soracomApi = async (method, path, data = null) => {
   return response.data;
 };
 
+export const getSimByImsi = async (imsi) => {
+  if (isTestMode) {
+    return { simId: `mock_sim_${imsi}` };
+  }
+  const sims = await soracomApi('GET', '/sims');
+  const found = sims.find(s => s.imsi === imsi);
+  if (!found) throw new AppError('IMSIに一致するSIMが見つかりません', 404);
+  return found;
+};
+
 export const getSims = async (userId) => {
   // Get user's devices with SIM IDs
   const devices = await prisma.parentDevice.findMany({

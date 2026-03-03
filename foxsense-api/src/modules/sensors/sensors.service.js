@@ -5,7 +5,10 @@ export const getLatestData = async (parentId, userId) => {
   const parent = await prisma.parentDevice.findFirst({
     where: { id: parentId, userId },
     include: {
-      childDevices: true,
+      assignments: {
+        where: { pairingStatus: 'PAIRED' },
+        include: { child: true },
+      },
     },
   });
 
@@ -21,7 +24,8 @@ export const getLatestData = async (parentId, userId) => {
 
   // Get latest data for each child
   const childrenLatest = await Promise.all(
-    parent.childDevices.map(async (child) => {
+    parent.assignments.map(async (assignment) => {
+      const child = assignment.child;
       const latest = await prisma.sensorData.findFirst({
         where: { childId: child.id },
         orderBy: { timestamp: 'desc' },
@@ -75,10 +79,9 @@ export const getHistoryData = async (deviceId, deviceType, period, userId) => {
     });
   } else {
     const device = await prisma.childDevice.findFirst({
-      where: { id: deviceId },
-      include: { parent: true },
+      where: { id: deviceId, userId },
     });
-    if (!device || device.parent.userId !== userId) {
+    if (!device) {
       throw new AppError('Device not found', 404);
     }
 

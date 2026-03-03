@@ -1,12 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { Outlet, Link } from 'react-router-dom';
 import { format, addDays } from 'date-fns';
 import { ja } from 'date-fns/locale';
-import Dashboard from './components/Dashboard';
-import DeviceList from './components/DeviceList';
-import AlertSettings from './components/AlertSettings';
-import DeviceRegistration from './components/DeviceRegistration';
-import CropManagement from './components/CropManagement';
-import SettingsModal from './components/SettingsModal';
 import { getParentDevices, deleteChildDevice, foxCoinApi, getLatestData, getHistoryData, getAlertSettings, updateAlertSettings } from './api/client';
 import { useAuth } from './contexts/AuthContext';
 import { Settings, RefreshCw, Plus, Sprout, Snowflake, AlertTriangle, X, Flower2, LogOut, User, Radio, ChevronDown, Coins, ShieldCheck, Loader2 } from 'lucide-react';
@@ -31,9 +26,6 @@ function App() {
   const [showFoxCoinShop, setShowFoxCoinShop] = useState(false);
   const [purchasingPkg, setPurchasingPkg] = useState(null);
   const [selectedDevice, setSelectedDevice] = useState(null);
-  const [showAlertSettings, setShowAlertSettings] = useState(false);
-  const [showDeviceRegistration, setShowDeviceRegistration] = useState(false);
-  const [showCropManagement, setShowCropManagement] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isLoadingInitial, setIsLoadingInitial] = useState(true);
   const [dismissedAlerts, setDismissedAlerts] = useState(() => {
@@ -177,7 +169,6 @@ function App() {
     const currentTemp = temps[temps.length - 1];
     const predictedMinTemp = currentTemp + trend * 2;
 
-    // アラート設定から閾値を取得（デフォルト: 警告3°C、危険0°C）
     const frostCritical = mockData.alerts?.frostCritical ?? 0;
     const frostWarning = mockData.alerts?.frostWarning ?? 3;
 
@@ -204,7 +195,6 @@ function App() {
       const dataAfterPollination = mockData.history.filter(d => new Date(d.timestamp) >= pollinationDate);
       if (dataAfterPollination.length === 0) return;
 
-      // 日ごとの積算温度計算
       let totalGDD = 0;
       const dailyData = {};
       dataAfterPollination.forEach(d => {
@@ -223,7 +213,6 @@ function App() {
       const remainingGDD = crop.gdd - totalGDD;
       const estimatedDaysRemaining = avgDailyGDD > 0 ? Math.ceil(remainingGDD / avgDailyGDD) : null;
 
-      // 3日以内に収穫予定
       if (estimatedDaysRemaining !== null && estimatedDaysRemaining <= 3 && estimatedDaysRemaining > 0) {
         const estimatedDate = addDays(new Date(), estimatedDaysRemaining);
         alerts.push({
@@ -236,7 +225,6 @@ function App() {
           requiredGDD: crop.gdd,
         });
       } else if (totalGDD >= crop.gdd) {
-        // 収穫適期
         alerts.push({
           id: record.id,
           cropName: crop.name,
@@ -307,7 +295,7 @@ function App() {
     setIsRefreshing(false);
   };
 
-  // デバイス管理モーダルで変更があった時
+  // デバイス管理で変更があった時
   const handleDeviceRefresh = () => {
     loadParentDevices();
     loadData();
@@ -318,46 +306,12 @@ function App() {
     try {
       await updateAlertSettings(selectedParent.id, newAlerts);
       setMockData(prev => ({ ...prev, alerts: newAlerts }));
-      setShowAlertSettings(false);
     } catch {
       alert('アラート設定の保存に失敗しました');
     }
   };
 
   if (isLoadingInitial) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-leaf-600 text-xl">読み込み中...</div>
-      </div>
-    );
-  }
-
-  if (parentDevices.length === 0) {
-    return (
-      <div className="min-h-screen flex items-center justify-center p-4">
-        <div className="text-center max-w-sm">
-          <Radio className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-          <h2 className="text-xl font-bold text-gray-700 mb-2">親機が未登録です</h2>
-          <p className="text-gray-500 text-sm mb-6">デバイス管理から親機を登録してください</p>
-          <button
-            onClick={() => setShowDeviceRegistration(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white rounded-xl font-medium shadow-lg shadow-orange-500/30 mx-auto"
-          >
-            <Plus className="w-4 h-4" />
-            デバイス管理
-          </button>
-          {showDeviceRegistration && (
-            <DeviceRegistration
-              onClose={() => setShowDeviceRegistration(false)}
-              onRefresh={() => { loadParentDevices(); }}
-            />
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  if (!mockData) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-leaf-600 text-xl">読み込み中...</div>
@@ -403,30 +357,33 @@ function App() {
                       </button>
                     ))}
                     <div className="border-t border-gray-100">
-                      <button onClick={() => { setShowDeviceRegistration(true); setShowParentMenu(false); }}
-                        className="w-full text-left px-3 py-2.5 text-sm text-green-600 hover:bg-green-50 transition-colors flex items-center gap-2">
+                      <Link
+                        to="/devices"
+                        onClick={() => setShowParentMenu(false)}
+                        className="w-full text-left px-3 py-2.5 text-sm text-green-600 hover:bg-green-50 transition-colors flex items-center gap-2"
+                      >
                         <Plus className="w-3.5 h-3.5" />親機を追加...
-                      </button>
+                      </Link>
                     </div>
                   </div>
                 )}
               </div>
             )}
-            <button
-              onClick={() => setShowDeviceRegistration(true)}
+            <Link
+              to="/devices"
               className="p-2 sm:p-3 rounded-lg sm:rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white shadow-lg shadow-orange-500/30 transition-all flex items-center gap-1 sm:gap-2"
             >
               <Plus className="w-4 h-4 sm:w-5 sm:h-5" />
               <span className="hidden sm:inline text-xs sm:text-sm font-medium">デバイス管理</span>
-            </button>
-            <button
-              onClick={() => setShowCropManagement(true)}
+            </Link>
+            <Link
+              to="/crops"
               className="p-2 sm:p-3 rounded-lg sm:rounded-xl bg-white/80 hover:bg-white text-leaf-600 shadow-sm transition-all flex items-center gap-1 sm:gap-2"
               title="栽培管理"
             >
               <Sprout className="w-4 h-4 sm:w-5 sm:h-5" />
               <span className="hidden md:inline text-sm font-medium">栽培管理</span>
-            </button>
+            </Link>
             <button
               onClick={handleRefresh}
               className={`p-2 sm:p-3 rounded-lg sm:rounded-xl bg-white/80 hover:bg-white text-leaf-600 shadow-sm transition-all ${
@@ -436,13 +393,13 @@ function App() {
             >
               <RefreshCw className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
-            <button
-              onClick={() => setShowAlertSettings(true)}
+            <Link
+              to="/settings"
               className="p-2 sm:p-3 rounded-lg sm:rounded-xl bg-white/80 hover:bg-white text-leaf-600 shadow-sm transition-all"
               title="設定"
             >
               <Settings className="w-4 h-4 sm:w-5 sm:h-5" />
-            </button>
+            </Link>
             {/* FoxCoin 残高（クリックで購入） */}
             {foxCoinBalance !== null && (
               <button
@@ -488,7 +445,7 @@ function App() {
       {/* アラートバナー */}
       {activeAlerts.length > 0 && (
         <div className="space-y-2 mb-4 sm:mb-6 fade-in">
-          {activeAlerts.map((alert, index) => (
+          {activeAlerts.map((alert) => (
             <div
               key={alert.type === 'frost' ? 'frost' : `harvest-${alert.id}`}
               className={`rounded-xl p-3 sm:p-4 flex items-start gap-2 sm:gap-3 ${
@@ -548,11 +505,7 @@ function App() {
               </div>
               <button
                 onClick={() => dismissAlert(alert.type === 'frost' ? 'frost' : `harvest-${alert.id}`)}
-                className={`p-1 rounded-lg transition-colors flex-shrink-0 ${
-                  alert.type === 'frost'
-                    ? 'text-gray-400 hover:text-gray-600 hover:bg-white/50'
-                    : 'text-gray-400 hover:text-gray-600 hover:bg-white/50'
-                }`}
+                className="p-1 rounded-lg transition-colors flex-shrink-0 text-gray-400 hover:text-gray-600 hover:bg-white/50"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -575,7 +528,7 @@ function App() {
                     子機 {selectedParent.activeChildren?.length || 0}台紐付け中
                   </span>
                 </>
-              ) : (
+              ) : mockData ? (
                 <>
                   <span className="text-gray-500">親機: </span>
                   <span className="font-medium text-gray-700">{mockData.parent.name}</span>
@@ -585,7 +538,7 @@ function App() {
                     {mockData.parent.isOnline ? 'オンライン' : 'オフライン'}
                   </span>
                 </>
-              )}
+              ) : null}
             </div>
           </div>
           <div className="flex items-center gap-4 text-sm">
@@ -598,13 +551,13 @@ function App() {
             )}
             <div>
               <span className="text-gray-500">登録子機: </span>
-              <span className="font-bold text-leaf-600">{mockData.children.length}</span>
+              <span className="font-bold text-leaf-600">{mockData?.children.length ?? 0}</span>
               <span className="text-gray-500">台</span>
             </div>
             <div>
               <span className="text-gray-500">オンライン: </span>
               <span className="font-bold text-leaf-600">
-                {mockData.children.filter(c => c.isOnline).length}
+                {(mockData?.children ?? []).filter(c => c.isOnline).length}
               </span>
               <span className="text-gray-500">台</span>
             </div>
@@ -612,53 +565,17 @@ function App() {
         </div>
       </div>
 
-      {/* メインコンテンツ */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        {/* デバイスリスト */}
-        <div className="lg:col-span-1 fade-in fade-in-delay-1">
-          <DeviceList
-            parent={mockData.parent}
-            children={mockData.children}
-            selectedDevice={selectedDevice}
-            onSelectDevice={setSelectedDevice}
-            latestData={mockData.latest}
-            onAddChild={() => setShowDeviceRegistration(true)}
-            onDeleteChild={handleDeleteChild}
-          />
-        </div>
-
-        {/* ダッシュボード */}
-        <div className="lg:col-span-3 fade-in fade-in-delay-2">
-          {selectedDevice && (
-            <Dashboard
-              device={selectedDevice}
-              latestData={mockData.latest[selectedDevice.id]}
-              historyData={mockData.historyByDevice?.[selectedDevice.id] || mockData.history}
-              alerts={mockData.alerts}
-              isParent={selectedDevice.id === mockData.parent.id}
-              onDelete={handleDeleteChild}
-            />
-          )}
-        </div>
-      </div>
-
-      {/* 設定モーダル（アラート・SIM・サブスクリプション） */}
-      {showAlertSettings && (
-        <SettingsModal
-          alerts={mockData.alerts}
-          parentDevice={selectedParent}
-          onClose={() => setShowAlertSettings(false)}
-          onSaveAlerts={handleSaveAlerts}
-        />
-      )}
-
-      {/* デバイス管理モーダル */}
-      {showDeviceRegistration && (
-        <DeviceRegistration
-          onClose={() => setShowDeviceRegistration(false)}
-          onRefresh={handleDeviceRefresh}
-        />
-      )}
+      {/* メインコンテンツ（ページアウトレット） */}
+      <Outlet context={{
+        mockData,
+        selectedParent,
+        parentDevices,
+        selectedDevice,
+        setSelectedDevice,
+        handleDeleteChild,
+        handleSaveAlerts,
+        handleDeviceRefresh,
+      }} />
 
       {/* FoxCoin 購入モーダル */}
       {showFoxCoinShop && foxCoinBalance && (
@@ -697,16 +614,6 @@ function App() {
             <p className="text-xs text-gray-400 mt-4 text-center">Stripe の安全な決済画面に移動します</p>
           </div>
         </div>
-      )}
-
-      {/* 栽培管理モーダル */}
-      {showCropManagement && (
-        <CropManagement
-          historyData={mockData.history}
-          latestData={selectedDevice ? mockData.latest[selectedDevice.id] : null}
-          alerts={mockData.alerts}
-          onClose={() => setShowCropManagement(false)}
-        />
       )}
     </div>
   );

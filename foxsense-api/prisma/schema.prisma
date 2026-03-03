@@ -2,40 +2,35 @@ generator client {
   provider = "prisma-client-js"
 }
 
-// 開発用: SQLite、本番用: PostgreSQL
-// 切り替えは.envのDATABASE_URLで行う
-// SQLite: DATABASE_URL="file:./dev.db"
-// PostgreSQL: DATABASE_URL="postgresql://user:pass@host:5432/db"
 datasource db {
   provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
 model User {
-  id           String   @id @default(uuid())
-  email        String   @unique
-  passwordHash String
-  name         String
-  role         String   @default("USER")
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  subscription    Subscription?
-  parentDevices   ParentDevice[]
-  childDevices    ChildDevice[]
-  refreshTokens   RefreshToken[]
-  foxCoinBalance  FoxCoinBalance?
+  id               String            @id @default(uuid())
+  email            String            @unique
+  passwordHash     String
+  name             String
+  role             String            @default("USER")
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  childDevices     ChildDevice[]
+  foxCoinBalance   FoxCoinBalance?
+  foxCoinLogs      FoxCoinLog[]
   foxCoinPurchases FoxCoinPurchase[]
-  foxCoinLogs     FoxCoinLog[]
+  parentDevices    ParentDevice[]
+  refreshTokens    RefreshToken[]
+  subscription     Subscription?
 }
 
 model RefreshToken {
   id        String   @id @default(uuid())
   token     String   @unique
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   expiresAt DateTime
   createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }
@@ -43,7 +38,6 @@ model RefreshToken {
 model Subscription {
   id                   String   @id @default(uuid())
   userId               String   @unique
-  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   stripeCustomerId     String?
   stripeSubscriptionId String?
   plan                 String
@@ -52,57 +46,53 @@ model Subscription {
   currentPeriodEnd     DateTime
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model ParentDevice {
-  id           String   @id @default(uuid())
-  userId       String
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  deviceId     String   @unique
-  deviceSecret String   @default(uuid())
-  name         String
-  location     String?
-  soracomSimId String?
-  simStatus    String   @default("INACTIVE")
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  assignments   DeviceAssignment[]
-  sensorData    SensorData[]
+  id            String             @id @default(uuid())
+  userId        String
+  deviceId      String             @unique
+  deviceSecret  String             @default(uuid())
+  name          String
+  location      String?
+  soracomSimId  String?
+  simStatus     String             @default("INACTIVE")
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
   alertSettings AlertSettings?
+  assignments   DeviceAssignment[]
+  user          User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sensorData    SensorData[]
 
   @@index([userId])
 }
 
-// 子機はユーザー所有（特定の親機に紐付かない）
 model ChildDevice {
-  id        String   @id @default(uuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  deviceId  String   @unique
-  name      String
-  location  String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
+  id          String             @id @default(uuid())
+  userId      String
+  deviceId    String             @unique
+  name        String
+  location    String?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   assignments DeviceAssignment[]
   sensorData  SensorData[]
 
   @@index([userId])
 }
 
-// 親機と子機の紐付け履歴
-// unassignedAt が null = 現在有効な紐付け
 model DeviceAssignment {
   id            String       @id @default(uuid())
   parentId      String
-  parent        ParentDevice @relation(fields: [parentId], references: [id], onDelete: Cascade)
   childId       String
-  child         ChildDevice  @relation(fields: [childId], references: [id], onDelete: Cascade)
   logicalId     Int?
   pairingStatus String       @default("PENDING")
   assignedAt    DateTime     @default(now())
-  unassignedAt  DateTime?    // null = 現在有効
+  unassignedAt  DateTime?
+  child         ChildDevice  @relation(fields: [childId], references: [id], onDelete: Cascade)
+  parent        ParentDevice @relation(fields: [parentId], references: [id], onDelete: Cascade)
 
   @@index([parentId])
   @@index([childId])
@@ -111,84 +101,86 @@ model DeviceAssignment {
 model SensorData {
   id          String        @id @default(uuid())
   parentId    String?
-  parent      ParentDevice? @relation(fields: [parentId], references: [id], onDelete: Cascade)
   childId     String?
-  child       ChildDevice?  @relation(fields: [childId], references: [id], onDelete: Cascade)
   deviceType  String
   temperature Float
   humidity    Float
   battery     Float?
   rssi        Int?
   timestamp   DateTime      @default(now())
+  child       ChildDevice?  @relation(fields: [childId], references: [id], onDelete: Cascade)
+  parent      ParentDevice? @relation(fields: [parentId], references: [id], onDelete: Cascade)
 
   @@index([parentId, timestamp])
   @@index([childId, timestamp])
 }
 
-// ===== FoxCoin システム =====
-
-// 販売パッケージ (30 / 100 / 200 / 300 FoxCoin)
 model FoxCoinPackage {
-  id             String   @id @default(uuid())
-  name           String   // 例: "スターター", "スタンダード"
-  coins          Int      // 30, 100, 200, 300
-  price          Int      @default(0) // 円（0=未設定）
-  stripePriceId  String?  // Stripe Price ID (price_xxx)
-  isActive       Boolean  @default(true)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-
-  purchases FoxCoinPurchase[]
+  id             String            @id @default(uuid())
+  name           String
+  coins          Int
+  price          Int               @default(0)
+  stripePriceId  String?
+  isActive       Boolean           @default(true)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  purchases      FoxCoinPurchase[]
 }
 
-// ユーザーの FoxCoin 残高と SIM 状態
 model FoxCoinBalance {
   id             String    @id @default(uuid())
   userId         String    @unique
-  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  balance        Int       @default(0)   // 残 FoxCoin
-  simStatus      String    @default("INACTIVE") // ACTIVE | SUSPENDED | INACTIVE
-  lastDeductedAt DateTime? // 最後に1枚消費した日
+  balance        Int       @default(0)
+  simStatus      String    @default("INACTIVE")
+  lastDeductedAt DateTime?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
-// 購入履歴
 model FoxCoinPurchase {
   id          String          @id @default(uuid())
   userId      String
-  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   packageId   String?
-  package     FoxCoinPackage? @relation(fields: [packageId], references: [id])
-  coins       Int             // 付与枚数
-  price       Int             // 購入時の金額（円）
-  note        String?         // 備考（管理者付与など）
-  activatedAt DateTime        // 有効開始日（購入翌日）
+  coins       Int
+  price       Int
+  note        String?
+  activatedAt DateTime
   purchasedAt DateTime        @default(now())
+  package     FoxCoinPackage? @relation(fields: [packageId], references: [id])
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }
 
-// FoxCoin 増減ログ（購入・日次消費・管理者操作）
 model FoxCoinLog {
   id            String   @id @default(uuid())
   userId        String
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type          String   // PURCHASE | DAILY_DEDUCT | ADMIN_GRANT | ADMIN_DEDUCT
-  coins         Int      // 正数=付与、負数=消費
+  type          String
+  coins         Int
   balanceBefore Int
   balanceAfter  Int
   note          String?
   createdAt     DateTime @default(now())
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([createdAt])
 }
 
+model DeviceInventory {
+  id        String    @id @default(uuid())
+  deviceId  String    @unique
+  type      String    // 'PARENT' or 'CHILD'
+  imsi      String?   // SORACOM SIM IMSI（親機のみ）
+  claimed   Boolean   @default(false)
+  claimedAt DateTime?
+  createdAt DateTime  @default(now())
+}
+
 model AlertSettings {
   id            String       @id @default(uuid())
   parentId      String       @unique
-  parent        ParentDevice @relation(fields: [parentId], references: [id], onDelete: Cascade)
   tempMin       Float        @default(-5)
   tempMax       Float        @default(40)
   humidityMin   Float        @default(20)
@@ -199,4 +191,5 @@ model AlertSettings {
   lineEnabled   Boolean      @default(false)
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
+  parent        ParentDevice @relation(fields: [parentId], references: [id], onDelete: Cascade)
 }

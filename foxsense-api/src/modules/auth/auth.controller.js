@@ -74,3 +74,24 @@ export const me = asyncHandler(async (req, res) => {
     data: { user },
   });
 });
+
+export const forgotPassword = asyncHandler(async (req, res) => {
+  const { email } = req.body;
+  await authService.requestPasswordReset(email);
+
+  // メールの存在有無を明かさないため常に成功を返す
+  res.json({
+    success: true,
+    message: 'メールアドレスが登録されている場合、リセットメールを送信しました',
+  });
+});
+
+export const resetPassword = asyncHandler(async (req, res) => {
+  const { token, password } = req.body;
+  await authService.resetPassword(token, password);
+
+  res.json({
+    success: true,
+    message: 'パスワードを変更しました。新しいパスワードでログインしてください',
+  });
+});

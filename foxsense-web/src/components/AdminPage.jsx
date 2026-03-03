@@ -1,11 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Users, Radio, BarChart3, Package, ArrowLeft, Trash2,
   ShieldCheck, ShieldOff, Coins, Loader2, AlertCircle,
   ChevronDown, Plus, Minus, RefreshCw, Cpu, Edit2, Check, X, KeyRound, Link,
+  Tag, Printer, RotateCcw, Database,
 } from 'lucide-react';
-import client from '../api/client';
+import { QRCodeSVG } from 'react-qr-code';
+import client, { adminInventoryApi } from '../api/client';
 
 const api = {
   get: (url) => client.get(url).then(r => r.data.data),
@@ -294,6 +296,377 @@ const DevicesTab = () => {
   );
 };
 
+// ===== ラベル発行タブ =====
+const TAPE_SIZES = [
+  { label: '18mm', mm: 18, width: '70mm', height: '18mm', qr: 40, fontSize: '6px', idFontSize: '5.5px' },
+  { label: '12mm', mm: 12, width: '55mm', height: '12mm', qr: 28, fontSize: '5px', idFontSize: '4.5px' },
+  { label: '9mm',  mm: 9,  width: '45mm', height: '9mm',  qr: 20, fontSize: '4.5px', idFontSize: '4px' },
+];
+
+const BRIDGE_URL = 'http://localhost:3333';
+
+const randomHex = (len) => {
+  const chars = '0123456789ABCDEF';
+  return Array.from({ length: len }, () => chars[Math.floor(Math.random() * 16)]).join('');
+};
+
+const LabelsTab = () => {
+  const [deviceType, setDeviceType] = useState('PARENT');
+  const [count, setCount] = useState(5);
+  const [tapeSize, setTapeSize] = useState(TAPE_SIZES[0]);
+  const [labels, setLabels] = useState([]);
+  const [registering, setRegistering] = useState(false);
+  const [registerResult, setRegisterResult] = useState(null);
+  const [error, setError] = useState('');
+  const [inventory, setInventory] = useState([]);
+  const [loadingInv, setLoadingInv] = useState(false);
+  const [bridgeStatus, setBridgeStatus] = useState(null); // null | 'ok' | 'error'
+  const [bridgePrinting, setBridgePrinting] = useState(false);
+  const [bridgeProgress, setBridgeProgress] = useState('');
+  const printRef = useRef(null);
+
+  const loadInventory = useCallback(() => {
+    setLoadingInv(true);
+    adminInventoryApi.list().then(setInventory).catch(() => {}).finally(() => setLoadingInv(false));
+  }, []);
+
+  useEffect(() => { loadInventory(); }, [loadInventory]);
+
+  const checkBridge = useCallback(async () => {
+    try {
+      const res = await fetch(`${BRIDGE_URL}/status`, { signal: AbortSignal.timeout(2000) });
+      const data = await res.json();
+      setBridgeStatus(data.present ? 'ok' : 'no-device');
+    } catch {
+      setBridgeStatus('error');
+    }
+  }, []);
+
+  useEffect(() => { checkBridge(); }, [checkBridge]);
+
+  const generate = () => {
+    setRegisterResult(null);
+    setError('');
+    const newLabels = Array.from({ length: count }, () => ({
+      deviceId: randomHex(8),
+      type: deviceType,
+      imsi: '',
+    }));
+    setLabels(newLabels);
+  };
+
+  const handleRemove = (idx) => {
+    setLabels(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const handleImsiChange = (idx, value) => {
+    setLabels(prev => prev.map((l, i) => i === idx ? { ...l, imsi: value } : l));
+  };
+
+  const handlePrint = () => {
+    const tape = tapeSize;
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: white; }
+  .page { display: flex; flex-wrap: wrap; gap: 2mm; padding: 2mm; }
+  .label {
+    width: ${tape.width};
+    height: ${tape.height};
+    border: 0.3mm solid #ccc;
+    display: flex;
+    align-items: center;
+    gap: 1mm;
+    padding: 1mm;
+    overflow: hidden;
+    page-break-inside: avoid;
+  }
+  .label svg { flex-shrink: 0; }
+  .label-text { display: flex; flex-direction: column; gap: 0.5mm; min-width: 0; }
+  .label-brand { font-family: sans-serif; font-weight: bold; font-size: ${tape.fontSize}; color: #1a1a1a; white-space: nowrap; }
+  .label-type { font-family: sans-serif; font-size: ${tape.fontSize}; color: #555; white-space: nowrap; }
+  .label-id { font-family: monospace; font-size: ${tape.idFontSize}; color: #333; word-break: break-all; letter-spacing: 0.3px; }
+  @media print { body { margin: 0; } }
+</style>
+</head>
+<body>
+<div class="page">
+${labels.map(l => `  <div class="label">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${tape.qr} ${tape.qr}" width="${tape.qr}" height="${tape.qr}">
+      ${document.getElementById(`qr-${l.deviceId}`)?.innerHTML || ''}
+    </svg>
+    <div class="label-text">
+      <span class="label-brand">FoxSense</span>
+      <span class="label-type">${l.type === 'PARENT' ? '親機' : '子機'}</span>
+      <span class="label-id">${l.deviceId}</span>
+    </div>
+  </div>`).join('\n')}
+</div>
+</body>
+</html>`;
+
+    const win = window.open('', '_blank');
+    win.document.write(html);
+    win.document.close();
+    win.onload = () => { win.print(); };
+  };
+
+  const handleRegister = async () => {
+    if (labels.length === 0) return;
+    setRegistering(true);
+    setError('');
+    setRegisterResult(null);
+    try {
+      const result = await adminInventoryApi.bulkCreate(labels.map(l => ({ ...l, imsi: l.imsi || undefined })));
+      setRegisterResult(result);
+      loadInventory();
+    } catch (e) {
+      setError(e.response?.data?.message || '登録に失敗しました');
+    } finally {
+      setRegistering(false);
+    }
+  };
+
+  const handleBridgePrint = async () => {
+    if (labels.length === 0) return;
+    setBridgePrinting(true);
+    setError('');
+    for (let i = 0; i < labels.length; i++) {
+      const l = labels[i];
+      setBridgeProgress(`印刷中 ${i + 1} / ${labels.length}`);
+      try {
+        const res = await fetch(`${BRIDGE_URL}/print`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ deviceId: l.deviceId, tapeMm: tapeSize.mm }),
+        });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || '印刷失敗');
+        // 連続印刷時は少し待つ
+        if (i < labels.length - 1) await new Promise(r => setTimeout(r, 1500));
+      } catch (e) {
+        setError(`${l.deviceId} の印刷に失敗: ${e.message}`);
+        break;
+      }
+    }
+    setBridgePrinting(false);
+    setBridgeProgress('');
+  };
+
+  const handleDeleteInventory = async (id) => {
+    if (!window.confirm('この在庫IDを削除しますか？')) return;
+    try {
+      await adminInventoryApi.delete(id);
+      loadInventory();
+    } catch (e) {
+      setError(e.response?.data?.message || '削除に失敗しました');
+    }
+  };
+
+  const parents = inventory.filter(i => i.type === 'PARENT');
+  const children = inventory.filter(i => i.type === 'CHILD');
+
+  return (
+    <div className="space-y-6">
+      {error && (
+        <div className="flex items-center gap-2 p-3 bg-red-50 rounded-lg text-red-600 text-sm">
+          <AlertCircle className="w-4 h-4 flex-shrink-0" />{error}
+        </div>
+      )}
+
+      {/* 生成パネル */}
+      <div className="bg-white rounded-xl border p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+            <Tag className="w-4 h-4 text-blue-600" />ラベル発行
+          </h3>
+          <button onClick={checkBridge} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded-lg border hover:bg-gray-50 transition-colors text-gray-500">
+            <span className={`w-2 h-2 rounded-full ${bridgeStatus === 'ok' ? 'bg-green-500' : bridgeStatus === 'no-device' ? 'bg-yellow-400' : bridgeStatus === 'error' ? 'bg-red-400' : 'bg-gray-300'}`} />
+            {bridgeStatus === 'ok' ? 'テプラ接続中' : bridgeStatus === 'no-device' ? 'テプラ未検出' : bridgeStatus === 'error' ? 'ブリッジ未起動' : '確認中...'}
+          </button>
+        </div>
+
+        <div className="flex flex-wrap gap-3 mb-4">
+          {/* タイプ選択 */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">デバイス種別</label>
+            <div className="flex rounded-lg border overflow-hidden">
+              {[['PARENT', '親機'], ['CHILD', '子機']].map(([val, label]) => (
+                <button key={val} onClick={() => setDeviceType(val)}
+                  className={`px-4 py-2 text-sm font-medium transition-colors ${deviceType === val ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* テープ幅 */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">テープ幅</label>
+            <div className="flex rounded-lg border overflow-hidden">
+              {TAPE_SIZES.map(t => (
+                <button key={t.label} onClick={() => setTapeSize(t)}
+                  className={`px-3 py-2 text-sm font-medium transition-colors ${tapeSize.label === t.label ? 'bg-gray-800 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 枚数 */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">発行枚数</label>
+            <div className="flex items-center gap-1">
+              <button onClick={() => setCount(c => Math.max(1, c - 1))} className="w-8 h-9 rounded-lg border flex items-center justify-center hover:bg-gray-50"><Minus className="w-3 h-3" /></button>
+              <input type="number" value={count} min={1} max={100}
+                onChange={e => setCount(Math.min(100, Math.max(1, parseInt(e.target.value) || 1)))}
+                className="w-16 text-center py-2 border rounded-lg text-sm outline-none focus:border-blue-400" />
+              <button onClick={() => setCount(c => Math.min(100, c + 1))} className="w-8 h-9 rounded-lg border flex items-center justify-center hover:bg-gray-50"><Plus className="w-3 h-3" /></button>
+            </div>
+          </div>
+
+          <div className="flex items-end">
+            <button onClick={generate}
+              className="flex items-center gap-2 px-5 py-2 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors">
+              <RotateCcw className="w-4 h-4" />ID発行
+            </button>
+          </div>
+        </div>
+
+        {/* ラベルプレビュー */}
+        {labels.length > 0 && (
+          <>
+            <div ref={printRef} className="flex flex-wrap gap-2 p-3 bg-gray-50 rounded-xl border border-dashed border-gray-300 mb-4 max-h-80 overflow-y-auto">
+              {labels.map((l, idx) => (
+                <div key={l.deviceId} className="relative bg-white border border-gray-200 rounded p-2 flex flex-col gap-1.5 group hover:border-blue-300 transition-colors">
+                  <div className="flex items-center gap-2">
+                    <div id={`qr-${l.deviceId}`}>
+                      <QRCodeSVG value={l.deviceId} size={tapeSize.qr} level="M" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-gray-700">FoxSense</p>
+                      <p className="text-xs text-gray-500">{l.type === 'PARENT' ? '親機' : '子機'}</p>
+                      <p className="text-xs font-mono text-gray-800 tracking-wider">{l.deviceId}</p>
+                    </div>
+                  </div>
+                  {l.type === 'PARENT' && (
+                    <input
+                      type="text"
+                      value={l.imsi}
+                      onChange={e => handleImsiChange(idx, e.target.value.replace(/\D/g, '').slice(0, 15))}
+                      placeholder="IMSI（任意）"
+                      className="w-full px-2 py-1 text-xs border border-gray-200 rounded font-mono focus:border-blue-400 outline-none"
+                    />
+                  )}
+                  <button onClick={() => handleRemove(idx)}
+                    className="absolute top-1 right-1 w-4 h-4 rounded-full bg-red-100 text-red-400 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-200">
+                    <X className="w-2.5 h-2.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            {registerResult && (
+              <div className="flex items-center gap-2 p-3 bg-green-50 rounded-lg text-green-700 text-sm mb-3">
+                <Check className="w-4 h-4 flex-shrink-0" />
+                {registerResult.created}件をDBに登録しました
+                {registerResult.skipped > 0 && `（${registerResult.skipped}件はスキップ）`}
+              </div>
+            )}
+
+            <div className="flex flex-wrap gap-2">
+              <button onClick={handlePrint}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-gray-300 text-gray-700 text-sm font-medium hover:bg-gray-50 transition-colors">
+                <Printer className="w-4 h-4" />ブラウザ印刷
+              </button>
+              <button onClick={handleBridgePrint} disabled={bridgePrinting || bridgeStatus !== 'ok'}
+                title={bridgeStatus !== 'ok' ? 'ブリッジサーバーを起動してください (python3.11 bridge.py)' : ''}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-orange-500 text-white text-sm font-medium hover:bg-orange-600 disabled:opacity-50 transition-colors">
+                {bridgePrinting
+                  ? <><Loader2 className="w-4 h-4 animate-spin" />{bridgeProgress}</>
+                  : <><Printer className="w-4 h-4" />テプラで印刷（{labels.length}件）</>
+                }
+              </button>
+              <button onClick={handleRegister} disabled={registering}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-green-600 text-white text-sm font-medium hover:bg-green-700 disabled:opacity-50 transition-colors">
+                {registering ? <Loader2 className="w-4 h-4 animate-spin" /> : <Database className="w-4 h-4" />}
+                DBに登録する（{labels.length}件）
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* 在庫一覧 */}
+      <div className="bg-white rounded-xl border p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+            <Database className="w-4 h-4 text-gray-500" />
+            在庫一覧
+            <span className="text-xs font-normal text-gray-400 ml-1">
+              親機 {parents.filter(i => !i.claimed).length}/{parents.length}未使用 ／ 子機 {children.filter(i => !i.claimed).length}/{children.length}未使用
+            </span>
+          </h3>
+          <button onClick={loadInventory} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 transition-colors">
+            <RefreshCw className={`w-4 h-4 ${loadingInv ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
+
+        {inventory.length === 0 ? (
+          <p className="text-sm text-gray-400 text-center py-6">在庫IDがありません。上のパネルでIDを発行してDBに登録してください。</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="bg-gray-50 border-b">
+                <tr>
+                  {['デバイスID', '種別', 'IMSI', '状態', '登録日', ''].map(h => (
+                    <th key={h} className="text-left px-3 py-2 text-gray-500 font-medium">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {inventory.map(item => (
+                  <tr key={item.id} className="hover:bg-gray-50">
+                    <td className="px-3 py-2 font-mono font-semibold text-gray-800">{item.deviceId}</td>
+                    <td className="px-3 py-2">
+                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${item.type === 'PARENT' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}>
+                        {item.type === 'PARENT' ? <Radio className="w-3 h-3" /> : <Cpu className="w-3 h-3" />}
+                        {item.type === 'PARENT' ? '親機' : '子機'}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 font-mono text-gray-500">
+                      {item.imsi || <span className="text-gray-300">—</span>}
+                    </td>
+                    <td className="px-3 py-2">
+                      {item.claimed ? (
+                        <span className="flex items-center gap-1 text-gray-400"><Check className="w-3 h-3" />登録済</span>
+                      ) : (
+                        <span className="flex items-center gap-1 text-emerald-600 font-medium">● 未使用</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-gray-400">{new Date(item.createdAt).toLocaleDateString('ja-JP')}</td>
+                    <td className="px-3 py-2">
+                      {!item.claimed && (
+                        <button onClick={() => handleDeleteInventory(item.id)}
+                          className="p-1 rounded text-gray-300 hover:text-red-400 hover:bg-red-50 transition-colors">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 // ===== パッケージタブ（Stripe紐付け確認） =====
 const PackagesTab = () => {
   const [packages, setPackages] = useState([]);
@@ -425,6 +798,7 @@ const AdminPage = () => {
     { id: 'stats', label: '統計', icon: BarChart3 },
     { id: 'users', label: 'ユーザー', icon: Users },
     { id: 'devices', label: 'デバイス', icon: Radio },
+    { id: 'labels', label: 'ラベル発行', icon: Tag },
     { id: 'packages', label: 'パッケージ', icon: Package },
     { id: 'password', label: 'パスワード', icon: KeyRound },
   ];
@@ -462,6 +836,7 @@ const AdminPage = () => {
         {tab === 'stats' && <StatsTab />}
         {tab === 'users' && <UsersTab />}
         {tab === 'devices' && <DevicesTab />}
+        {tab === 'labels' && <LabelsTab />}
         {tab === 'packages' && <PackagesTab />}
         {tab === 'password' && <PasswordTab />}
       </div>

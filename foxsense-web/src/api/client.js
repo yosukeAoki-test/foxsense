@@ -92,6 +92,16 @@ export const authApi = {
     const response = await client.get('/auth/me');
     return response.data;
   },
+
+  forgotPassword: async (email) => {
+    const response = await client.post('/auth/forgot-password', { email });
+    return response.data;
+  },
+
+  resetPassword: async (token, password) => {
+    const response = await client.post('/auth/reset-password', { token, password });
+    return response.data;
+  },
 };
 
 // ===== 親機API =====
@@ -245,6 +255,24 @@ export const foxCoinApi = {
   createCheckout: async (packageId) => {
     const response = await client.post('/foxcoins/checkout', { packageId });
     return response.data.data;
+  },
+};
+
+// ===== Admin Inventory API =====
+
+export const adminInventoryApi = {
+  list: async (type) => {
+    const params = type ? { type } : {};
+    const response = await client.get('/admin/inventory', { params });
+    return response.data.data;
+  },
+  bulkCreate: async (devices) => {
+    const response = await client.post('/admin/inventory', { devices });
+    return response.data.data;
+  },
+  delete: async (id) => {
+    const response = await client.delete(`/admin/inventory/${id}`);
+    return response.data;
   },
 };
 
