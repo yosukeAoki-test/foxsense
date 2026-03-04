@@ -1,11 +1,29 @@
+// 本番環境で必須の環境変数をチェック
+const REQUIRED_IN_PRODUCTION = ['JWT_SECRET', 'JWT_REFRESH_SECRET', 'DATABASE_URL'];
+if (process.env.NODE_ENV === 'production') {
+  const missing = REQUIRED_IN_PRODUCTION.filter(k => !process.env[k]);
+  if (missing.length > 0) {
+    console.error(`[Config] Missing required env vars: ${missing.join(', ')}`);
+    process.exit(1);
+  }
+  if ((process.env.JWT_SECRET?.length ?? 0) < 32) {
+    console.error('[Config] JWT_SECRET must be at least 32 characters');
+    process.exit(1);
+  }
+  if ((process.env.JWT_REFRESH_SECRET?.length ?? 0) < 32) {
+    console.error('[Config] JWT_REFRESH_SECRET must be at least 32 characters');
+    process.exit(1);
+  }
+}
+
 const config = {
   port: process.env.PORT || 3001,
   nodeEnv: process.env.NODE_ENV || 'development',
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:5173',
 
   jwt: {
-    secret: process.env.JWT_SECRET,
-    refreshSecret: process.env.JWT_REFRESH_SECRET,
+    secret: process.env.JWT_SECRET || 'dev-secret-do-not-use-in-production',
+    refreshSecret: process.env.JWT_REFRESH_SECRET || 'dev-refresh-secret-do-not-use-in-production',
     accessExpiresIn: '15m',
     refreshExpiresIn: '7d',
   },
@@ -28,6 +46,8 @@ const config = {
     authKey: process.env.SORACOM_AUTH_KEY,
     apiUrl: process.env.SORACOM_API_URL || 'https://api.soracom.io/v1',
   },
+
+  bridgeSecret: process.env.BRIDGE_SECRET || 'dev-bridge-secret',
 
   email: {
     host: process.env.SMTP_HOST,

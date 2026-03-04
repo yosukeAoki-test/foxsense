@@ -104,3 +104,20 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: #4ade80;
 }
+
+/* 領収書印刷用 */
+@media print {
+  body > * {
+    display: none !important;
+  }
+  .receipt-print-area {
+    display: block !important;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    border: none !important;
+    border-radius: 0 !important;
+    padding: 2rem !important;
+  }
+}

@@ -1,7 +1,10 @@
 import prisma from '../../config/db.js';
 import { AppError } from '../../middleware/errorHandler.js';
 import { adminAdjustCoins } from '../foxcoins/foxcoins.service.js';
+import { assignSimToGroup } from '../soracom/soracom.service.js';
 import bcrypt from 'bcryptjs';
+
+const SORACOM_GROUP_NAME = 'foxsense';
 
 // ===== ユーザー管理 =====
 
@@ -189,13 +192,18 @@ export const bulkCreateInventory = async (devices) => {
   const skipped = [];
 
   for (const d of devices) {
-    const exists = await prisma.deviceInventory.findUnique({ where: { deviceId: d.deviceId } });
-    if (exists) { skipped.push(d.deviceId); continue; }
-    const existing = await prisma.parentDevice.findUnique({ where: { deviceId: d.deviceId } })
-      || await prisma.childDevice.findUnique({ where: { deviceId: d.deviceId } });
-    if (existing) { skipped.push(d.deviceId); continue; }
-    const item = await prisma.deviceInventory.create({ data: { deviceId: d.deviceId, type: d.type, imsi: d.imsi ?? null } });
+    const deviceId = d.deviceId.toUpperCase();
+    const exists = await prisma.deviceInventory.findUnique({ where: { deviceId } });
+    if (exists) { skipped.push(deviceId); continue; }
+    const existing = await prisma.parentDevice.findUnique({ where: { deviceId } })
+      || await prisma.childDevice.findUnique({ where: { deviceId } });
+    if (existing) { skipped.push(deviceId); continue; }
+    const item = await prisma.deviceInventory.create({ data: { deviceId, type: d.type, imsi: d.imsi ?? null } });
     created.push(item);
+    // 親機でIMSIあり → SORAACOMグループを自動設定（失敗しても登録は続行）
+    if (d.type === 'PARENT' && d.imsi) {
+      assignSimToGroup(d.imsi, SORACOM_GROUP_NAME);
+    }
   }
 
   return { created: created.length, skipped: skipped.length, items: created };

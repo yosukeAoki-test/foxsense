@@ -28,6 +28,13 @@ export const login = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
   const result = await authService.login({ email, password });
 
+  if (result.requiresTwoFactor) {
+    return res.json({
+      success: true,
+      data: { requiresTwoFactor: true, tempToken: result.tempToken },
+    });
+  }
+
   res.cookie('refreshToken', result.refreshToken, COOKIE_OPTIONS);
 
   res.json({
@@ -73,6 +80,30 @@ export const me = asyncHandler(async (req, res) => {
     success: true,
     data: { user },
   });
+});
+
+export const verifyTwoFactor = asyncHandler(async (req, res) => {
+  const result = await authService.verifyTwoFactorLogin(req.body);
+  res.cookie('refreshToken', result.refreshToken, COOKIE_OPTIONS);
+  res.json({
+    success: true,
+    data: { user: result.user, accessToken: result.accessToken },
+  });
+});
+
+export const setup2fa = asyncHandler(async (req, res) => {
+  const data = await authService.setupTwoFactor(req.user.id);
+  res.json({ success: true, data });
+});
+
+export const enable2fa = asyncHandler(async (req, res) => {
+  await authService.enableTwoFactor(req.user.id, req.body.code);
+  res.json({ success: true, message: '2FAを有効にしました' });
+});
+
+export const disable2fa = asyncHandler(async (req, res) => {
+  await authService.disableTwoFactor(req.user.id, req.body.code);
+  res.json({ success: true, message: '2FAを無効にしました' });
 });
 
 export const forgotPassword = asyncHandler(async (req, res) => {

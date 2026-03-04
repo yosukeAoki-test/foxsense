@@ -5,6 +5,8 @@ import { ja } from 'date-fns/locale';
 import { getParentDevices, deleteChildDevice, foxCoinApi, getLatestData, getHistoryData, getAlertSettings, updateAlertSettings } from './api/client';
 import { useAuth } from './contexts/AuthContext';
 import { Settings, RefreshCw, Plus, Sprout, Snowflake, AlertTriangle, X, Flower2, LogOut, User, Radio, ChevronDown, Coins, ShieldCheck, Loader2 } from 'lucide-react';
+import OnboardingBanner from './components/OnboardingBanner';
+import TwoFactorSetupModal from './components/TwoFactorSetupModal';
 
 // 作物ごとの積算温度要件（CropManagementと同じ）
 const CROP_GDD_REQUIREMENTS = {
@@ -18,6 +20,16 @@ const CROP_GDD_REQUIREMENTS = {
 
 function App() {
   const { user, logout } = useAuth();
+  const [show2faModal, setShow2faModal] = useState(() => false);
+
+  // 2FA未設定なら初回レンダリング後にモーダルを表示
+  useEffect(() => {
+    if (user && user.twoFactorEnabled === false) {
+      // 直近1時間以内に「後で」を選択済みならスキップ
+      const dismissed = sessionStorage.getItem('2fa_modal_dismissed');
+      if (!dismissed) setShow2faModal(true);
+    }
+  }, [user?.twoFactorEnabled]);
   const [mockData, setMockData] = useState(null);
   const [parentDevices, setParentDevices] = useState([]);
   const [selectedParent, setSelectedParent] = useState(null);
@@ -52,8 +64,17 @@ function App() {
   }, [selectedParent]);
 
   // FoxCoin 残高取得
+  const loadFoxCoinBalance = useCallback(async () => {
+    try {
+      const data = await foxCoinApi.getBalance();
+      setFoxCoinBalance(data);
+    } catch {
+      setFoxCoinBalance({ balance: 0, simStatus: 'INACTIVE', packages: [] });
+    }
+  }, []);
+
   useEffect(() => {
-    foxCoinApi.getBalance().then(setFoxCoinBalance).catch(() => {});
+    loadFoxCoinBalance();
   }, []);
 
   // 初回起動時に親機一覧だけ取得
@@ -266,6 +287,11 @@ function App() {
 
   // FoxCoin 購入
   const handleFoxCoinPurchase = async (packageId) => {
+    if (!user?.twoFactorEnabled) {
+      setShowFoxCoinShop(false);
+      setShow2faModal(true);
+      return;
+    }
     setPurchasingPkg(packageId);
     try {
       const { url } = await foxCoinApi.createCheckout(packageId);
@@ -401,21 +427,19 @@ function App() {
               <Settings className="w-4 h-4 sm:w-5 sm:h-5" />
             </Link>
             {/* FoxCoin 残高（クリックで購入） */}
-            {foxCoinBalance !== null && (
-              <button
-                onClick={() => setShowFoxCoinShop(true)}
-                className={`flex items-center gap-1.5 px-2.5 py-2 rounded-lg text-xs font-medium border transition-opacity hover:opacity-80 ${
-                  foxCoinBalance.simStatus === 'ACTIVE' ? 'bg-yellow-50 border-yellow-200 text-yellow-700' :
-                  foxCoinBalance.simStatus === 'SUSPENDED' ? 'bg-red-50 border-red-200 text-red-600' :
-                  'bg-gray-50 border-gray-200 text-gray-500'
-                }`}
-                title="FoxCoinを購入"
-              >
-                <Coins className="w-3.5 h-3.5" />
-                <span className="font-bold">{foxCoinBalance.balance}</span>
-                <span className="hidden sm:inline">FC</span>
-              </button>
-            )}
+            <button
+              onClick={() => { setShowFoxCoinShop(true); if (!foxCoinBalance) loadFoxCoinBalance(); }}
+              className={`flex items-center gap-1.5 px-2.5 py-2 rounded-lg text-xs font-medium border transition-opacity hover:opacity-80 ${
+                foxCoinBalance?.simStatus === 'ACTIVE' ? 'bg-yellow-50 border-yellow-200 text-yellow-700' :
+                foxCoinBalance?.simStatus === 'SUSPENDED' ? 'bg-red-50 border-red-200 text-red-600' :
+                'bg-gray-50 border-gray-200 text-gray-500'
+              }`}
+              title="FoxCoinを購入"
+            >
+              <Coins className="w-3.5 h-3.5" />
+              <span className="font-bold">{foxCoinBalance?.balance ?? '…'}</span>
+              <span className="hidden sm:inline">FC</span>
+            </button>
 
             {/* ユーザー情報・ログアウト */}
             <div className="flex items-center gap-1 sm:gap-2 ml-1 sm:ml-2 pl-2 sm:pl-3 border-l border-gray-200">
@@ -441,6 +465,9 @@ function App() {
           </div>
         </div>
       </header>
+
+      {/* オンボーディングチェックリスト */}
+      <OnboardingBanner parentDevices={parentDevices} onOpen2fa={() => setShow2faModal(true)} />
 
       {/* アラートバナー */}
       {activeAlerts.length > 0 && (
@@ -577,21 +604,38 @@ function App() {
         handleDeviceRefresh,
       }} />
 
+      {/* 2FA設定モーダル */}
+      {show2faModal && (
+        <TwoFactorSetupModal onClose={() => {
+          sessionStorage.setItem('2fa_modal_dismissed', '1');
+          setShow2faModal(false);
+        }} />
+      )}
+
       {/* FoxCoin 購入モーダル */}
-      {showFoxCoinShop && foxCoinBalance && (
+      {showFoxCoinShop && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h3 className="font-bold text-gray-900">FoxCoin 購入</h3>
-                <p className="text-xs text-gray-500 mt-0.5">残高: <span className="font-bold text-yellow-600">{foxCoinBalance.balance} FC</span></p>
+                <p className="text-xs text-gray-500 mt-0.5">残高: <span className="font-bold text-yellow-600">{foxCoinBalance?.balance ?? '…'} FC</span></p>
               </div>
               <button onClick={() => setShowFoxCoinShop(false)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400">
                 <X className="w-4 h-4" />
               </button>
             </div>
+            {!user?.twoFactorEnabled && (
+              <div className="mb-3 flex items-start gap-2 p-3 bg-orange-50 border border-orange-200 rounded-xl text-orange-700 text-xs">
+                <ShieldCheck className="w-4 h-4 flex-shrink-0 mt-0.5 text-orange-500" />
+                <span>購入には<strong>2段階認証</strong>が必要です。<button onClick={() => { setShowFoxCoinShop(false); setShow2faModal(true); }} className="underline font-medium">今すぐ設定する</button></span>
+              </div>
+            )}
             <div className="space-y-2">
-              {(foxCoinBalance.packages || []).map(pkg => (
+              {foxCoinBalance === null && (
+                <div className="flex justify-center py-4"><Loader2 className="w-5 h-5 animate-spin text-gray-400" /></div>
+              )}
+              {(foxCoinBalance?.packages || []).map(pkg => (
                 <div key={pkg.id} className="flex items-center justify-between p-3 border rounded-xl hover:border-yellow-300 transition-colors">
                   <div>
                     <div className="font-semibold text-gray-800">{pkg.name}</div>
@@ -601,11 +645,11 @@ function App() {
                     {pkg.price > 0 && <span className="text-sm text-gray-500">¥{pkg.price.toLocaleString()}</span>}
                     <button
                       onClick={() => handleFoxCoinPurchase(pkg.id)}
-                      disabled={!!purchasingPkg || !pkg.stripePriceId}
+                      disabled={!!purchasingPkg || !pkg.stripePriceId || !user?.twoFactorEnabled}
                       className="flex items-center gap-1.5 px-3 py-1.5 bg-yellow-500 hover:bg-yellow-600 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
                     >
                       {purchasingPkg === pkg.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Coins className="w-3.5 h-3.5" />}
-                      {pkg.stripePriceId ? '購入' : '準備中'}
+                      {!pkg.stripePriceId ? '準備中' : !user?.twoFactorEnabled ? '2FA必須' : '購入'}
                     </button>
                   </div>
                 </div>

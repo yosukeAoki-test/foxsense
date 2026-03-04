@@ -22,6 +22,7 @@ export const createPortal = asyncHandler(async (req, res) => {
   res.json({ success: true, data: result });
 });
 
+
 export const handleWebhook = asyncHandler(async (req, res) => {
   const signature = req.headers['stripe-signature'];
   const result = await paymentsService.handleWebhook(req.body, signature);

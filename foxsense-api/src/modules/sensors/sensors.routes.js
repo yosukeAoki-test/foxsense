@@ -4,8 +4,11 @@ import { authenticate } from '../../middleware/auth.js';
 
 const router = Router();
 
-// Public endpoint for device data ingestion (Sigfox callback)
+// デバイスデータ受信エンドポイント（デバイスシークレット認証必須）
 router.post('/callback', sensorsController.recordSensorData);
+
+// ファームウェアからのバルク受信（親機+子機を1リクエストで送信、デバイスシークレット認証必須）
+router.post('/ingest', sensorsController.ingestSensorData);
 
 // Protected endpoints
 router.use(authenticate);

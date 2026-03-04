@@ -82,7 +82,7 @@
 // サーバー設定
 #define SERVER_HOST "foxsense.smart-agri-vision.net"  // データ送信先サーバー
 #define SERVER_PORT 443                               // HTTPSポート
-#define SERVER_PATH "/api/data"                       // データ送信APIエンドポイント
+#define SERVER_PATH "/api/sensors/ingest"             // データ送信APIエンドポイント（バルク）
 #define SERVER_CONFIG_PATH "/api/devices/config/"     // デバイス設定取得APIパス
 
 // ===== LTE自動復旧設定 =====

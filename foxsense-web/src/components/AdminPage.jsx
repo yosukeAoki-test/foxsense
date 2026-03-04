@@ -6,8 +6,8 @@ import {
   ChevronDown, Plus, Minus, RefreshCw, Cpu, Edit2, Check, X, KeyRound, Link,
   Tag, Printer, RotateCcw, Database,
 } from 'lucide-react';
-import { QRCodeSVG } from 'react-qr-code';
-import client, { adminInventoryApi } from '../api/client';
+import QRCode from 'react-qr-code';
+import client, { adminInventoryApi, printApi } from '../api/client';
 
 const api = {
   get: (url) => client.get(url).then(r => r.data.data),
@@ -233,6 +233,7 @@ const UsersTab = () => {
 const DevicesTab = () => {
   const [devices, setDevices] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [ownerFilter, setOwnerFilter] = useState('');
 
   useEffect(() => {
     api.get('/admin/devices').then(setDevices).finally(() => setLoading(false));
@@ -241,15 +242,36 @@ const DevicesTab = () => {
   if (loading) return <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>;
   if (!devices) return null;
 
+  const q = ownerFilter.trim().toLowerCase();
+  const filteredParents = q
+    ? devices.parents.filter(p => p.owner.email.toLowerCase().includes(q) || p.owner.name.toLowerCase().includes(q))
+    : devices.parents;
+  const filteredOrphans = q
+    ? devices.orphanChildren.filter(c => c.owner.email.toLowerCase().includes(q) || c.owner.name.toLowerCase().includes(q))
+    : devices.orphanChildren;
+
   return (
     <div className="space-y-4">
+      <div className="flex items-center gap-2">
+        <input
+          type="text" value={ownerFilter} onChange={e => setOwnerFilter(e.target.value)}
+          placeholder="オーナーで絞り込み（メール・名前）"
+          className="flex-1 px-3 py-1.5 border rounded-lg text-sm focus:outline-none focus:border-blue-400"
+        />
+        {ownerFilter && (
+          <button onClick={() => setOwnerFilter('')} className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100">
+            <X className="w-4 h-4" />
+          </button>
+        )}
+      </div>
+
       <div className="bg-white rounded-xl border overflow-hidden">
         <div className="px-4 py-3 border-b bg-gray-50 flex items-center gap-2">
           <Radio className="w-4 h-4 text-blue-600" />
-          <h3 className="font-semibold text-gray-800 text-sm">親機一覧 ({devices.parents.length}台)</h3>
+          <h3 className="font-semibold text-gray-800 text-sm">親機一覧 ({filteredParents.length}台{q ? ` / 全${devices.parents.length}台` : ''})</h3>
         </div>
         <div className="divide-y">
-          {devices.parents.map(p => (
+          {filteredParents.map(p => (
             <div key={p.id} className="px-4 py-3">
               <div className="flex items-start justify-between">
                 <div>
@@ -275,14 +297,14 @@ const DevicesTab = () => {
         </div>
       </div>
 
-      {devices.orphanChildren.length > 0 && (
+      {filteredOrphans.length > 0 && (
         <div className="bg-white rounded-xl border overflow-hidden">
           <div className="px-4 py-3 border-b bg-gray-50 flex items-center gap-2">
             <Cpu className="w-4 h-4 text-gray-500" />
-            <h3 className="font-semibold text-gray-800 text-sm">未紐付け子機 ({devices.orphanChildren.length}台)</h3>
+            <h3 className="font-semibold text-gray-800 text-sm">未紐付け子機 ({filteredOrphans.length}台)</h3>
           </div>
           <div className="divide-y">
-            {devices.orphanChildren.map(c => (
+            {filteredOrphans.map(c => (
               <div key={c.id} className="px-4 py-3">
                 <div className="font-medium text-gray-900">{c.name}</div>
                 <div className="text-xs text-gray-400 font-mono">ID: {c.deviceId}</div>
@@ -323,6 +345,8 @@ const LabelsTab = () => {
   const [bridgeStatus, setBridgeStatus] = useState(null); // null | 'ok' | 'error'
   const [bridgePrinting, setBridgePrinting] = useState(false);
   const [bridgeProgress, setBridgeProgress] = useState('');
+  const [availableSims, setAvailableSims] = useState(null); // null=未ロード, []=ロード済み
+  const [loadingSims, setLoadingSims] = useState(false);
   const printRef = useRef(null);
 
   const loadInventory = useCallback(() => {
@@ -332,11 +356,31 @@ const LabelsTab = () => {
 
   useEffect(() => { loadInventory(); }, [loadInventory]);
 
+  useEffect(() => {
+    if (deviceType !== 'PARENT' || availableSims !== null) return;
+    setLoadingSims(true);
+    adminInventoryApi.getAvailableSims()
+      .then(setAvailableSims)
+      .catch(() => setAvailableSims([]))
+      .finally(() => setLoadingSims(false));
+  }, [deviceType, availableSims]);
+
+  const refreshSims = async () => {
+    setLoadingSims(true);
+    try {
+      const sims = await adminInventoryApi.getAvailableSims();
+      setAvailableSims(sims);
+    } catch {
+      setAvailableSims([]);
+    } finally {
+      setLoadingSims(false);
+    }
+  };
+
   const checkBridge = useCallback(async () => {
     try {
-      const res = await fetch(`${BRIDGE_URL}/status`, { signal: AbortSignal.timeout(2000) });
-      const data = await res.json();
-      setBridgeStatus(data.present ? 'ok' : 'no-device');
+      const { alive } = await printApi.getBridgeStatus();
+      setBridgeStatus(alive ? 'ok' : 'error');
     } catch {
       setBridgeStatus('error');
     }
@@ -438,15 +482,17 @@ ${labels.map(l => `  <div class="label">
       const l = labels[i];
       setBridgeProgress(`印刷中 ${i + 1} / ${labels.length}`);
       try {
-        const res = await fetch(`${BRIDGE_URL}/print`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ deviceId: l.deviceId, tapeMm: tapeSize.mm }),
-        });
-        const data = await res.json();
-        if (!data.ok) throw new Error(data.error || '印刷失敗');
-        // 連続印刷時は少し待つ
-        if (i < labels.length - 1) await new Promise(r => setTimeout(r, 1500));
+        const job = await printApi.createJob(l.deviceId, tapeSize.mm);
+        // 完了まで最大30秒ポーリング
+        let done = false;
+        for (let attempt = 0; attempt < 30 && !done; attempt++) {
+          await new Promise(r => setTimeout(r, 1000));
+          const j = await printApi.getJobById(job.id);
+          if (j.status === 'done') { done = true; }
+          else if (j.status === 'failed') { throw new Error(j.error || '印刷失敗'); }
+        }
+        if (!done) throw new Error('タイムアウト（30秒）');
+        if (i < labels.length - 1) await new Promise(r => setTimeout(r, 500));
       } catch (e) {
         setError(`${l.deviceId} の印刷に失敗: ${e.message}`);
         break;
@@ -539,12 +585,26 @@ ${labels.map(l => `  <div class="label">
         {/* ラベルプレビュー */}
         {labels.length > 0 && (
           <>
+            {deviceType === 'PARENT' && (
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs text-gray-500">SIMを割り当てる場合は下のドロップダウンで選択してください</p>
+                <button
+                  type="button"
+                  onClick={refreshSims}
+                  disabled={loadingSims}
+                  className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50 disabled:opacity-50 transition-colors"
+                >
+                  <RefreshCw className={`w-3 h-3 ${loadingSims ? 'animate-spin' : ''}`} />
+                  SIM一覧を更新
+                </button>
+              </div>
+            )}
             <div ref={printRef} className="flex flex-wrap gap-2 p-3 bg-gray-50 rounded-xl border border-dashed border-gray-300 mb-4 max-h-80 overflow-y-auto">
               {labels.map((l, idx) => (
                 <div key={l.deviceId} className="relative bg-white border border-gray-200 rounded p-2 flex flex-col gap-1.5 group hover:border-blue-300 transition-colors">
                   <div className="flex items-center gap-2">
                     <div id={`qr-${l.deviceId}`}>
-                      <QRCodeSVG value={l.deviceId} size={tapeSize.qr} level="M" />
+                      <QRCode value={l.deviceId} size={tapeSize.qr} level="M" />
                     </div>
                     <div className="min-w-0">
                       <p className="text-xs font-bold text-gray-700">FoxSense</p>
@@ -553,13 +613,30 @@ ${labels.map(l => `  <div class="label">
                     </div>
                   </div>
                   {l.type === 'PARENT' && (
-                    <input
-                      type="text"
-                      value={l.imsi}
-                      onChange={e => handleImsiChange(idx, e.target.value.replace(/\D/g, '').slice(0, 15))}
-                      placeholder="IMSI（任意）"
-                      className="w-full px-2 py-1 text-xs border border-gray-200 rounded font-mono focus:border-blue-400 outline-none"
-                    />
+                    loadingSims ? (
+                      <div className="flex items-center gap-1 text-xs text-gray-400 py-1">
+                        <Loader2 className="w-3 h-3 animate-spin" />SIM読み込み中...
+                      </div>
+                    ) : (
+                      <select
+                        value={l.imsi}
+                        onChange={e => handleImsiChange(idx, e.target.value)}
+                        className="w-full px-2 py-1 text-xs border border-gray-200 rounded font-mono focus:border-blue-400 outline-none bg-white"
+                      >
+                        <option value="">SIMなし（後で設定）</option>
+                        {availableSims
+                          ?.filter(s => s.imsi === l.imsi || !labels.some((lb, i) => i !== idx && lb.imsi === s.imsi))
+                          .map(s => (
+                            <option key={s.simId} value={s.imsi}>
+                              {s.imsi}{s.groupName ? ` [${s.groupName}]` : ''}
+                            </option>
+                          ))
+                        }
+                        {l.imsi && !availableSims?.some(s => s.imsi === l.imsi) && (
+                          <option value={l.imsi}>{l.imsi} ※未取得</option>
+                        )}
+                      </select>
+                    )
                   )}
                   <button onClick={() => handleRemove(idx)}
                     className="absolute top-1 right-1 w-4 h-4 rounded-full bg-red-100 text-red-400 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-200">
@@ -789,6 +866,116 @@ const PasswordTab = () => {
   );
 };
 
+// ===== 印刷タブ =====
+const STATUS_COLORS = {
+  pending: 'bg-yellow-100 text-yellow-700',
+  printing: 'bg-blue-100 text-blue-700',
+  done: 'bg-green-100 text-green-700',
+  failed: 'bg-red-100 text-red-700',
+};
+const STATUS_LABELS = { pending: '待機中', printing: '印刷中', done: '完了', failed: '失敗' };
+
+const PrintTab = () => {
+  const [text, setText] = useState('');
+  const [tapeMm, setTapeMm] = useState(12);
+  const [jobs, setJobs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
+  const loadJobs = () => {
+    printApi.getJobs().then(setJobs).catch(() => {}).finally(() => setLoading(false));
+  };
+
+  useEffect(() => { loadJobs(); }, []);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!text.trim()) return;
+    setSubmitting(true);
+    setError(''); setSuccess('');
+    try {
+      await printApi.createJob(text.trim(), tapeMm);
+      setSuccess('印刷ジョブを追加しました');
+      setText('');
+      loadJobs();
+    } catch (e) {
+      setError(e.response?.data?.message || '送信に失敗しました');
+    } finally { setSubmitting(false); }
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* 印刷フォーム */}
+      <div className="bg-white rounded-xl border p-5">
+        <h3 className="font-semibold text-gray-900 flex items-center gap-2 mb-4">
+          <Printer className="w-4 h-4 text-blue-600" />テプラ印刷
+        </h3>
+        {error && <div className="flex items-center gap-2 p-3 bg-red-50 rounded-lg text-red-600 text-sm mb-3"><AlertCircle className="w-4 h-4 flex-shrink-0" />{error}</div>}
+        {success && <div className="flex items-center gap-2 p-3 bg-green-50 rounded-lg text-green-700 text-sm mb-3"><Check className="w-4 h-4 flex-shrink-0" />{success}</div>}
+        <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">印刷テキスト</label>
+            <input
+              type="text" value={text} onChange={e => setText(e.target.value)}
+              placeholder="例: FoxSense 親機"
+              className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:border-blue-400"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">テープ幅</label>
+            <div className="flex rounded-lg border overflow-hidden w-fit">
+              {[12, 18].map(mm => (
+                <button key={mm} type="button" onClick={() => setTapeMm(mm)}
+                  className={`px-4 py-2 text-sm font-medium transition-colors ${tapeMm === mm ? 'bg-gray-800 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>
+                  {mm}mm
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <button type="submit" disabled={submitting || !text.trim()}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors">
+              {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Printer className="w-4 h-4" />}
+              印刷ジョブを送信
+            </button>
+          </div>
+        </form>
+      </div>
+
+      {/* ジョブ履歴 */}
+      <div className="bg-white rounded-xl border p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-semibold text-gray-900 text-sm">ジョブ履歴</h3>
+          <button onClick={loadJobs} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 transition-colors">
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
+        {jobs.length === 0 ? (
+          <p className="text-sm text-gray-400 text-center py-6">印刷ジョブがありません</p>
+        ) : (
+          <div className="space-y-2">
+            {jobs.map(j => (
+              <div key={j.id} className="flex items-center justify-between py-2 border-b last:border-0">
+                <div className="min-w-0 flex-1">
+                  <div className="font-medium text-gray-800 text-sm truncate">{j.text}</div>
+                  <div className="text-xs text-gray-400">{j.tapeMm}mm · {new Date(j.createdAt).toLocaleString('ja-JP')}</div>
+                  {j.error && <div className="text-xs text-red-500 mt-0.5">{j.error}</div>}
+                </div>
+                <span className={`ml-3 flex-shrink-0 px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[j.status] || 'bg-gray-100 text-gray-600'}`}>
+                  {STATUS_LABELS[j.status] || j.status}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 // ===== メイン管理ページ =====
 const AdminPage = () => {
   const [tab, setTab] = useState('stats');
@@ -801,6 +988,7 @@ const AdminPage = () => {
     { id: 'labels', label: 'ラベル発行', icon: Tag },
     { id: 'packages', label: 'パッケージ', icon: Package },
     { id: 'password', label: 'パスワード', icon: KeyRound },
+    { id: 'print', label: '印刷', icon: Printer },
   ];
 
   return (
@@ -839,6 +1027,7 @@ const AdminPage = () => {
         {tab === 'labels' && <LabelsTab />}
         {tab === 'packages' && <PackagesTab />}
         {tab === 'password' && <PasswordTab />}
+        {tab === 'print' && <PrintTab />}
       </div>
     </div>
   );

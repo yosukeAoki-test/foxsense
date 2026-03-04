@@ -1,5 +1,6 @@
 import * as adminService from './admin.service.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
+import { getAvailableSimsForAdmin } from '../soracom/soracom.service.js';
 
 // Users
 export const getAllUsers = asyncHandler(async (req, res) => {
@@ -20,8 +21,11 @@ export const updateUserRole = asyncHandler(async (req, res) => {
 
 export const adjustUserCoins = asyncHandler(async (req, res) => {
   const { coins, note } = req.body;
-  if (typeof coins !== 'number') {
-    return res.status(400).json({ success: false, message: 'coins must be a number' });
+  if (typeof coins !== 'number' || !Number.isInteger(coins) || coins === 0) {
+    return res.status(400).json({ success: false, message: 'coins must be a non-zero integer' });
+  }
+  if (Math.abs(coins) > 10000) {
+    return res.status(400).json({ success: false, message: 'coins must be between -10000 and 10000' });
   }
   const data = await adminService.adjustUserCoins(req.params.userId, req.user.id, coins, note);
   res.json({ success: true, data });
@@ -73,6 +77,12 @@ export const bulkCreateInventory = asyncHandler(async (req, res) => {
 export const deleteInventoryItem = asyncHandler(async (req, res) => {
   await adminService.deleteInventoryItem(req.params.id);
   res.json({ success: true, message: '削除しました' });
+});
+
+// SORACOM: 未割当SIM一覧（管理者向け）
+export const getAvailableSims = asyncHandler(async (req, res) => {
+  const data = await getAvailableSimsForAdmin();
+  res.json({ success: true, data });
 });
 
 export const changePassword = asyncHandler(async (req, res) => {

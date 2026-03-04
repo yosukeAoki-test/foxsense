@@ -21,6 +21,7 @@ const PLAN_PRICES = {
   THREE_YEAR: { amount: 35280, interval: 'year', intervalCount: 3 },
 };
 
+
 export const createCheckoutSession = async (userId, plan) => {
   const user = await prisma.user.findUnique({
     where: { id: userId },
@@ -299,6 +300,7 @@ export const handleWebhook = async (payload, signature) => {
 
   return { received: true };
 };
+
 
 function getPlanDurationMs(plan) {
   const durations = {

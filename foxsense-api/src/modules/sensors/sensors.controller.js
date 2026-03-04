@@ -19,6 +19,12 @@ export const recordSensorData = asyncHandler(async (req, res) => {
   res.status(201).json({ success: true, data });
 });
 
+// ファームウェアからのバルク受信（親機+子機を一括で受け取る）
+export const ingestSensorData = asyncHandler(async (req, res) => {
+  const data = await sensorsService.recordBulkSensorData(req.body);
+  res.status(201).json({ success: true, data });
+});
+
 export const getDeviceStats = asyncHandler(async (req, res) => {
   const { deviceId } = req.params;
   const { type = 'parent', startDate, endDate } = req.query;

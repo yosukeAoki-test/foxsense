@@ -102,6 +102,29 @@ export const authApi = {
     const response = await client.post('/auth/reset-password', { token, password });
     return response.data;
   },
+
+  verify2fa: async (tempToken, code) => {
+    const response = await client.post('/auth/2fa/verify-login', { tempToken, code });
+    if (response.data.data?.accessToken) {
+      localStorage.setItem('foxsense_access_token', response.data.data.accessToken);
+    }
+    return response.data;
+  },
+
+  setup2fa: async () => {
+    const response = await client.post('/auth/2fa/setup');
+    return response.data;
+  },
+
+  enable2fa: async (code) => {
+    const response = await client.post('/auth/2fa/enable', { code });
+    return response.data;
+  },
+
+  disable2fa: async (code) => {
+    const response = await client.post('/auth/2fa/disable', { code });
+    return response.data;
+  },
 };
 
 // ===== 親機API =====
@@ -256,6 +279,10 @@ export const foxCoinApi = {
     const response = await client.post('/foxcoins/checkout', { packageId });
     return response.data.data;
   },
+  getPurchases: async () => {
+    const response = await client.get('/foxcoins/purchases');
+    return response.data.data;
+  },
 };
 
 // ===== Admin Inventory API =====
@@ -273,6 +300,31 @@ export const adminInventoryApi = {
   delete: async (id) => {
     const response = await client.delete(`/admin/inventory/${id}`);
     return response.data;
+  },
+  getAvailableSims: async () => {
+    const response = await client.get('/admin/soracom/available-sims');
+    return response.data.data;
+  },
+};
+
+// ===== 印刷API =====
+
+export const printApi = {
+  createJob: async (text, tapeMm = 12) => {
+    const response = await client.post('/print/jobs', { text, tapeMm });
+    return response.data.data;
+  },
+  getJobs: async () => {
+    const response = await client.get('/print/jobs');
+    return response.data.data;
+  },
+  getJobById: async (id) => {
+    const response = await client.get(`/print/jobs/${id}`);
+    return response.data.data;
+  },
+  getBridgeStatus: async () => {
+    const response = await client.get('/print/bridge-status');
+    return response.data.data;
   },
 };
 

@@ -1107,6 +1107,7 @@ bool sendAllDataToServer() {
     // JSONペイロード構築
     String payload = "{";
     payload += "\"parent_id\":\"" + String(DEVICE_ID) + "\",";
+    payload += "\"secret\":\"" + String(DEVICE_SECRET) + "\",";
     payload += "\"timestamp\":\"" + timestamp + "\",";
     payload += "\"boot_count\":" + String(bootCount) + ",";
 

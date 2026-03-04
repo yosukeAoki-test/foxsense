@@ -29,6 +29,8 @@
     "jsonwebtoken": "^9.0.2",
     "node-cron": "^4.2.1",
     "nodemailer": "^8.0.1",
+    "otplib": "^13.3.0",
+    "qrcode": "^1.5.4",
     "stripe": "^14.14.0",
     "zod": "^3.22.4"
   },

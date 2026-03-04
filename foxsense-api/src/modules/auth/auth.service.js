@@ -1,12 +1,16 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
+import { generateSecret as otpGenerateSecret, generateSync as otpGenerateSync, verifySync as otpVerifySync, generateURI as otpGenerateURI } from 'otplib';
+import QRCode from 'qrcode';
 import prisma from '../../config/db.js';
 import config from '../../config/index.js';
 import { AppError } from '../../middleware/errorHandler.js';
 import { sendPasswordResetEmail } from '../../utils/email.js';
 
 const SALT_ROUNDS = 12;
+const MAX_LOGIN_ATTEMPTS = 10;
+const LOCK_DURATION_MS = 30 * 60 * 1000; // 30分
 
 export const generateTokens = (userId) => {
   const accessToken = jwt.sign(
@@ -68,34 +72,139 @@ export const login = async ({ email, password }) => {
     throw new AppError('Invalid email or password', 401);
   }
 
+  // アカウントロック確認
+  if (user.lockedUntil && user.lockedUntil > new Date()) {
+    const remainMin = Math.ceil((user.lockedUntil - Date.now()) / 60000);
+    throw new AppError(`アカウントがロックされています。${remainMin}分後に再試行してください。`, 423);
+  }
+
   const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
   if (!isPasswordValid) {
+    const attempts = user.loginAttempts + 1;
+    const isLocked = attempts >= MAX_LOGIN_ATTEMPTS;
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        loginAttempts: attempts,
+        lockedUntil: isLocked ? new Date(Date.now() + LOCK_DURATION_MS) : null,
+      },
+    });
+    if (isLocked) {
+      throw new AppError(`ログイン失敗が${MAX_LOGIN_ATTEMPTS}回に達しました。30分間アカウントをロックします。`, 423);
+    }
     throw new AppError('Invalid email or password', 401);
+  }
+
+  // ログイン成功 → 失敗カウントをリセット
+  if (user.loginAttempts > 0 || user.lockedUntil) {
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { loginAttempts: 0, lockedUntil: null },
+    });
+  }
+
+  // 2FA有効な場合 → 一時トークンを返してTOTP入力を要求
+  if (user.twoFactorEnabled) {
+    const tempToken = jwt.sign(
+      { userId: user.id, purpose: '2fa' },
+      config.jwt.secret,
+      { expiresIn: '5m' }
+    );
+    return { requiresTwoFactor: true, tempToken };
   }
 
   const { accessToken, refreshToken } = generateTokens(user.id);
 
-  // Store refresh token
   const expiresAt = new Date();
   expiresAt.setDate(expiresAt.getDate() + 7);
   await prisma.refreshToken.create({
-    data: {
-      token: refreshToken,
-      userId: user.id,
-      expiresAt,
-    },
+    data: { token: refreshToken, userId: user.id, expiresAt },
   });
 
   return {
-    user: {
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      role: user.role,
-    },
+    user: { id: user.id, email: user.email, name: user.name, role: user.role, twoFactorEnabled: false },
     accessToken,
     refreshToken,
   };
+};
+
+// 2FA: TOTPでログイン完了
+export const verifyTwoFactorLogin = async ({ tempToken, code }) => {
+  let payload;
+  try {
+    payload = jwt.verify(tempToken, config.jwt.secret);
+  } catch {
+    throw new AppError('無効または期限切れのトークンです', 401);
+  }
+  if (payload.purpose !== '2fa') throw new AppError('Invalid token purpose', 401);
+
+  const user = await prisma.user.findUnique({ where: { id: payload.userId } });
+  if (!user?.twoFactorEnabled || !user.twoFactorSecret) {
+    throw new AppError('2FAが設定されていません', 400);
+  }
+
+  const { valid } = otpVerifySync({ token: code, secret: user.twoFactorSecret });
+  if (!valid) throw new AppError('認証コードが正しくありません', 401);
+
+  const { accessToken, refreshToken } = generateTokens(user.id);
+  const expiresAt = new Date();
+  expiresAt.setDate(expiresAt.getDate() + 7);
+  await prisma.refreshToken.create({
+    data: { token: refreshToken, userId: user.id, expiresAt },
+  });
+
+  return {
+    user: { id: user.id, email: user.email, name: user.name, role: user.role, twoFactorEnabled: true },
+    accessToken,
+    refreshToken,
+  };
+};
+
+// 2FA: セットアップ（シークレット生成 + QRコード）
+export const setupTwoFactor = async (userId) => {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) throw new AppError('User not found', 404);
+
+  const secret = otpGenerateSecret();
+  const otpAuthUrl = otpGenerateURI({ type: 'totp', label: user.email, issuer: 'FoxSense', secret });
+  const qrCodeDataUrl = await QRCode.toDataURL(otpAuthUrl);
+
+  // 仮保存（有効化前）
+  await prisma.user.update({
+    where: { id: userId },
+    data: { twoFactorSecret: secret, twoFactorEnabled: false },
+  });
+
+  return { secret, qrCodeDataUrl };
+};
+
+// 2FA: 有効化（初回コード確認）
+export const enableTwoFactor = async (userId, code) => {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user?.twoFactorSecret) throw new AppError('2FAのセットアップを先に完了してください', 400);
+  if (user.twoFactorEnabled) throw new AppError('2FAはすでに有効です', 400);
+
+  const { valid: isValid } = otpVerifySync({ token: code, secret: user.twoFactorSecret });
+  if (!isValid) throw new AppError('認証コードが正しくありません', 401);
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: { twoFactorEnabled: true },
+  });
+};
+
+// 2FA: 無効化
+export const disableTwoFactor = async (userId, code) => {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user?.twoFactorEnabled) throw new AppError('2FAは有効ではありません', 400);
+
+  const { valid: isValidDisable } = otpVerifySync({ token: code, secret: user.twoFactorSecret });
+  if (!isValidDisable) throw new AppError('認証コードが正しくありません', 401);
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: { twoFactorEnabled: false, twoFactorSecret: null },
+  });
 };
 
 export const logout = async (refreshToken) => {
@@ -143,6 +252,7 @@ export const refreshAccessToken = async (refreshToken) => {
       email: storedToken.user.email,
       name: storedToken.user.name,
       role: storedToken.user.role,
+      twoFactorEnabled: storedToken.user.twoFactorEnabled,
     },
   };
 };
@@ -208,6 +318,7 @@ export const getCurrentUser = async (userId) => {
       email: true,
       name: true,
       role: true,
+      twoFactorEnabled: true,
       subscription: {
         select: {
           plan: true,

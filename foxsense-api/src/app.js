@@ -8,7 +8,8 @@ import cron from 'node-cron';
 
 import config from './config/index.js';
 import { errorHandler } from './middleware/errorHandler.js';
-import { runDailyDeduction } from './modules/foxcoins/foxcoins.service.js';
+import { runHourlyDeduction } from './modules/foxcoins/foxcoins.service.js';
+import prisma from './config/db.js';
 
 // Import routes
 import authRoutes from './modules/auth/auth.routes.js';
@@ -18,6 +19,7 @@ import paymentsRoutes from './modules/payments/payments.routes.js';
 import soracomRoutes from './modules/soracom/soracom.routes.js';
 import foxcoinsRoutes from './modules/foxcoins/foxcoins.routes.js';
 import adminRoutes from './modules/admin/admin.routes.js';
+import printRoutes from './modules/print/print.routes.js';
 
 const app = express();
 
@@ -31,22 +33,42 @@ app.use(cors({
   credentials: true,
 }));
 
-// Rate limiting
+// Rate limiting（全API共通: 15分500件、bridgeポーリングは除外）
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // 100 requests per window
+  windowMs: 15 * 60 * 1000,
+  max: 500,
+  standardHeaders: true,
+  legacyHeaders: false,
   message: { success: false, message: 'Too many requests, please try again later' },
+  skip: (req) => req.path.startsWith('/print/'),
 });
 app.use('/api/', limiter);
 
+// 認証系エンドポイント専用のレート制限（1時間20件）
+const authLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many attempts, please try again later' },
+});
+app.use('/api/auth/login', authLimiter);
+app.use('/api/auth/register', authLimiter);
+app.use('/api/auth/forgot-password', authLimiter);
+
 // Body parsing - Note: webhook route uses raw body, so it's handled in payments.routes.js
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 app.use(cookieParser());
 
-// Health check
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+// Health check（DB疎通確認あり）
+app.get('/health', async (req, res) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    res.json({ status: 'ok', db: 'ok', timestamp: new Date().toISOString() });
+  } catch {
+    res.status(503).json({ status: 'error', db: 'unreachable', timestamp: new Date().toISOString() });
+  }
 });
 
 // API routes
@@ -57,6 +79,7 @@ app.use('/api/payments', paymentsRoutes);
 app.use('/api/soracom', soracomRoutes);
 app.use('/api/foxcoins', foxcoinsRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/print', printRoutes);
 
 // 404 handler
 app.use((req, res) => {
@@ -68,19 +91,30 @@ app.use(errorHandler);
 
 // Start server
 const PORT = config.port;
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`FoxSense API running on port ${PORT}`);
   console.log(`Environment: ${config.nodeEnv}`);
 });
 
-// 日次 FoxCoin 消費バッチ（毎日 00:05 JST = UTC 15:05）
-cron.schedule('5 15 * * *', async () => {
-  console.log('[FoxCoin] Daily deduction started');
+// グレースフルシャットダウン
+const gracefulShutdown = async (signal) => {
+  console.log(`[Server] ${signal} received, shutting down gracefully`);
+  server.close(async () => {
+    await prisma.$disconnect();
+    process.exit(0);
+  });
+};
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+// 時間バッチ: 毎時 0 分に実行、24 時間経過したユーザーから 1 FC 消費
+cron.schedule('0 * * * *', async () => {
+  console.log('[FoxCoin] Hourly deduction started');
   try {
-    const result = await runDailyDeduction();
-    console.log('[FoxCoin] Daily deduction done:', result);
+    const result = await runHourlyDeduction();
+    console.log('[FoxCoin] Hourly deduction done:', result);
   } catch (err) {
-    console.error('[FoxCoin] Daily deduction error:', err);
+    console.error('[FoxCoin] Hourly deduction error:', err);
   }
 });
 

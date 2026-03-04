@@ -44,10 +44,29 @@ export const AuthProvider = ({ children }) => {
   // ログイン
   const login = useCallback(async (email, password) => {
     const response = await authApi.login(email, password);
+    if (response.data.requiresTwoFactor) {
+      return response.data; // { requiresTwoFactor: true, tempToken }
+    }
     const userData = response.data.user;
     setUser(userData);
     localStorage.setItem('foxsense_user', JSON.stringify(userData));
-    return userData;
+    return response.data;
+  }, []);
+
+  // 2FA検証後のログイン完了
+  const completeLogin = useCallback((userData) => {
+    setUser(userData);
+    localStorage.setItem('foxsense_user', JSON.stringify(userData));
+  }, []);
+
+  // 2FA有効化後にuserを更新
+  const updateTwoFactorEnabled = useCallback((enabled) => {
+    setUser(prev => {
+      if (!prev) return prev;
+      const updated = { ...prev, twoFactorEnabled: enabled };
+      localStorage.setItem('foxsense_user', JSON.stringify(updated));
+      return updated;
+    });
   }, []);
 
   // ログアウト
@@ -85,6 +104,8 @@ export const AuthProvider = ({ children }) => {
       isAuthenticated,
       register,
       login,
+      completeLogin,
+      updateTwoFactorEnabled,
       logout,
       refreshUser,
     }}>

@@ -1,11 +1,15 @@
-import { useState } from 'react';
-import { X, Bell, Wifi } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { X, Bell, Wifi, ShieldCheck, CreditCard } from 'lucide-react';
 import AlertSettings from './AlertSettings';
 import SimManagement from './SimManagement';
+import SubscriptionTab from './SubscriptionTab';
+import { authApi } from '../api/client';
 
 const TABS = [
   { id: 'alerts', label: 'アラート', icon: Bell },
   { id: 'sim', label: 'SIM管理', icon: Wifi },
+  { id: 'security', label: 'セキュリティ', icon: ShieldCheck },
+  { id: 'subscription', label: 'FoxCoin', icon: CreditCard },
 ];
 
 const SettingsModal = ({ alerts, parentDevice, onClose, onSaveAlerts }) => {
@@ -61,8 +65,223 @@ const SettingsModal = ({ alerts, parentDevice, onClose, onSaveAlerts }) => {
               soracomSimId={parentDevice?.soracomSimId}
             />
           )}
+
+          {activeTab === 'security' && (
+            <TwoFactorTab />
+          )}
+
+          {activeTab === 'subscription' && (
+            <SubscriptionTab />
+          )}
         </div>
       </div>
+    </div>
+  );
+};
+
+// 2FAタブ
+const TwoFactorTab = () => {
+  const [phase, setPhase] = useState('idle'); // 'idle' | 'setup' | 'disable'
+  const [qrCodeDataUrl, setQrCodeDataUrl] = useState('');
+  const [secret, setSecret] = useState('');
+  const [code, setCode] = useState('');
+  const [twoFactorEnabled, setTwoFactorEnabled] = useState(null); // null = 未確認
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
+  // 現在の2FA状態を取得（初回レンダリング時）
+  useEffect(() => {
+    authApi.me().then(res => {
+      setTwoFactorEnabled(res.data.user.twoFactorEnabled ?? false);
+    }).catch(() => {});
+  }, []);
+
+  const handleSetup = async () => {
+    setError('');
+    setIsLoading(true);
+    try {
+      const res = await authApi.setup2fa();
+      setQrCodeDataUrl(res.data.qrCodeDataUrl);
+      setSecret(res.data.secret);
+      setPhase('setup');
+    } catch (err) {
+      setError(err.response?.data?.message || 'セットアップに失敗しました');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleEnable = async (e) => {
+    e.preventDefault();
+    setError('');
+    setIsLoading(true);
+    try {
+      await authApi.enable2fa(code);
+      setTwoFactorEnabled(true);
+      setPhase('idle');
+      setCode('');
+      setSuccess('2段階認証を有効にしました');
+    } catch (err) {
+      setError(err.response?.data?.message || '認証コードが正しくありません');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDisable = async (e) => {
+    e.preventDefault();
+    setError('');
+    setIsLoading(true);
+    try {
+      await authApi.disable2fa(code);
+      setTwoFactorEnabled(false);
+      setPhase('idle');
+      setCode('');
+      setSuccess('2段階認証を無効にしました');
+    } catch (err) {
+      setError(err.response?.data?.message || '認証コードが正しくありません');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6 max-w-md">
+      <div>
+        <h3 className="font-semibold text-gray-900 mb-1">2段階認証（TOTP）</h3>
+        <p className="text-sm text-gray-500">Google AuthenticatorなどのTOTPアプリを使った認証を設定します。</p>
+      </div>
+
+      {error && (
+        <div className="p-3 bg-red-50 rounded-lg text-red-600 text-sm">{error}</div>
+      )}
+      {success && (
+        <div className="p-3 bg-green-50 rounded-lg text-green-700 text-sm">{success}</div>
+      )}
+
+      {/* 現在の状態表示 */}
+      {twoFactorEnabled !== null && phase === 'idle' && (
+        <div className={`flex items-center gap-3 p-4 rounded-xl border ${twoFactorEnabled ? 'border-green-200 bg-green-50' : 'border-gray-200 bg-gray-50'}`}>
+          <ShieldCheck className={`w-6 h-6 ${twoFactorEnabled ? 'text-green-600' : 'text-gray-400'}`} />
+          <div className="flex-1">
+            <p className="text-sm font-medium text-gray-900">
+              {twoFactorEnabled ? '有効' : '無効'}
+            </p>
+            <p className="text-xs text-gray-500">
+              {twoFactorEnabled ? '2段階認証が設定されています' : '2段階認証は設定されていません'}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* アクションボタン */}
+      {phase === 'idle' && twoFactorEnabled !== null && (
+        twoFactorEnabled ? (
+          <button
+            onClick={() => { setPhase('disable'); setCode(''); setError(''); setSuccess(''); }}
+            className="w-full py-2.5 rounded-lg border border-red-300 text-red-600 hover:bg-red-50 text-sm font-medium transition-colors"
+          >
+            2段階認証を無効にする
+          </button>
+        ) : (
+          <button
+            onClick={handleSetup}
+            disabled={isLoading}
+            className="w-full py-2.5 rounded-lg bg-green-600 hover:bg-green-700 text-white text-sm font-medium transition-colors disabled:opacity-50"
+          >
+            {isLoading ? '準備中...' : '2段階認証を設定する'}
+          </button>
+        )
+      )}
+
+      {/* セットアップ画面：QRコード + コード確認 */}
+      {phase === 'setup' && (
+        <form onSubmit={handleEnable} className="space-y-4">
+          <p className="text-sm text-gray-700">
+            1. 認証アプリ（Google Authenticator など）でQRコードをスキャンしてください。
+          </p>
+          {qrCodeDataUrl && (
+            <div className="flex justify-center">
+              <img src={qrCodeDataUrl} alt="2FA QR Code" className="w-48 h-48 border rounded-lg" />
+            </div>
+          )}
+          {secret && (
+            <div className="p-3 bg-gray-50 rounded-lg">
+              <p className="text-xs text-gray-500 mb-1">QRが読めない場合は手動入力：</p>
+              <p className="font-mono text-sm text-gray-800 break-all">{secret}</p>
+            </div>
+          )}
+          <p className="text-sm text-gray-700">
+            2. アプリに表示された6桁のコードを入力して有効化してください。
+          </p>
+          <input
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]{6}"
+            maxLength={6}
+            value={code}
+            onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+            placeholder="000000"
+            className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-leaf-400 focus:ring-2 focus:ring-leaf-100 outline-none text-center text-2xl tracking-widest font-mono"
+            required
+            autoComplete="one-time-code"
+          />
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={() => { setPhase('idle'); setCode(''); setError(''); }}
+              className="flex-1 py-2.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 text-sm font-medium transition-colors"
+            >
+              キャンセル
+            </button>
+            <button
+              type="submit"
+              disabled={isLoading || code.length !== 6}
+              className="flex-1 py-2.5 rounded-lg bg-green-600 hover:bg-green-700 text-white text-sm font-medium transition-colors disabled:opacity-50"
+            >
+              {isLoading ? '確認中...' : '有効化する'}
+            </button>
+          </div>
+        </form>
+      )}
+
+      {/* 無効化画面：コード確認 */}
+      {phase === 'disable' && (
+        <form onSubmit={handleDisable} className="space-y-4">
+          <p className="text-sm text-gray-700">
+            認証アプリに表示されている6桁のコードを入力して2段階認証を無効にしてください。
+          </p>
+          <input
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]{6}"
+            maxLength={6}
+            value={code}
+            onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+            placeholder="000000"
+            className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-leaf-400 focus:ring-2 focus:ring-leaf-100 outline-none text-center text-2xl tracking-widest font-mono"
+            required
+            autoComplete="one-time-code"
+          />
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={() => { setPhase('idle'); setCode(''); setError(''); }}
+              className="flex-1 py-2.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 text-sm font-medium transition-colors"
+            >
+              キャンセル
+            </button>
+            <button
+              type="submit"
+              disabled={isLoading || code.length !== 6}
+              className="flex-1 py-2.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-sm font-medium transition-colors disabled:opacity-50"
+            >
+              {isLoading ? '処理中...' : '無効にする'}
+            </button>
+          </div>
+        </form>
+      )}
     </div>
   );
 };

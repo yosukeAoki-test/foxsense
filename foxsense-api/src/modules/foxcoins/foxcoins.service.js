@@ -2,6 +2,7 @@ import Stripe from 'stripe';
 import prisma from '../../config/db.js';
 import config from '../../config/index.js';
 import { AppError } from '../../middleware/errorHandler.js';
+import { activateSimInternal, suspendSimInternal } from '../soracom/soracom.service.js';
 
 const isStripeEnabled = config.stripe.secretKey && !config.stripe.secretKey.startsWith('sk_test_xxx');
 const stripe = isStripeEnabled ? new Stripe(config.stripe.secretKey) : null;
@@ -39,22 +40,39 @@ export const getPurchaseHistory = async (userId) => {
   });
 };
 
+export const getPurchases = async (userId) => {
+  return prisma.foxCoinPurchase.findMany({
+    where: { userId },
+    include: { package: true },
+    orderBy: { purchasedAt: 'desc' },
+    take: 50,
+  });
+};
+
 // 管理者がユーザーにコインを付与（または手動購入処理）
 export const grantCoins = async (userId, coins, packageId, price, note) => {
   const balance = await getOrCreateBalance(userId);
   const balanceBefore = balance.balance;
   const balanceAfter = balanceBefore + coins;
 
+  // TERMINATED は維持、それ以外は残高に応じて ACTIVE/据え置き
+  const newSimStatus =
+    balance.simStatus === 'TERMINATED'
+      ? 'TERMINATED'
+      : balanceAfter > 0
+        ? 'ACTIVE'
+        : balance.simStatus;
+
+  // SUSPENDED → ACTIVE になる場合は ParentDevice も復活
+  const wasActivated = balance.simStatus === 'SUSPENDED' && newSimStatus === 'ACTIVE';
+
   const activatedAt = new Date();
   activatedAt.setDate(activatedAt.getDate() + 1); // 翌日から有効
 
-  const [updatedBalance] = await prisma.$transaction([
+  const txOps = [
     prisma.foxCoinBalance.update({
       where: { userId },
-      data: {
-        balance: balanceAfter,
-        simStatus: balanceAfter > 0 ? 'ACTIVE' : balance.simStatus,
-      },
+      data: { balance: balanceAfter, simStatus: newSimStatus },
     }),
     prisma.foxCoinPurchase.create({
       data: {
@@ -76,7 +94,33 @@ export const grantCoins = async (userId, coins, packageId, price, note) => {
         note,
       },
     }),
-  ]);
+  ];
+
+  // SORACOM 操作のために事前に対象デバイスを取得
+  let devicesToActivate = [];
+  if (wasActivated) {
+    devicesToActivate = await prisma.parentDevice.findMany({
+      where: { userId, simStatus: 'SUSPENDED', soracomSimId: { not: null } },
+      select: { soracomSimId: true },
+    });
+    txOps.push(
+      prisma.parentDevice.updateMany({
+        where: { userId, simStatus: 'SUSPENDED' },
+        data: { simStatus: 'ACTIVE' },
+      })
+    );
+  }
+
+  const [updatedBalance] = await prisma.$transaction(txOps);
+
+  // DB更新後に SORACOM SIM を有効化（失敗しても処理継続）
+  for (const d of devicesToActivate) {
+    try {
+      await activateSimInternal(d.soracomSimId);
+    } catch (e) {
+      console.warn(`[SORACOM] activate ${d.soracomSimId} failed:`, e.message);
+    }
+  }
 
   return updatedBalance;
 };
@@ -88,6 +132,8 @@ export const createCheckoutSession = async (userId, packageId) => {
 
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) throw new AppError('User not found', 404);
+
+  if (!user.twoFactorEnabled) throw new AppError('2段階認証を設定してから購入できます', 403);
 
   // Stripe 未設定時はエラー
   if (!isStripeEnabled || !stripe) throw new AppError('決済が設定されていません', 503);
@@ -118,10 +164,35 @@ export const adminAdjustCoins = async (targetUserId, adminUserId, coins, note) =
   const balanceBefore = balance.balance;
   const balanceAfter = Math.max(0, balanceBefore + coins);
 
-  const [updated] = await prisma.$transaction([
+  // TERMINATED は維持、残高に応じて ACTIVE/SUSPENDED
+  const newSimStatus = (() => {
+    if (balance.simStatus === 'TERMINATED') return 'TERMINATED';
+    if (balanceAfter > 0) return 'ACTIVE';
+    if (balance.simStatus === 'ACTIVE') return 'SUSPENDED';
+    return balance.simStatus;
+  })();
+
+  const wasActivated = balance.simStatus === 'SUSPENDED' && newSimStatus === 'ACTIVE';
+  const wasSuspended = balance.simStatus === 'ACTIVE' && newSimStatus === 'SUSPENDED';
+
+  // SORACOM 操作のために事前に対象デバイスを取得
+  let simDevices = [];
+  if (wasActivated) {
+    simDevices = await prisma.parentDevice.findMany({
+      where: { userId: targetUserId, simStatus: 'SUSPENDED', soracomSimId: { not: null } },
+      select: { soracomSimId: true },
+    });
+  } else if (wasSuspended) {
+    simDevices = await prisma.parentDevice.findMany({
+      where: { userId: targetUserId, simStatus: 'ACTIVE', soracomSimId: { not: null } },
+      select: { soracomSimId: true },
+    });
+  }
+
+  const txOps = [
     prisma.foxCoinBalance.update({
       where: { userId: targetUserId },
-      data: { balance: balanceAfter },
+      data: { balance: balanceAfter, simStatus: newSimStatus },
     }),
     prisma.foxCoinLog.create({
       data: {
@@ -133,22 +204,51 @@ export const adminAdjustCoins = async (targetUserId, adminUserId, coins, note) =
         note: note || `管理者 ${adminUserId} による操作`,
       },
     }),
-  ]);
+  ];
+
+  if (wasActivated) {
+    txOps.push(
+      prisma.parentDevice.updateMany({
+        where: { userId: targetUserId, simStatus: 'SUSPENDED' },
+        data: { simStatus: 'ACTIVE' },
+      })
+    );
+  } else if (wasSuspended) {
+    txOps.push(
+      prisma.parentDevice.updateMany({
+        where: { userId: targetUserId, simStatus: 'ACTIVE' },
+        data: { simStatus: 'SUSPENDED' },
+      })
+    );
+  }
+
+  const [updated] = await prisma.$transaction(txOps);
+
+  // DB更新後に SORACOM SIM を操作（失敗しても処理継続）
+  for (const d of simDevices) {
+    try {
+      if (wasActivated) await activateSimInternal(d.soracomSimId);
+      else await suspendSimInternal(d.soracomSimId);
+    } catch (e) {
+      console.warn(`[SORACOM] ${wasActivated ? 'activate' : 'suspend'} ${d.soracomSimId} failed:`, e.message);
+    }
+  }
+
   return updated;
 };
 
-// 日次バッチ: 全アクティブユーザーから1 FoxCoin消費
-export const runDailyDeduction = async () => {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+// 時間バッチ: 全アクティブユーザーから 24 時間ごとに 1 FoxCoin 消費
+export const runHourlyDeduction = async () => {
+  const now = new Date();
+  const windowStart = new Date(now.getTime() - 24 * 60 * 60 * 1000); // 24時間前
 
-  // ACTIVE ステータスで今日まだ消費していないユーザーを対象
+  // ACTIVE で前回消費から 24 時間以上経過したユーザーを対象
   const activeBalances = await prisma.foxCoinBalance.findMany({
     where: {
       simStatus: 'ACTIVE',
       OR: [
         { lastDeductedAt: null },
-        { lastDeductedAt: { lt: today } },
+        { lastDeductedAt: { lte: windowStart } },
       ],
     },
   });
@@ -161,26 +261,56 @@ export const runDailyDeduction = async () => {
       const balanceAfter = Math.max(0, balanceBefore - 1);
       const newStatus = balanceAfter === 0 ? 'SUSPENDED' : 'ACTIVE';
 
-      await prisma.$transaction([
+      // SORACOM 操作のために事前に対象デバイスを取得
+      let devicesToSuspend = [];
+      if (newStatus === 'SUSPENDED') {
+        devicesToSuspend = await prisma.parentDevice.findMany({
+          where: { userId: bal.userId, simStatus: 'ACTIVE', soracomSimId: { not: null } },
+          select: { soracomSimId: true },
+        });
+      }
+
+      const deductOps = [
         prisma.foxCoinBalance.update({
           where: { id: bal.id },
           data: {
             balance: balanceAfter,
             simStatus: newStatus,
-            lastDeductedAt: new Date(),
+            lastDeductedAt: now,
           },
         }),
         prisma.foxCoinLog.create({
           data: {
             userId: bal.userId,
-            type: 'DAILY_DEDUCT',
+            type: 'HOURLY_DEDUCT',
             coins: -1,
             balanceBefore,
             balanceAfter,
-            note: '日次自動消費',
+            note: '自動消費（24時間）',
           },
         }),
-      ]);
+      ];
+
+      // 残高 0 で SUSPENDED になる場合は ParentDevice も停止
+      if (newStatus === 'SUSPENDED') {
+        deductOps.push(
+          prisma.parentDevice.updateMany({
+            where: { userId: bal.userId, simStatus: 'ACTIVE' },
+            data: { simStatus: 'SUSPENDED' },
+          })
+        );
+      }
+
+      await prisma.$transaction(deductOps);
+
+      // DB更新後に SORACOM SIM を停止（失敗しても処理継続）
+      for (const d of devicesToSuspend) {
+        try {
+          await suspendSimInternal(d.soracomSimId);
+        } catch (e) {
+          console.warn(`[SORACOM] suspend ${d.soracomSimId} failed:`, e.message);
+        }
+      }
 
       results.deducted++;
       if (newStatus === 'SUSPENDED') results.suspended++;

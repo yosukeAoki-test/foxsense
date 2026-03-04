@@ -29,14 +29,19 @@ export const errorHandler = (err, req, res, next) => {
     message = 'Token expired';
   }
 
-  // Zod validation errors
+  // Zod validation errors（本番環境ではスキーマ詳細を隠す）
   if (err.name === 'ZodError') {
     statusCode = 400;
-    message = err.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ');
+    message = process.env.NODE_ENV === 'production'
+      ? 'Validation failed'
+      : err.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ');
   }
 
-  if (process.env.NODE_ENV === 'development') {
+  if (process.env.NODE_ENV !== 'production') {
     console.error('Error:', err);
+  } else if (statusCode >= 500) {
+    // 本番環境では500番台エラーのみサーバーログに出力
+    console.error('[Error]', err.message, err.stack);
   }
 
   res.status(statusCode).json({

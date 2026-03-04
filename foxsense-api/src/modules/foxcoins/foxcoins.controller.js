@@ -16,6 +16,11 @@ export const getPurchaseHistory = asyncHandler(async (req, res) => {
   res.json({ success: true, data });
 });
 
+export const getPurchases = asyncHandler(async (req, res) => {
+  const data = await foxcoinsService.getPurchases(req.user.id);
+  res.json({ success: true, data });
+});
+
 export const createCheckout = asyncHandler(async (req, res) => {
   const { packageId } = req.body;
   if (!packageId) return res.status(400).json({ success: false, message: 'packageId is required' });

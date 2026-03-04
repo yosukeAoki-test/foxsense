@@ -1,7 +1,7 @@
 import prisma from '../../config/db.js';
 import { AppError } from '../../middleware/errorHandler.js';
 import { computeParentIdHash, hashToHex } from '../../utils/deviceHash.js';
-import { getSimByImsi } from '../soracom/soracom.service.js';
+import { getSimByImsi, setSimName } from '../soracom/soracom.service.js';
 
 // ===== Parent Devices =====
 
@@ -73,8 +73,9 @@ export const getParentDevice = async (id, userId) => {
 };
 
 export const createParentDevice = async (userId, data) => {
+  const deviceId = data.deviceId.toUpperCase();
   const existing = await prisma.parentDevice.findUnique({
-    where: { deviceId: data.deviceId },
+    where: { deviceId },
   });
   if (existing) {
     throw new AppError('このデバイスIDはすでに登録されています', 409);
@@ -84,7 +85,7 @@ export const createParentDevice = async (userId, data) => {
   let resolvedSimId = data.soracomSimId ?? null;
   const inventoryCount = await prisma.deviceInventory.count({ where: { type: 'PARENT' } });
   if (inventoryCount > 0) {
-    const invItem = await prisma.deviceInventory.findUnique({ where: { deviceId: data.deviceId } });
+    const invItem = await prisma.deviceInventory.findUnique({ where: { deviceId } });
     if (!invItem || invItem.type !== 'PARENT') {
       throw new AppError('このデバイスIDは登録されていません。ラベルのIDをご確認ください。', 400);
     }
@@ -105,10 +106,10 @@ export const createParentDevice = async (userId, data) => {
     }
   }
 
-  return prisma.parentDevice.create({
+  const created = await prisma.parentDevice.create({
     data: {
       userId,
-      deviceId: data.deviceId,
+      deviceId,
       name: data.name,
       location: data.location,
       soracomSimId: resolvedSimId,
@@ -116,16 +117,30 @@ export const createParentDevice = async (userId, data) => {
     },
     include: { alertSettings: true },
   });
+
+  // SIMが紐付いていればSORAACOM上の名前もユーザー名に設定
+  if (resolvedSimId) {
+    setSimName(resolvedSimId, data.name);
+  }
+
+  return created;
 };
 
 export const updateParentDevice = async (id, userId, data) => {
   const device = await prisma.parentDevice.findFirst({ where: { id, userId } });
   if (!device) throw new AppError('Parent device not found', 404);
 
-  return prisma.parentDevice.update({
+  const updated = await prisma.parentDevice.update({
     where: { id },
     data: { name: data.name, location: data.location },
   });
+
+  // 名前変更時もSORAACOM上の名前を同期
+  if (data.name && device.soracomSimId) {
+    setSimName(device.soracomSimId, data.name);
+  }
+
+  return updated;
 };
 
 export const deleteParentDevice = async (id, userId) => {
@@ -172,8 +187,9 @@ export const getAllChildDevices = async (userId) => {
 };
 
 export const createChildDevice = async (userId, data) => {
+  const deviceId = data.deviceId.toUpperCase();
   const existing = await prisma.childDevice.findUnique({
-    where: { deviceId: data.deviceId },
+    where: { deviceId },
   });
   if (existing) {
     throw new AppError('このデバイスIDはすでに登録されています', 409);
@@ -182,7 +198,7 @@ export const createChildDevice = async (userId, data) => {
   // 在庫照合: DeviceInventoryにあれば claimed に更新、なければエラー
   const inventoryCount = await prisma.deviceInventory.count({ where: { type: 'CHILD' } });
   if (inventoryCount > 0) {
-    const invItem = await prisma.deviceInventory.findUnique({ where: { deviceId: data.deviceId } });
+    const invItem = await prisma.deviceInventory.findUnique({ where: { deviceId } });
     if (!invItem || invItem.type !== 'CHILD') {
       throw new AppError('このデバイスIDは登録されていません。ラベルのIDをご確認ください。', 400);
     }
@@ -198,7 +214,7 @@ export const createChildDevice = async (userId, data) => {
   return prisma.childDevice.create({
     data: {
       userId,
-      deviceId: data.deviceId,
+      deviceId,
       name: data.name,
       location: data.location,
     },

@@ -21,7 +21,7 @@ export const resetPasswordSchema = z.object({
 });
 
 export const parentDeviceSchema = z.object({
-  deviceId: z.string().min(1, 'Device ID is required'),
+  deviceId: z.string().regex(/^[0-9A-Fa-f]{8}$/, 'Device ID must be 8 hex characters'),
   name: z.string().min(1, 'Name is required').max(100),
   location: z.string().max(200).optional(),
   soracomSimId: z.string().optional(),
