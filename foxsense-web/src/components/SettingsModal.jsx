@@ -60,10 +60,7 @@ const SettingsModal = ({ alerts, parentDevice, onClose, onSaveAlerts }) => {
           )}
 
           {activeTab === 'sim' && (
-            <SimManagement
-              deviceId={parentDevice?.id}
-              soracomSimId={parentDevice?.soracomSimId}
-            />
+            <SimManagement />
           )}
 
           {activeTab === 'security' && (
