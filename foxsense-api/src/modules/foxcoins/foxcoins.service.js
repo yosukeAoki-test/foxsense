@@ -257,8 +257,14 @@ export const runHourlyDeduction = async () => {
 
   for (const bal of activeBalances) {
     try {
+      // ACTIVE な親機の台数だけ消費（1台ごとに1FC / 24h）
+      const activeParentCount = await prisma.parentDevice.count({
+        where: { userId: bal.userId, simStatus: 'ACTIVE' },
+      });
+      const deductAmount = Math.max(1, activeParentCount); // 最低1FC
+
       const balanceBefore = bal.balance;
-      const balanceAfter = Math.max(0, balanceBefore - 1);
+      const balanceAfter = Math.max(0, balanceBefore - deductAmount);
       const newStatus = balanceAfter === 0 ? 'SUSPENDED' : 'ACTIVE';
 
       // SORACOM 操作のために事前に対象デバイスを取得
@@ -283,10 +289,10 @@ export const runHourlyDeduction = async () => {
           data: {
             userId: bal.userId,
             type: 'HOURLY_DEDUCT',
-            coins: -1,
+            coins: -deductAmount,
             balanceBefore,
             balanceAfter,
-            note: '自動消費（24時間）',
+            note: `自動消費（親機${activeParentCount}台 × 1FC）`,
           },
         }),
       ];
@@ -312,7 +318,7 @@ export const runHourlyDeduction = async () => {
         }
       }
 
-      results.deducted++;
+      results.deducted += deductAmount;
       if (newStatus === 'SUSPENDED') results.suspended++;
     } catch {
       results.errors++;
