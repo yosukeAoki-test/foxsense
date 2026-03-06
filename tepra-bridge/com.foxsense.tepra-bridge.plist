@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.foxsense.tepra-bridge</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/swift</string>
+        <string>BRIDGE_SWIFT_PATH</string>
+        <string>FOXSENSE_API_URL</string>
+        <string>BRIDGE_SECRET_VALUE</string>
+    </array>
+
+    <!-- ログイン時に自動起動 -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- クラッシュ時に自動再起動 -->
+    <key>KeepAlive</key>
+    <true/>
+
+    <!-- 再起動間隔: 10秒 -->
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>StandardOutPath</key>
+    <string>BRIDGE_LOG_DIR/bridge.log</string>
+    <key>StandardErrorPath</key>
+    <string>BRIDGE_LOG_DIR/bridge.error.log</string>
+</dict>
+</plist>
