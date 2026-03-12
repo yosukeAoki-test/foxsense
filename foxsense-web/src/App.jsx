@@ -32,8 +32,12 @@ function App() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isLoadingInitial, setIsLoadingInitial] = useState(true);
   const [dismissedAlerts, setDismissedAlerts] = useState(() => {
-    const saved = sessionStorage.getItem('foxsense_dismissed_alerts');
-    return saved ? JSON.parse(saved) : [];
+    try {
+      const saved = sessionStorage.getItem('foxsense_dismissed_alerts');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
   });
 
   // 親機一覧をAPIから取得
@@ -47,8 +51,8 @@ function App() {
         const updated = devices.find(d => d.id === selectedParent.id);
         if (updated) setSelectedParent(updated);
       }
-    } catch {
-      // エラー時は何もしない
+    } catch (err) {
+      console.error('親機一覧の取得に失敗しました:', err);
     } finally {
       setIsLoadingInitial(false);
     }
@@ -196,7 +200,10 @@ function App() {
   const harvestAlerts = useMemo(() => {
     if (!mockData?.history) return [];
 
-    const pollinationRecords = JSON.parse(localStorage.getItem('foxsense_pollination') || '[]');
+    let pollinationRecords = [];
+    try {
+      pollinationRecords = JSON.parse(localStorage.getItem('foxsense_pollination') || '[]');
+    } catch { pollinationRecords = []; }
     const alerts = [];
 
     pollinationRecords.forEach(record => {

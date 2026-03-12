@@ -212,7 +212,10 @@ export const handleWebhook = async (payload, signature) => {
 
       // FoxCoin 購入完了
       if (type === 'foxcoin') {
-        await grantCoins(userId, parseInt(coins), packageId, parseInt(price), 'Stripe決済', session.id);
+        const coinsInt = parseInt(coins, 10);
+        const priceInt = parseInt(price, 10);
+        if (isNaN(coinsInt) || isNaN(priceInt)) throw new Error(`Invalid coins/price metadata: ${coins}/${price}`);
+        await grantCoins(userId, coinsInt, packageId, priceInt, 'Stripe決済', session.id);
         break;
       }
 

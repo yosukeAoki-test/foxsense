@@ -16,8 +16,12 @@ import {
 const CropManagement = ({ historyData, latestData, alerts, onClose }) => {
   const [activeTab, setActiveTab] = useState('frost'); // frost, gdd
   const [pollinationRecords, setPollinationRecords] = useState(() => {
-    const saved = localStorage.getItem('foxsense_pollination');
-    return saved ? JSON.parse(saved) : [];
+    try {
+      const saved = localStorage.getItem('foxsense_pollination');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
   });
   const [showAddRecord, setShowAddRecord] = useState(false);
   const [newRecord, setNewRecord] = useState({
