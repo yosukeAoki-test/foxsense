@@ -50,7 +50,15 @@ export const getPurchases = async (userId) => {
 };
 
 // 管理者がユーザーにコインを付与（または手動購入処理）
-export const grantCoins = async (userId, coins, packageId, price, note) => {
+export const grantCoins = async (userId, coins, packageId, price, note, stripeSessionId = null) => {
+  // Stripe セッション ID による冪等性チェック（重複 webhook 対策）
+  if (stripeSessionId) {
+    const existing = await prisma.foxCoinPurchase.findUnique({ where: { stripeSessionId } });
+    if (existing) {
+      console.log(`[FoxCoin] 重複webhook スキップ: session=${stripeSessionId}`);
+      return prisma.foxCoinBalance.findUnique({ where: { userId } });
+    }
+  }
   const balance = await getOrCreateBalance(userId);
   const balanceBefore = balance.balance;
   const balanceAfter = balanceBefore + coins;
@@ -66,8 +74,7 @@ export const grantCoins = async (userId, coins, packageId, price, note) => {
   // SUSPENDED → ACTIVE になる場合は ParentDevice も復活
   const wasActivated = balance.simStatus === 'SUSPENDED' && newSimStatus === 'ACTIVE';
 
-  const activatedAt = new Date();
-  activatedAt.setDate(activatedAt.getDate() + 1); // 翌日から有効
+  const activatedAt = new Date(); // 当日から有効
 
   const txOps = [
     prisma.foxCoinBalance.update({
@@ -81,6 +88,7 @@ export const grantCoins = async (userId, coins, packageId, price, note) => {
         coins,
         price: price || 0,
         note,
+        stripeSessionId: stripeSessionId || null,
         activatedAt,
       },
     }),
@@ -261,7 +269,9 @@ export const runHourlyDeduction = async () => {
       const activeParentCount = await prisma.parentDevice.count({
         where: { userId: bal.userId, simStatus: 'ACTIVE' },
       });
-      const deductAmount = Math.max(1, activeParentCount); // 最低1FC
+      // アクティブな親機が0台なら消費しない
+      if (activeParentCount === 0) continue;
+      const deductAmount = activeParentCount;
 
       const balanceBefore = bal.balance;
       const balanceAfter = Math.max(0, balanceBefore - deductAmount);

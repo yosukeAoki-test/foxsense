@@ -4,19 +4,10 @@ import { format, addDays } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import { getParentDevices, deleteChildDevice, foxCoinApi, getLatestData, getHistoryData, getAlertSettings, updateAlertSettings } from './api/client';
 import { useAuth } from './contexts/AuthContext';
-import { Settings, RefreshCw, Plus, Sprout, Snowflake, AlertTriangle, X, Flower2, LogOut, User, Radio, ChevronDown, Coins, ShieldCheck, Loader2 } from 'lucide-react';
+import { Settings, RefreshCw, Plus, Sprout, Snowflake, AlertTriangle, X, Flower2, LogOut, User, Radio, ChevronDown, Coins, ShieldCheck, Loader2, Satellite } from 'lucide-react';
 import OnboardingBanner from './components/OnboardingBanner';
 import TwoFactorSetupModal from './components/TwoFactorSetupModal';
 
-// 作物ごとの積算温度要件（CropManagementと同じ）
-const CROP_GDD_REQUIREMENTS = {
-  watermelon: { name: 'スイカ', gdd: 1100, baseTemp: 13 },
-  cherry: { name: 'さくらんぼ', gdd: 600, baseTemp: 5 },
-  cherry_heated: { name: '加温さくらんぼ', gdd: 550, baseTemp: 5 },
-  melon: { name: 'メロン', gdd: 1100, baseTemp: 12 },
-  tomato: { name: 'トマト', gdd: 1100, baseTemp: 10 },
-  strawberry: { name: 'イチゴ', gdd: 600, baseTemp: 5 },
-};
 
 function App() {
   const { user, logout } = useAuth();
@@ -209,8 +200,8 @@ function App() {
     const alerts = [];
 
     pollinationRecords.forEach(record => {
-      const crop = CROP_GDD_REQUIREMENTS[record.cropType];
-      if (!crop) return;
+      const baseTemp = Number(record.baseTemp) || 10;
+      const requiredGDD = Number(record.targetGDD) || 1000;
 
       const pollinationDate = new Date(record.date);
       const dataAfterPollination = mockData.history.filter(d => new Date(d.timestamp) >= pollinationDate);
@@ -226,34 +217,35 @@ function App() {
 
       Object.values(dailyData).forEach(temps => {
         const avgTemp = temps.reduce((a, b) => a + b, 0) / temps.length;
-        totalGDD += Math.max(0, avgTemp - crop.baseTemp);
+        totalGDD += Math.max(0, avgTemp - baseTemp);
       });
 
       const daysElapsed = Object.keys(dailyData).length;
       const avgDailyGDD = daysElapsed > 0 ? totalGDD / daysElapsed : 0;
-      const remainingGDD = crop.gdd - totalGDD;
+      const remainingGDD = requiredGDD - totalGDD;
       const estimatedDaysRemaining = avgDailyGDD > 0 ? Math.ceil(remainingGDD / avgDailyGDD) : null;
+      const label = record.note || '積算温度記録';
 
       if (estimatedDaysRemaining !== null && estimatedDaysRemaining <= 3 && estimatedDaysRemaining > 0) {
         const estimatedDate = addDays(new Date(), estimatedDaysRemaining);
         alerts.push({
           id: record.id,
-          cropName: crop.name,
+          cropName: label,
           note: record.note,
           daysRemaining: estimatedDaysRemaining,
           estimatedDate: format(estimatedDate, 'M月d日', { locale: ja }),
           totalGDD: totalGDD.toFixed(0),
-          requiredGDD: crop.gdd,
+          requiredGDD,
         });
-      } else if (totalGDD >= crop.gdd) {
+      } else if (totalGDD >= requiredGDD) {
         alerts.push({
           id: record.id,
-          cropName: crop.name,
+          cropName: label,
           note: record.note,
           daysRemaining: 0,
           isReady: true,
           totalGDD: totalGDD.toFixed(0),
-          requiredGDD: crop.gdd,
+          requiredGDD,
         });
       }
     });
@@ -409,6 +401,14 @@ function App() {
             >
               <Sprout className="w-4 h-4 sm:w-5 sm:h-5" />
               <span className="hidden md:inline text-sm font-medium">栽培管理</span>
+            </Link>
+            <Link
+              to="/satellite"
+              className="p-2 sm:p-3 rounded-lg sm:rounded-xl bg-white/80 hover:bg-white text-leaf-600 shadow-sm transition-all flex items-center gap-1 sm:gap-2"
+              title="衛星モニタリング"
+            >
+              <Satellite className="w-4 h-4 sm:w-5 sm:h-5" />
+              <span className="hidden md:inline text-sm font-medium">衛星解析</span>
             </Link>
             <button
               onClick={handleRefresh}

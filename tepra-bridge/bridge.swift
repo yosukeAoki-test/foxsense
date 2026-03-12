@@ -121,6 +121,7 @@ print("[Bridge] ポーリング開始 (間隔 \(Int(POLL_INTERVAL))秒)")
 
 while true {
     apiPost(path: "heartbeat")
+
     if let resp = apiGet(path: "jobs/pending"),
        let data = resp["data"] as? [String: Any],
        let jobId = data["id"] as? String,

@@ -56,8 +56,11 @@ app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/register', authLimiter);
 app.use('/api/auth/forgot-password', authLimiter);
 
-// Body parsing - Note: webhook route uses raw body, so it's handled in payments.routes.js
-app.use(express.json({ limit: '1mb' }));
+// Body parsing - webhookはraw bodyが必要なのでverifyで保存
+app.use(express.json({
+  limit: '1mb',
+  verify: (req, res, buf) => { req.rawBody = buf; },
+}));
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 app.use(cookieParser());
 

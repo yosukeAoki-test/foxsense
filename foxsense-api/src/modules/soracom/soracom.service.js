@@ -265,6 +265,12 @@ export const activateSim = async (simId, userId) => {
     throw new AppError('SIM not found', 404);
   }
 
+  // コイン残高チェック
+  const balance = await prisma.foxCoinBalance.findUnique({ where: { userId } });
+  if (!balance || balance.balance <= 0) {
+    throw new AppError('FoxCoinが不足しています。コインを購入してからSIMを有効化してください。', 403);
+  }
+
   // テストモード
   if (isTestMode) {
     await prisma.parentDevice.update({

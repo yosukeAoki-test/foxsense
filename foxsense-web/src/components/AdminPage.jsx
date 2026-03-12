@@ -482,7 +482,7 @@ ${labels.map(l => `  <div class="label">
       const l = labels[i];
       setBridgeProgress(`印刷中 ${i + 1} / ${labels.length}`);
       try {
-        const job = await printApi.createJob(l.deviceId, tapeSize.mm);
+        const job = await printApi.createJob(`QR:${l.deviceId}:${l.imsi || ''}`, tapeSize.mm);
         // 完了まで最大30秒ポーリング
         let done = false;
         for (let attempt = 0; attempt < 30 && !done; attempt++) {

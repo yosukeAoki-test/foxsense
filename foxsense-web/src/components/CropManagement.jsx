@@ -1,11 +1,10 @@
 import { useState, useMemo } from 'react';
-import { format, differenceInDays, addDays, parseISO } from 'date-fns';
+import { format, addDays } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import {
   Snowflake,
   Flower2,
   Sun,
-  Calendar,
   Thermometer,
   TrendingUp,
   AlertTriangle,
@@ -13,52 +12,6 @@ import {
   X,
   Check,
 } from 'lucide-react';
-
-// 作物ごとの収穫に必要な積算温度（目安）
-const CROP_GDD_REQUIREMENTS = {
-  watermelon: {
-    name: 'スイカ',
-    gdd: 1100,
-    baseTemp: 13,
-    harvestAlerts: [850, 900, 950, 1000, 1050, 1100, 1150, 1200], // 収穫予測アラート
-    description: '受粉から積算温度850°C日で収穫開始、1100°C日前後が適期',
-  },
-  cherry: {
-    name: 'さくらんぼ',
-    gdd: 600,
-    baseTemp: 5,
-    harvestAlerts: [450, 500, 550, 600],
-    description: '開花から積算温度600°C日前後で収穫適期',
-  },
-  cherry_heated: {
-    name: '加温さくらんぼ',
-    gdd: 550,
-    baseTemp: 5,
-    harvestAlerts: [400, 450, 500, 550],
-    description: '加温栽培により積算温度の蓄積が早まります',
-  },
-  melon: {
-    name: 'メロン',
-    gdd: 1100,
-    baseTemp: 12,
-    harvestAlerts: [900, 950, 1000, 1050, 1100],
-    description: '受粉から積算温度1100°C日前後で収穫適期',
-  },
-  tomato: {
-    name: 'トマト',
-    gdd: 1100,
-    baseTemp: 10,
-    harvestAlerts: [900, 950, 1000, 1050, 1100],
-    description: '開花から積算温度1100°C日前後で収穫適期',
-  },
-  strawberry: {
-    name: 'イチゴ',
-    gdd: 600,
-    baseTemp: 5,
-    harvestAlerts: [450, 500, 550, 600],
-    description: '開花から積算温度600°C日前後で収穫適期',
-  },
-};
 
 const CropManagement = ({ historyData, latestData, alerts, onClose }) => {
   const [activeTab, setActiveTab] = useState('frost'); // frost, gdd
@@ -69,7 +22,8 @@ const CropManagement = ({ historyData, latestData, alerts, onClose }) => {
   const [showAddRecord, setShowAddRecord] = useState(false);
   const [newRecord, setNewRecord] = useState({
     date: format(new Date(), 'yyyy-MM-dd'),
-    cropType: 'tomato',
+    targetGDD: 1000,
+    baseTemp: 10,
     note: '',
   });
 
@@ -77,27 +31,22 @@ const CropManagement = ({ historyData, latestData, alerts, onClose }) => {
   const frostPrediction = useMemo(() => {
     if (!historyData || historyData.length < 6) return null;
 
-    // 直近6時間のデータを取得
     const recentData = historyData.slice(-6);
     const temps = recentData.map(d => d.temperature);
 
-    // 温度トレンドを計算
     const firstHalf = temps.slice(0, 3).reduce((a, b) => a + b, 0) / 3;
     const secondHalf = temps.slice(3).reduce((a, b) => a + b, 0) / 3;
     const trend = secondHalf - firstHalf;
 
-    // 現在の最低温度
     const currentMin = Math.min(...temps);
     const currentTemp = temps[temps.length - 1];
 
-    // アラート設定から閾値を取得（デフォルト: 警告3°C、危険0°C）
     const frostCritical = alerts?.frostCritical ?? 0;
     const frostWarning = alerts?.frostWarning ?? 3;
 
-    // 霜リスク判定
     let riskLevel = 'low';
     let message = '霜の心配はありません';
-    let predictedMinTemp = currentTemp + trend * 2; // 2時間後の予測
+    let predictedMinTemp = currentTemp + trend * 2;
 
     if (predictedMinTemp <= frostCritical) {
       riskLevel = 'critical';
@@ -126,38 +75,30 @@ const CropManagement = ({ historyData, latestData, alerts, onClose }) => {
   const calculateGDD = (record) => {
     if (!historyData || historyData.length === 0) return null;
 
-    const crop = CROP_GDD_REQUIREMENTS[record.cropType];
-    const baseTemp = crop.baseTemp;
-    const requiredGDD = crop.gdd;
-    const harvestAlerts = crop.harvestAlerts || [];
+    const baseTemp = Number(record.baseTemp) || 10;
+    const requiredGDD = Number(record.targetGDD) || 1000;
     const pollinationDate = new Date(record.date);
 
-    // 受粉日以降のデータをフィルタリング
-    const dataAfterPollination = historyData.filter(d => {
-      return new Date(d.timestamp) >= pollinationDate;
-    });
+    // 目標積算温度に基づいてアラート段階を動的生成
+    const harvestAlerts = [0.75, 0.85, 0.90, 0.95, 1.0, 1.05].map(r => Math.round(requiredGDD * r));
 
+    const dataAfterPollination = historyData.filter(d => new Date(d.timestamp) >= pollinationDate);
     if (dataAfterPollination.length === 0) return null;
 
-    // 日ごとの平均気温から積算温度を計算
     let totalGDD = 0;
     const dailyData = {};
 
     dataAfterPollination.forEach(d => {
       const dateKey = format(new Date(d.timestamp), 'yyyy-MM-dd');
-      if (!dailyData[dateKey]) {
-        dailyData[dateKey] = [];
-      }
+      if (!dailyData[dateKey]) dailyData[dateKey] = [];
       dailyData[dateKey].push(d.temperature);
     });
 
     Object.values(dailyData).forEach(temps => {
       const avgTemp = temps.reduce((a, b) => a + b, 0) / temps.length;
-      const dailyGDD = Math.max(0, avgTemp - baseTemp);
-      totalGDD += dailyGDD;
+      totalGDD += Math.max(0, avgTemp - baseTemp);
     });
 
-    // 収穫予想日の計算
     const daysElapsed = Object.keys(dailyData).length;
     const avgDailyGDD = daysElapsed > 0 ? totalGDD / daysElapsed : 0;
     const remainingGDD = requiredGDD - totalGDD;
@@ -168,7 +109,6 @@ const CropManagement = ({ historyData, latestData, alerts, onClose }) => {
 
     const progress = Math.min(100, (totalGDD / requiredGDD) * 100);
 
-    // 収穫アラート段階を判定
     let harvestStage = null;
     let nextAlert = null;
     let alertMessage = '';
@@ -182,7 +122,6 @@ const CropManagement = ({ historyData, latestData, alerts, onClose }) => {
       }
     }
 
-    // アラートメッセージ生成
     if (harvestStage) {
       if (harvestStage >= harvestAlerts[harvestAlerts.length - 1]) {
         alertMessage = '収穫適期を迎えています！';
@@ -193,7 +132,6 @@ const CropManagement = ({ historyData, latestData, alerts, onClose }) => {
       }
     }
 
-    // 次のアラートまでの予想日数
     let daysToNextAlert = null;
     if (nextAlert && avgDailyGDD > 0) {
       daysToNextAlert = Math.ceil((nextAlert - totalGDD) / avgDailyGDD);
@@ -202,6 +140,7 @@ const CropManagement = ({ historyData, latestData, alerts, onClose }) => {
     return {
       totalGDD: totalGDD.toFixed(0),
       requiredGDD,
+      baseTemp,
       progress: progress.toFixed(1),
       daysElapsed,
       avgDailyGDD: avgDailyGDD.toFixed(1),
@@ -216,10 +155,11 @@ const CropManagement = ({ historyData, latestData, alerts, onClose }) => {
     };
   };
 
-  // 受粉記録を保存
   const savePollinationRecord = () => {
     const record = {
       ...newRecord,
+      targetGDD: Number(newRecord.targetGDD),
+      baseTemp: Number(newRecord.baseTemp),
       id: Date.now(),
       createdAt: new Date().toISOString(),
     };
@@ -227,10 +167,9 @@ const CropManagement = ({ historyData, latestData, alerts, onClose }) => {
     setPollinationRecords(updated);
     localStorage.setItem('foxsense_pollination', JSON.stringify(updated));
     setShowAddRecord(false);
-    setNewRecord({ date: format(new Date(), 'yyyy-MM-dd'), cropType: 'tomato', note: '' });
+    setNewRecord({ date: format(new Date(), 'yyyy-MM-dd'), targetGDD: 1000, baseTemp: 10, note: '' });
   };
 
-  // 受粉記録を削除
   const deletePollinationRecord = (id) => {
     const updated = pollinationRecords.filter(r => r.id !== id);
     setPollinationRecords(updated);
@@ -284,7 +223,6 @@ const CropManagement = ({ historyData, latestData, alerts, onClose }) => {
         {/* 霜予測タブ */}
         {activeTab === 'frost' && frostPrediction && (
           <div className="space-y-4">
-            {/* アラートカード */}
             <div className={`rounded-xl p-4 ${
               frostPrediction.riskLevel === 'critical' ? 'bg-red-100 border-2 border-red-300' :
               frostPrediction.riskLevel === 'high' ? 'bg-orange-100 border-2 border-orange-300' :
@@ -317,7 +255,6 @@ const CropManagement = ({ historyData, latestData, alerts, onClose }) => {
               </div>
             </div>
 
-            {/* 現在のデータ */}
             <div className="grid grid-cols-3 gap-2 sm:gap-4">
               <div className="bg-gray-50 rounded-lg p-2 sm:p-4 text-center">
                 <div className="text-xs sm:text-sm text-gray-500">現在の気温</div>
@@ -337,7 +274,6 @@ const CropManagement = ({ historyData, latestData, alerts, onClose }) => {
               </div>
             </div>
 
-            {/* 現在の設定値 */}
             <div className="bg-gray-50 rounded-lg p-3 sm:p-4">
               <h4 className="font-medium text-gray-700 mb-1.5 sm:mb-2 text-sm sm:text-base">アラート設定</h4>
               <div className="flex flex-wrap gap-3 text-xs sm:text-sm">
@@ -352,7 +288,6 @@ const CropManagement = ({ historyData, latestData, alerts, onClose }) => {
               </div>
             </div>
 
-            {/* 注意事項 */}
             <div className="bg-blue-50 rounded-lg p-3 sm:p-4">
               <h4 className="font-medium text-blue-800 mb-1.5 sm:mb-2 text-sm sm:text-base">霜対策</h4>
               <ul className="text-xs sm:text-sm text-blue-700 space-y-0.5 sm:space-y-1">
@@ -390,10 +325,9 @@ const CropManagement = ({ historyData, latestData, alerts, onClose }) => {
               </div>
             )}
 
-            {/* 受粉記録一覧 */}
+            {/* 記録一覧 */}
             <div className="space-y-3">
               {pollinationRecords.map(record => {
-                const crop = CROP_GDD_REQUIREMENTS[record.cropType];
                 const gdd = calculateGDD(record);
 
                 return (
@@ -402,13 +336,15 @@ const CropManagement = ({ historyData, latestData, alerts, onClose }) => {
                       <div className="flex items-center gap-3">
                         <Flower2 className="w-8 h-8 text-pink-500" />
                         <div>
-                          <div className="font-medium text-gray-800">{crop.name}</div>
-                          <div className="text-sm text-gray-500">
-                            受粉日: {format(new Date(record.date), 'yyyy年M月d日', { locale: ja })}
+                          <div className="font-medium text-gray-800">
+                            {record.note || '積算温度記録'}
                           </div>
-                          {record.note && (
-                            <div className="text-xs text-gray-400 mt-1">{record.note}</div>
-                          )}
+                          <div className="text-sm text-gray-500">
+                            開始日: {format(new Date(record.date), 'yyyy年M月d日', { locale: ja })}
+                          </div>
+                          <div className="text-xs text-gray-400 mt-0.5">
+                            目標: {record.targetGDD}°C日 / 基準温度: {record.baseTemp}°C
+                          </div>
                         </div>
                       </div>
                       <button
@@ -421,7 +357,6 @@ const CropManagement = ({ historyData, latestData, alerts, onClose }) => {
 
                     {gdd && (
                       <div className="mt-4 space-y-3">
-                        {/* 収穫アラートメッセージ */}
                         {gdd.alertMessage && (
                           <div className={`flex items-center gap-2 p-3 rounded-lg ${
                             gdd.harvestStage >= gdd.harvestAlerts[gdd.harvestAlerts.length - 1]
@@ -435,50 +370,26 @@ const CropManagement = ({ historyData, latestData, alerts, onClose }) => {
                           </div>
                         )}
 
-                        {/* 収穫段階インジケーター */}
+                        {/* 進捗バー */}
                         <div className="relative">
-                          <div className="flex justify-between mb-1">
-                            {gdd.harvestAlerts.map((alert, idx) => (
-                              <div
-                                key={alert}
-                                className={`text-xs ${
-                                  gdd.totalGDD >= alert
-                                    ? 'text-leaf-600 font-medium'
-                                    : 'text-gray-400'
-                                }`}
-                              >
-                                {alert}
-                              </div>
-                            ))}
+                          <div className="flex justify-between mb-1 text-xs text-gray-400">
+                            <span>0</span>
+                            <span>{gdd.requiredGDD}°C日</span>
                           </div>
                           <div className="relative h-3 bg-gray-200 rounded-full overflow-hidden">
-                            {/* アラートマーカー */}
-                            {gdd.harvestAlerts.map((alert, idx) => {
-                              const position = ((alert - gdd.harvestAlerts[0]) / (gdd.harvestAlerts[gdd.harvestAlerts.length - 1] - gdd.harvestAlerts[0])) * 100;
-                              return (
-                                <div
-                                  key={alert}
-                                  className="absolute top-0 bottom-0 w-0.5 bg-gray-400"
-                                  style={{ left: `${position}%` }}
-                                />
-                              );
-                            })}
-                            {/* 進捗バー */}
                             <div
                               className={`absolute h-full rounded-full transition-all ${
-                                gdd.harvestStage >= gdd.harvestAlerts[gdd.harvestAlerts.length - 1]
+                                gdd.isReady
                                   ? 'bg-leaf-500'
-                                  : gdd.harvestStage >= gdd.harvestAlerts[0]
+                                  : gdd.harvestStage
                                   ? 'bg-gradient-to-r from-yellow-400 to-orange-500'
                                   : 'bg-gradient-to-r from-blue-400 to-yellow-400'
                               }`}
-                              style={{
-                                width: `${Math.min(100, ((parseFloat(gdd.totalGDD) - gdd.harvestAlerts[0]) / (gdd.harvestAlerts[gdd.harvestAlerts.length - 1] - gdd.harvestAlerts[0])) * 100)}%`
-                              }}
+                              style={{ width: `${gdd.progress}%` }}
                             />
                           </div>
-                          <div className="text-xs text-gray-500 mt-1 text-center">
-                            積算温度 (°C日)
+                          <div className="text-xs text-gray-500 mt-1 text-right">
+                            {gdd.progress}%
                           </div>
                         </div>
 
@@ -496,9 +407,7 @@ const CropManagement = ({ historyData, latestData, alerts, onClose }) => {
                             <div className="font-medium">{gdd.avgDailyGDD}°C/日</div>
                           </div>
                           <div className="bg-orange-50 rounded-lg p-2 text-center">
-                            <div className="text-xs text-gray-500">
-                              {gdd.nextAlert ? `${gdd.nextAlert}°Cまで` : '収穫予想'}
-                            </div>
+                            <div className="text-xs text-gray-500">収穫予想</div>
                             <div className="font-medium text-orange-600">
                               {gdd.isReady ? (
                                 '収穫適期！'
@@ -512,11 +421,6 @@ const CropManagement = ({ historyData, latestData, alerts, onClose }) => {
                             </div>
                           </div>
                         </div>
-
-                        {/* 作物の説明 */}
-                        <div className="text-xs text-gray-500 bg-gray-50 rounded-lg p-2">
-                          {crop.description}
-                        </div>
                       </div>
                     )}
                   </div>
@@ -524,28 +428,14 @@ const CropManagement = ({ historyData, latestData, alerts, onClose }) => {
               })}
             </div>
 
-            {/* 受粉記録追加フォーム */}
+            {/* 記録追加フォーム */}
             {showAddRecord ? (
               <div className="bg-gray-50 rounded-xl p-3 sm:p-4 space-y-3 sm:space-y-4">
-                <h4 className="font-medium text-gray-800 text-sm sm:text-base">受粉日を記録</h4>
+                <h4 className="font-medium text-gray-800 text-sm sm:text-base">積算温度を記録</h4>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                   <div>
-                    <label className="block text-xs sm:text-sm text-gray-600 mb-1">作物</label>
-                    <select
-                      value={newRecord.cropType}
-                      onChange={(e) => setNewRecord({ ...newRecord, cropType: e.target.value })}
-                      className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:border-leaf-400 outline-none text-sm"
-                    >
-                      {Object.entries(CROP_GDD_REQUIREMENTS).map(([key, crop]) => (
-                        <option key={key} value={key}>
-                          {crop.name} ({crop.gdd}°C日)
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs sm:text-sm text-gray-600 mb-1">受粉日</label>
+                    <label className="block text-xs sm:text-sm text-gray-600 mb-1">開始日（受粉日など）</label>
                     <input
                       type="date"
                       value={newRecord.date}
@@ -554,17 +444,39 @@ const CropManagement = ({ historyData, latestData, alerts, onClose }) => {
                       className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:border-leaf-400 outline-none text-sm"
                     />
                   </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs sm:text-sm text-gray-600 mb-1">メモ（任意）</label>
-                  <input
-                    type="text"
-                    value={newRecord.note}
-                    onChange={(e) => setNewRecord({ ...newRecord, note: e.target.value })}
-                    placeholder="例: ハウスA 1列目"
-                    className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:border-leaf-400 outline-none text-sm"
-                  />
+                  <div>
+                    <label className="block text-xs sm:text-sm text-gray-600 mb-1">目標積算温度 (°C日)</label>
+                    <input
+                      type="number"
+                      value={newRecord.targetGDD}
+                      onChange={(e) => setNewRecord({ ...newRecord, targetGDD: e.target.value })}
+                      min="1"
+                      max="9999"
+                      className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:border-leaf-400 outline-none text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs sm:text-sm text-gray-600 mb-1">基準温度 (°C)</label>
+                    <input
+                      type="number"
+                      value={newRecord.baseTemp}
+                      onChange={(e) => setNewRecord({ ...newRecord, baseTemp: e.target.value })}
+                      min="0"
+                      max="30"
+                      step="0.5"
+                      className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:border-leaf-400 outline-none text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs sm:text-sm text-gray-600 mb-1">メモ（任意）</label>
+                    <input
+                      type="text"
+                      value={newRecord.note}
+                      onChange={(e) => setNewRecord({ ...newRecord, note: e.target.value })}
+                      placeholder="例: ハウスA スイカ 1列目"
+                      className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:border-leaf-400 outline-none text-sm"
+                    />
+                  </div>
                 </div>
 
                 <div className="flex gap-2">
@@ -576,7 +488,8 @@ const CropManagement = ({ historyData, latestData, alerts, onClose }) => {
                   </button>
                   <button
                     onClick={savePollinationRecord}
-                    className="flex-1 py-2 rounded-lg bg-leaf-500 text-white font-medium text-sm"
+                    disabled={!newRecord.targetGDD || !newRecord.baseTemp}
+                    className="flex-1 py-2 rounded-lg bg-leaf-500 text-white font-medium text-sm disabled:opacity-50"
                   >
                     記録
                   </button>
@@ -588,16 +501,15 @@ const CropManagement = ({ historyData, latestData, alerts, onClose }) => {
                 className="w-full flex items-center justify-center gap-2 py-2.5 sm:py-3 rounded-xl border-2 border-dashed border-leaf-300 text-leaf-600 hover:bg-leaf-50 transition-colors text-sm"
               >
                 <Plus className="w-4 h-4 sm:w-5 sm:h-5" />
-                <span>受粉日を記録</span>
+                <span>積算温度を記録する</span>
               </button>
             )}
 
-            {/* 説明 */}
             <div className="bg-yellow-50 rounded-lg p-3 sm:p-4">
               <h4 className="font-medium text-yellow-800 mb-1.5 sm:mb-2 text-sm sm:text-base">積算温度とは</h4>
               <p className="text-xs sm:text-sm text-yellow-700">
-                積算温度（GDD: Growing Degree Days）は、作物の生育に必要な温度を日々積み重ねた値です。
-                基準温度を超えた分だけを毎日加算し、必要な積算温度に達すると収穫適期となります。
+                積算温度（GDD: Growing Degree Days）は、基準温度を超えた分の気温を毎日積み重ねた値です。
+                目標積算温度に達すると収穫適期となります。作物の品種書や農協の資料を参考に入力してください。
               </p>
             </div>
           </div>

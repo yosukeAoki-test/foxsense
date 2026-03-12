@@ -83,6 +83,15 @@ export const createParentDevice = async (userId, data) => {
 
   // 在庫照合: DeviceInventoryにあれば claimed に更新、なければエラー
   let resolvedSimId = data.soracomSimId ?? null;
+
+  // soracomSimId の重複チェック（直接指定された場合）
+  if (resolvedSimId) {
+    const simConflict = await prisma.parentDevice.findUnique({ where: { soracomSimId: resolvedSimId } });
+    if (simConflict) {
+      throw new AppError('このSIM IDはすでに別のデバイスに登録されています', 409);
+    }
+  }
+
   const inventoryCount = await prisma.deviceInventory.count({ where: { type: 'PARENT' } });
   if (inventoryCount > 0) {
     const invItem = await prisma.deviceInventory.findUnique({ where: { deviceId } });
@@ -97,10 +106,23 @@ export const createParentDevice = async (userId, data) => {
       data: { claimed: true, claimedAt: new Date() },
     });
     if (invItem.imsi) {
+      // IMSI の重複チェック
+      const imsiConflict = await prisma.deviceInventory.findFirst({
+        where: { imsi: invItem.imsi, claimed: true, deviceId: { not: deviceId } },
+      });
+      if (imsiConflict) {
+        throw new AppError('このSIM（IMSI）はすでに別のデバイスに登録されています', 409);
+      }
       try {
         const sim = await getSimByImsi(invItem.imsi);
         resolvedSimId = sim.simId;
+        // 解決した SIM ID の重複チェック
+        const simConflict = await prisma.parentDevice.findUnique({ where: { soracomSimId: resolvedSimId } });
+        if (simConflict) {
+          throw new AppError('このSIM IDはすでに別のデバイスに登録されています', 409);
+        }
       } catch (e) {
+        if (e instanceof AppError) throw e;
         console.warn('SORACOM SIM lookup failed:', e.message);
       }
     }

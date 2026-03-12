@@ -9,24 +9,26 @@ WORKER="$(dirname "$0")/print_worker.swift"
 
 echo "[run_print] BT切断..."
 "$BLUEUTIL" --disconnect "$MAC" || true
-sleep 5
+sleep 3
 
 echo "[run_print] BT接続..."
 "$BLUEUTIL" --connect "$MAC" || { sleep 5; "$BLUEUTIL" --connect "$MAC"; }
-sleep 3
 
-WORKER="$(dirname "$0")/print_worker.swift"
+# 接続確立まで最大20秒待機
+for i in $(seq 1 20); do
+  sleep 1
+  if "$BLUEUTIL" --info "$MAC" 2>/dev/null | grep -q "connected"; then
+    echo "[run_print] BT接続確認 (${i}秒)"
+    break
+  fi
+  if [ "$i" -eq 20 ]; then
+    echo "[run_print] BT接続タイムアウト"
+    exit 1
+  fi
+done
+
+WORKER="$(dirname "$0")/print_worker_bin"
 
 echo "[run_print] print_worker起動..."
-/usr/bin/swift "$WORKER" "$1" "$2"
-
-echo "[run_print] カット確定中..."
-sleep 2
-"$BLUEUTIL" --disconnect "$MAC" || true
-sleep 5
-"$BLUEUTIL" --connect "$MAC" || { sleep 5; "$BLUEUTIL" --connect "$MAC"; }
-sleep 2
-
-CUTTER="$(dirname "$0")/cut_trigger.swift"
-/usr/bin/swift "$CUTTER"
+"$WORKER" "$1" "$2"
 echo "[run_print] 完了"

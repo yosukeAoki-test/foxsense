@@ -212,7 +212,7 @@ export const handleWebhook = async (payload, signature) => {
 
       // FoxCoin 購入完了
       if (type === 'foxcoin') {
-        await grantCoins(userId, parseInt(coins), packageId, parseInt(price), 'Stripe決済');
+        await grantCoins(userId, parseInt(coins), packageId, parseInt(price), 'Stripe決済', session.id);
         break;
       }
 

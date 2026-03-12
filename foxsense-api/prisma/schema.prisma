@@ -61,7 +61,7 @@ model ParentDevice {
   deviceSecret  String             @default(uuid())
   name          String
   location      String?
-  soracomSimId  String?
+  soracomSimId  String?            @unique
   simStatus     String             @default("INACTIVE")
   createdAt     DateTime           @default(now())
   updatedAt     DateTime           @updatedAt
@@ -144,16 +144,17 @@ model FoxCoinBalance {
 }
 
 model FoxCoinPurchase {
-  id          String          @id @default(uuid())
-  userId      String
-  packageId   String?
-  coins       Int
-  price       Int
-  note        String?
-  activatedAt DateTime
-  purchasedAt DateTime        @default(now())
-  package     FoxCoinPackage? @relation(fields: [packageId], references: [id])
-  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id               String          @id @default(uuid())
+  userId           String
+  packageId        String?
+  coins            Int
+  price            Int
+  note             String?
+  stripeSessionId  String?         @unique
+  activatedAt      DateTime
+  purchasedAt      DateTime        @default(now())
+  package          FoxCoinPackage? @relation(fields: [packageId], references: [id])
+  user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }
@@ -189,7 +190,7 @@ model DeviceInventory {
   id        String    @id @default(uuid())
   deviceId  String    @unique
   type      String    // 'PARENT' or 'CHILD'
-  imsi      String?   // SORACOM SIM IMSI（親機のみ）
+  imsi      String?   @unique // SORACOM SIM IMSI（親機のみ）
   claimed   Boolean   @default(false)
   claimedAt DateTime?
   createdAt DateTime  @default(now())

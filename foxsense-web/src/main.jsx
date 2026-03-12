@@ -13,6 +13,7 @@ import DashboardPage from './pages/DashboardPage.jsx'
 import DevicesPage from './pages/DevicesPage.jsx'
 import SettingsPage from './pages/SettingsPage.jsx'
 import CropsPage from './pages/CropsPage.jsx'
+import SatellitePage from './pages/SatellitePage.jsx'
 
 // 認証が必要なルートを保護するコンポーネント
 const ProtectedRoute = ({ children }) => {
@@ -112,6 +113,7 @@ createRoot(document.getElementById('root')).render(
             <Route path="devices" element={<DevicesPage />} />
             <Route path="settings" element={<SettingsPage />} />
             <Route path="crops" element={<CropsPage />} />
+            <Route path="satellite" element={<SatellitePage />} />
           </Route>
           {/* FoxCoin 購入完了 */}
           <Route
@@ -126,7 +128,7 @@ createRoot(document.getElementById('root')).render(
                       </svg>
                     </div>
                     <h1 className="text-2xl font-bold text-gray-900 mb-2">購入完了</h1>
-                    <p className="text-gray-600 mb-6">FoxCoinが翌日から有効になります。</p>
+                    <p className="text-gray-600 mb-6">FoxCoinが有効になりました。</p>
                     <a href="/" className="inline-block bg-yellow-500 hover:bg-yellow-600 text-white font-medium py-2.5 px-6 rounded-lg transition-colors">
                       ダッシュボードへ
                     </a>

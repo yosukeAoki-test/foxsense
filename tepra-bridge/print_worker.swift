@@ -7,6 +7,7 @@ import Foundation
 import IOBluetooth
 import CoreGraphics
 import CoreText
+import CoreImage
 
 setvbuf(stdout, nil, _IONBF, 0)
 setvbuf(stderr, nil, _IONBF, 0)
@@ -64,6 +65,143 @@ func makeRasterHeader(pixelCount: Int) -> Data {
 }
 
 let SEND_AND_CUT = Data([0x1B, 0x7B, 0x04, 0x2B, 0x01, 0x2C, 0x7D])
+
+// =============================================================================
+// QRコード→ラスター変換
+// =============================================================================
+
+func renderQRToRaster(qrData: String, tapePixels: Int) -> [[UInt8]] {
+    guard let filter = CIFilter(name: "CIQRCodeGenerator") else {
+        fputs("[Worker] CIQRCodeGenerator 非対応\n", stderr); return []
+    }
+    filter.setValue(Data(qrData.utf8), forKey: "inputMessage")
+    filter.setValue("M", forKey: "inputCorrectionLevel")
+    guard let rawCI = filter.outputImage else { return [] }
+
+    // テープ高さに合わせてスケール（QRは正方形なので幅＝高さ）
+    let scale = CGFloat(tapePixels) / rawCI.extent.width
+    let scaledCI = rawCI.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+    let canvasW = Int(ceil(scaledCI.extent.width))
+    let canvasH = tapePixels
+
+    // RGBA8バッファへ描画
+    let bpr = canvasW * 4
+    var pixels = [UInt8](repeating: 0xFF, count: bpr * canvasH)
+    let cs = CGColorSpaceCreateDeviceRGB()
+    guard let ctx = CGContext(
+        data: &pixels, width: canvasW, height: canvasH,
+        bitsPerComponent: 8, bytesPerRow: bpr,
+        space: cs, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+    ) else { return [] }
+
+    ctx.setFillColor(red: 1, green: 1, blue: 1, alpha: 1)
+    ctx.fill(CGRect(x: 0, y: 0, width: canvasW, height: canvasH))
+
+    let ciCtx = CIContext(options: nil)
+    guard let cgImg = ciCtx.createCGImage(scaledCI, from: scaledCI.extent) else { return [] }
+    ctx.draw(cgImg, in: CGRect(x: 0, y: 0, width: canvasW, height: canvasH))
+
+    // カラム主体のラスターに変換（テキストと同じ形式）
+    let rasterBPR = (tapePixels + 7) / 8
+    var rasterRows: [[UInt8]] = []
+    for col in 0..<canvasW {
+        var rowBytes = [UInt8](repeating: 0x00, count: rasterBPR)
+        for row in 0..<tapePixels {
+            let y = tapePixels - 1 - row
+            let r = pixels[y * bpr + col * 4]
+            if r < 128 {
+                rowBytes[row / 8] |= UInt8(1 << (7 - (row % 8)))
+            }
+        }
+        rasterRows.append(rowBytes)
+    }
+    return rasterRows
+}
+
+// =============================================================================
+// 2行テキスト→ラスター変換（QRラベル用サイドテキスト）
+// =============================================================================
+
+func renderTwoLineTextToRaster(line1: String, line2: String, tapePixels: Int) -> [[UInt8]] {
+    let halfH = CGFloat(tapePixels) / 2.0
+    let fontSize = halfH * 0.70
+    let font = CTFontCreateWithName("HiraKakuProN-W6" as CFString, fontSize, nil)
+
+    func makeAttrStr(_ text: String) -> NSAttributedString {
+        NSAttributedString(string: text, attributes: [
+            kCTFontAttributeName as NSAttributedString.Key: font,
+            kCTForegroundColorAttributeName as NSAttributedString.Key: CGColor(gray: 0, alpha: 1),
+        ])
+    }
+
+    let ctLine1 = CTLineCreateWithAttributedString(makeAttrStr(line1))
+    let ctLine2 = CTLineCreateWithAttributedString(makeAttrStr(line2))
+
+    var asc1: CGFloat = 0, desc1: CGFloat = 0, lead1: CGFloat = 0
+    CTLineGetTypographicBounds(ctLine1, &asc1, &desc1, &lead1)
+    var asc2: CGFloat = 0, desc2: CGFloat = 0, lead2: CGFloat = 0
+    CTLineGetTypographicBounds(ctLine2, &asc2, &desc2, &lead2)
+
+    // 固定幅キャンバス（テキストが収まるよう大きめ）
+    let canvasW = 400
+    let bpr = canvasW  // 1バイト/px グレースケール
+    var pixels = [UInt8](repeating: 0xFF, count: bpr * tapePixels)
+
+    let cs = CGColorSpaceCreateDeviceGray()
+    guard let ctx = CGContext(
+        data: &pixels, width: canvasW, height: tapePixels,
+        bitsPerComponent: 8, bytesPerRow: bpr,
+        space: cs, bitmapInfo: CGImageAlphaInfo.none.rawValue
+    ) else { return [] }
+    ctx.setFillColor(gray: 1.0, alpha: 1.0)
+    ctx.fill(CGRect(x: 0, y: 0, width: canvasW, height: tapePixels))
+
+    // Line1: 上半分（CG座標: halfH〜tapePixels）
+    let baseline1 = halfH + (halfH - (asc1 + desc1)) / 2.0 + desc1
+    ctx.textPosition = CGPoint(x: 2, y: baseline1)
+    CTLineDraw(ctLine1, ctx)
+
+    // Line2: 下半分（CG座標: 0〜halfH）
+    let baseline2 = (halfH - (asc2 + desc2)) / 2.0 + desc2
+    ctx.textPosition = CGPoint(x: 2, y: baseline2)
+    CTLineDraw(ctLine2, ctx)
+
+    let rBPR = (tapePixels + 7) / 8
+    var rasterRows: [[UInt8]] = []
+    for col in 0..<canvasW {
+        var rowBytes = [UInt8](repeating: 0x00, count: rBPR)
+        for row in 0..<tapePixels {
+            let y = tapePixels - 1 - row
+            if pixels[y * bpr + col] < 128 {
+                rowBytes[row / 8] |= UInt8(1 << (7 - (row % 8)))
+            }
+        }
+        rasterRows.append(rowBytes)
+    }
+    // 末尾の空白列をトリム（余分なテープ送り防止）
+    let blank = [UInt8](repeating: 0x00, count: rBPR)
+    while rasterRows.last == blank { rasterRows.removeLast() }
+    // 右マージン 8列
+    rasterRows += [[UInt8]](repeating: blank, count: 8)
+    print("[Worker] テキスト列数: \(rasterRows.count)")
+    return rasterRows
+}
+
+// =============================================================================
+// QR + テキスト複合ラベル→ラスター変換
+// =============================================================================
+
+func renderLabelToRaster(deviceId: String, imsi: String, tapePixels: Int) -> [[UInt8]] {
+    let qrCols = renderQRToRaster(qrData: deviceId, tapePixels: tapePixels)
+    let rBPR = (tapePixels + 7) / 8
+    let gap = [[UInt8]](repeating: [UInt8](repeating: 0x00, count: rBPR), count: 6)
+    let textCols = renderTwoLineTextToRaster(
+        line1: "ID:\(deviceId)",
+        line2: "IMSI:\(imsi.isEmpty ? "-" : imsi)",
+        tapePixels: tapePixels
+    )
+    return qrCols + gap + textCols
+}
 
 // =============================================================================
 // テキスト→ラスター変換
@@ -160,21 +298,71 @@ let RFCOMM_CHANNEL: BluetoothRFCOMMChannelID = 6
 
 print("[Worker] 印刷開始: \"\(printText)\" tape=\(tapeMm)mm")
 
-guard let device = IOBluetoothDevice(addressString: MAC) else {
-    fputs("[Worker] デバイスが見つかりません\n", stderr)
-    exit(1)
+// IOBluetooth XPC同期のためRunLoopを回す（サブプロセス起動直後は未同期）
+print("[Worker] Bluetooth初期化待機...")
+RunLoop.current.run(until: Date(timeIntervalSinceNow: 3.0))
+
+// pairedDevices() で確実にデバイスを取得
+let paired = IOBluetoothDevice.pairedDevices() as? [IOBluetoothDevice] ?? []
+print("[Worker] ペアリング済みデバイス数: \(paired.count)")
+for d in paired {
+    print("[Worker]   \(d.addressString ?? "?") \(d.name ?? "?")")
 }
-print("[Worker] 接続状態: \(device.isConnected())")
+
+let device: IOBluetoothDevice
+let macNorm = MAC.uppercased().replacingOccurrences(of: ":", with: "-")
+if let found = paired.first(where: { ($0.addressString?.uppercased() ?? "") == macNorm }) {
+    device = found
+    print("[Worker] pairedDevices から取得: \(device.name ?? "?")")
+} else {
+    // フォールバック: addressString で生成
+    guard let d = IOBluetoothDevice(addressString: MAC) else {
+        fputs("[Worker] デバイスが見つかりません\n", stderr)
+        exit(1)
+    }
+    device = d
+    print("[Worker] addressString から取得 (フォールバック)")
+}
+
+print("[Worker] isConnected: \(device.isConnected())")
+print("[Worker] isPaired: \(device.isPaired())")
+print("[Worker] SDPサービス数: \((device.services as? [IOBluetoothSDPServiceRecord])?.count ?? 0)")
+
+// isConnected が true になるまで最大15秒待機
+if !device.isConnected() {
+    print("[Worker] isConnected 待機中...")
+    for i in 1...15 {
+        runLoop(1.0)
+        if device.isConnected() {
+            print("[Worker] isConnected: true (\(i)秒後)")
+            break
+        }
+        if i == 15 {
+            print("[Worker] isConnected タイムアウト - そのまま続行")
+        }
+    }
+}
 
 let delegate = RFCOMMDelegate()
-var channel: IOBluetoothRFCOMMChannel? = nil
-let openResult = device.openRFCOMMChannelSync(&channel, withChannelID: RFCOMM_CHANNEL, delegate: delegate)
+var rfcomm: IOBluetoothRFCOMMChannel? = nil
 
-guard openResult == kIOReturnSuccess, let rfcomm = channel else {
-    fputs("[Worker] RFCOMM ch\(RFCOMM_CHANNEL) オープン失敗 (status=\(openResult))\n", stderr)
+// RFCOMM open をリトライ（IOBluetooth の認識遅れ対策）
+for attempt in 1...6 {
+    var channel: IOBluetoothRFCOMMChannel? = nil
+    let result = device.openRFCOMMChannelSync(&channel, withChannelID: RFCOMM_CHANNEL, delegate: delegate)
+    print("[Worker] RFCOMM open attempt=\(attempt)/6 status=\(result) channel=\(channel != nil)")
+    if result == kIOReturnSuccess, let ch = channel {
+        rfcomm = ch
+        print("[Worker] RFCOMM ch6 OK MTU=\(ch.getMTU()) isOpen=\(ch.isOpen())")
+        break
+    }
+    if attempt < 6 { runLoop(3.0) }
+}
+
+guard let rfcomm else {
+    fputs("[Worker] RFCOMM ch\(RFCOMM_CHANNEL) オープン失敗 - 全リトライ消費\n", stderr)
     exit(1)
 }
-print("[Worker] RFCOMM ch6 OK MTU=\(rfcomm.getMTU())")
 
 func send(_ data: Data) {
     var bytes = [UInt8](data)
@@ -199,9 +387,27 @@ if delegate.buf.count >= 17 {
 }
 let tapeBytesPerRow = (tapePixels + 7) / 8
 
-// ラスター化
-print("[Worker] ラスター化: \"\(printText)\" (\(tapePixels)px)")
-let rasterRows = renderTextToRaster(text: printText, tapePixels: tapePixels)
+// ラスター化（QRラベル or テキスト）
+let isQR = printText.hasPrefix("QR:")
+let isCut = printText == "CUT"
+let renderTarget = isQR ? String(printText.dropFirst(3)) : printText
+let rasterRows: [[UInt8]]
+if isCut {
+    // カットトリガー: 1列の空白ラスターのみ（テープ送り最小化）
+    let rBPR = (tapePixels + 7) / 8
+    rasterRows = [[UInt8](repeating: 0x00, count: rBPR)]
+    print("[Worker] カットトリガーモード")
+} else if isQR {
+    // "DEVICEID" または "DEVICEID:IMSI" 形式
+    let parts = renderTarget.split(separator: ":", maxSplits: 1)
+    let deviceId = String(parts[0])
+    let imsi = parts.count > 1 ? String(parts[1]) : ""
+    print("[Worker] ラスター化: Label id=\(deviceId) imsi=\(imsi.isEmpty ? "なし" : imsi) (\(tapePixels)px)")
+    rasterRows = renderLabelToRaster(deviceId: deviceId, imsi: imsi, tapePixels: tapePixels)
+} else {
+    print("[Worker] ラスター化: TEXT \"\(renderTarget)\" (\(tapePixels)px)")
+    rasterRows = renderTextToRaster(text: renderTarget, tapePixels: tapePixels)
+}
 guard !rasterRows.isEmpty else {
     fputs("[Worker] ラスター変換失敗\n", stderr)
     rfcomm.close()
@@ -209,9 +415,7 @@ guard !rasterRows.isEmpty else {
 }
 print("[Worker] ラスター行数: \(rasterRows.count)")
 
-// カッター位置までの余白行数（SR-R2500P: 約212行 = 約30mm）
-let cutterFeedRows = 212
-let totalRows = rasterRows.count + cutterFeedRows
+let totalRows = rasterRows.count
 
 // 印刷
 send(makeJobEnvironmentCommand())
@@ -231,19 +435,18 @@ for (i, rowBytes) in rasterRows.enumerated() {
     send(lineData)
     if i % 100 == 0 { runLoop(0.02) }
 }
+runLoop(1.0)
 
-// テキスト後に空白行でカッター位置まで送る
-let blankRow = Data(repeating: 0x00, count: tapeBytesPerRow)
-for i in 0..<cutterFeedRows {
-    var lineData = rasterHeader
-    lineData += blankRow
-    send(lineData)
-    if i % 100 == 0 { runLoop(0.02) }
-}
-runLoop(2.0)
+// ラスター送信後にSTATUS_OFFを送ってからSEND_AND_CUT (print_test.swiftと同じシーケンス)
+print("[Worker] STATUS_OFF送信 (カット前チェック)...")
+delegate.buf = Data()
+send(STATUS_OFF)
+runLoop(1.5)
+print("[Worker] STATUS応答: \(delegate.buf.count)バイト")
 
+print("[Worker] SEND_AND_CUT送信...")
 send(SEND_AND_CUT)
-runLoop(8.0)
+runLoop(6.0)
 
 rfcomm.close()
 print("[Worker] 印刷完了")
