@@ -313,7 +313,7 @@ void setup() {
                 childDataList[i].needsPairing = false;
             }
 
-            sendWakeSignalV2(cachedParentIdHash);
+            // sendWakeSignalV2(cachedParentIdHash);  // MWX子機は自律送信のため不要
 
             readParentSensors();
 
@@ -395,9 +395,9 @@ void setup() {
         executePairingMode();
     }
 
-    // v2起床信号送信
-    Serial.println("\n[TWELITE] Sending v2 wake signal...");
-    sendWakeSignalV2(cachedParentIdHash);
+    // MWX子機は自律送信のため起床信号不要
+    // （旧ATmega子機との互換が必要な場合のみ有効化）
+    // sendWakeSignalV2(cachedParentIdHash);
 
     // 親機のセンサーデータ取得（5サンプル中央値フィルタ）
     Serial.println("\n[SENSOR] Reading parent BME280 (5-sample median)...");
@@ -517,8 +517,8 @@ bool collectChildData() {
 
             buffer[bufferIndex++] = b;
 
-            // フッター検出 → パケット解析
-            if (b == TWELITE_FOOTER && bufferIndex >= 13) {
+            // フッター検出 → パケット解析 (MWX=17B, v3=21B, v2=19B)
+            if (b == TWELITE_FOOTER && bufferIndex >= 17) {
                 parseChildPacketV2(buffer, bufferIndex);
                 bufferIndex = 0;
 
@@ -542,11 +542,52 @@ bool collectChildData() {
 
 /**
  * 子機パケット解析（v3/v2/v1後方互換）
- * v3 (21バイト): [0xA5][0x03][CMD_DATA][HASH_4][ID_4][TEMP_2][HUMID_2][PRES_2][RSSI][BAT][CHKSUM][0x5A]
- * v2 (19バイト): [0xA5][0x02][CMD_DATA][HASH_4][ID_4][TEMP_2][HUMID_2][RSSI][BAT][CHKSUM][0x5A]
+ * MWX (17バイト): [0xA5][0x04][ID_4][TEMP_2][HUMID_2][PRES_2][LQI][BAT_2][CHKSUM][0x5A]
+ * v3  (21バイト): [0xA5][0x03][CMD_DATA][HASH_4][ID_4][TEMP_2][HUMID_2][PRES_2][RSSI][BAT][CHKSUM][0x5A]
+ * v2  (19バイト): [0xA5][0x02][CMD_DATA][HASH_4][ID_4][TEMP_2][HUMID_2][RSSI][BAT][CHKSUM][0x5A]
  */
 void parseChildPacketV2(uint8_t* buffer, int length) {
     uint8_t pktVer = buffer[1];
+
+    // MWXパケット (FoxSenseParent TWELITE から): 17バイト
+    if (length >= 17 && pktVer == 0x04) {
+        // チェックサム検証: bytes[1]..bytes[15] の XOR
+        uint8_t cs = 0;
+        for (int i = 1; i <= 14; i++) cs ^= buffer[i];
+        if (buffer[15] != cs) {
+            Serial.println("[TWELITE] MWX checksum mismatch");
+            return;
+        }
+        uint32_t deviceId  = ((uint32_t)buffer[2] << 24) | ((uint32_t)buffer[3] << 16) |
+                             ((uint32_t)buffer[4] << 8)  | (uint32_t)buffer[5];
+        float temperature  = (int16_t)((buffer[6]  << 8) | buffer[7])  / 100.0f;
+        float humidity     = (int16_t)((buffer[8]  << 8) | buffer[9])  / 100.0f;
+        float pressure     = ((uint16_t)((buffer[10] << 8) | buffer[11])) / 10.0f;
+        uint8_t lqi        = buffer[12];
+        uint16_t vcc_mv    = (buffer[13] << 8) | buffer[14];
+        // LQI → 近似RSSI(dBm): LQI=0→-100dBm, LQI=255→-30dBm
+        int8_t  rssi       = (int8_t)((int)lqi * 70 / 255 - 100);
+        // VCC(mV) → バッテリー%(2200mV=0%, 3300mV=100%)
+        int bat_pct = (int)(vcc_mv - 2200) * 100 / 1100;
+        uint8_t battery    = (uint8_t)(bat_pct < 0 ? 0 : bat_pct > 100 ? 100 : bat_pct);
+
+        Serial.printf("[TWELITE] MWX from 0x%08X: %.2fC %.2f%% %.1fhPa LQI:%d VCC:%dmV Bat:%d%%\n",
+                      deviceId, temperature, humidity, pressure, lqi, vcc_mv, battery);
+
+        for (int i = 0; i < MAX_CHILD_DEVICES; i++) {
+            if (childDataList[i].deviceId == deviceId) {
+                childDataList[i].temperature = temperature;
+                childDataList[i].humidity    = humidity;
+                childDataList[i].pressure    = pressure;
+                childDataList[i].rssi        = rssi;
+                childDataList[i].battery     = battery;
+                childDataList[i].received    = true;
+                childDataList[i].timestamp   = millis();
+                break;
+            }
+        }
+        return;
+    }
 
     // v3パケット: 21バイト（気圧あり）
     if (length >= 21 && pktVer == 0x03 && buffer[2] == TWELITE_CMD_DATA) {
