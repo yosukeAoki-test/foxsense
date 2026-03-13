@@ -355,53 +355,84 @@ void handlePairingRequest(uint8_t* buffer, int length) {
  * フォーマット: [0xA5][VER][CMD_DATA][PARENT_HASH_4][CHILD_ID_4][TEMP_2][HUMID_2][RSSI][BATTERY][CHECKSUM][0x5A]
  * 合計: 19バイト
  */
+/**
+ * v3データ応答パケット送信
+ * BME280を3回測定し中央値を採用（外れ値排除）
+ * フォーマット v3 (21バイト):
+ * [A5][03][02][HASH_4][ID_4][TEMP_2][HUMID_2][PRES_2][RSSI][BAT][CHKSUM][5A]
+ * 気圧: uint16_t = hPa × 10（300〜1100hPa → 3000〜11000）
+ */
 void sendDataResponse(uint32_t parentIdHash) {
-    float temperature = bme.readTemperature();
-    float humidity = bme.readHumidity();
+    const int N = 3;
+    float temps[N], humids[N], presses[N];
+    int validCount = 0;
 
-    // 異常値チェック
-    if (isnan(temperature) || temperature < -40 || temperature > 85) {
-        temperature = 0;
-        humidity = 0;
+    // ウォームアップ読み捨て
+    bme.readTemperature();
+    delay(50);
+
+    for (int i = 0; i < N; i++) {
+        float t = bme.readTemperature();
+        float h = bme.readHumidity();
+        float p = bme.readPressure() / 100.0f;
+
+        if (!isnan(t) && t >= -40.0f && t <= 85.0f &&
+            !isnan(h) && h >= 0.0f   && h <= 100.0f &&
+            !isnan(p) && p >= 300.0f && p <= 1100.0f) {
+            // 挿入ソート（温度基準）
+            int j = validCount - 1;
+            while (j >= 0 && temps[j] > t) {
+                temps[j+1]   = temps[j];
+                humids[j+1]  = humids[j];
+                presses[j+1] = presses[j];
+                j--;
+            }
+            temps[j+1]   = t;
+            humids[j+1]  = h;
+            presses[j+1] = p;
+            validCount++;
+        }
+        if (i < N - 1) delay(100);
     }
 
-    int16_t tempRaw = (int16_t)(temperature * 100);
-    int16_t humidRaw = (int16_t)(humidity * 100);
-    int8_t rssi = estimateRssi();
-    uint8_t battery = readBatteryPercent();
+    float temperature = 0, humidity = 0, pressure = 0;
+    if (validCount > 0) {
+        int mid = validCount / 2;
+        temperature = temps[mid];
+        humidity    = humids[mid];
+        pressure    = presses[mid];
+    }
 
-    uint8_t packet[19];
-    packet[0] = TWELITE_HEADER;
-    packet[1] = PROTOCOL_VERSION;
-    packet[2] = TWELITE_CMD_DATA;
-    // parentIdHash
-    packet[3] = (parentIdHash >> 24) & 0xFF;
-    packet[4] = (parentIdHash >> 16) & 0xFF;
-    packet[5] = (parentIdHash >> 8) & 0xFF;
-    packet[6] = parentIdHash & 0xFF;
-    // myDeviceId
-    packet[7] = (myDeviceId >> 24) & 0xFF;
-    packet[8] = (myDeviceId >> 16) & 0xFF;
-    packet[9] = (myDeviceId >> 8) & 0xFF;
+    int16_t  tempRaw  = (int16_t)(temperature * 100);
+    int16_t  humidRaw = (int16_t)(humidity * 100);
+    uint16_t presRaw  = (uint16_t)(pressure * 10);   // hPa×10
+    int8_t   rssi     = estimateRssi();
+    uint8_t  battery  = readBatteryPercent();
+
+    uint8_t packet[21];
+    packet[0]  = TWELITE_HEADER;
+    packet[1]  = PROTOCOL_VERSION;       // 0x03
+    packet[2]  = TWELITE_CMD_DATA;
+    packet[3]  = (parentIdHash >> 24) & 0xFF;
+    packet[4]  = (parentIdHash >> 16) & 0xFF;
+    packet[5]  = (parentIdHash >> 8)  & 0xFF;
+    packet[6]  = parentIdHash & 0xFF;
+    packet[7]  = (myDeviceId >> 24) & 0xFF;
+    packet[8]  = (myDeviceId >> 16) & 0xFF;
+    packet[9]  = (myDeviceId >> 8)  & 0xFF;
     packet[10] = myDeviceId & 0xFF;
-    // temperature
-    packet[11] = (tempRaw >> 8) & 0xFF;
+    packet[11] = (tempRaw >> 8)  & 0xFF;
     packet[12] = tempRaw & 0xFF;
-    // humidity
     packet[13] = (humidRaw >> 8) & 0xFF;
     packet[14] = humidRaw & 0xFF;
-    // rssi & battery
-    packet[15] = (uint8_t)rssi;
-    packet[16] = battery;
-    // checksum
-    packet[17] = computePacketChecksum(packet, 17);
-    packet[18] = TWELITE_FOOTER;
+    packet[15] = (presRaw >> 8)  & 0xFF;
+    packet[16] = presRaw & 0xFF;
+    packet[17] = (uint8_t)rssi;
+    packet[18] = battery;
+    packet[19] = computePacketChecksum(packet, 19);
+    packet[20] = TWELITE_FOOTER;
 
-    Serial.write(packet, 19);
-
-    // デバッグ出力（標準出力と兼用の場合はコメントアウト）
-    // Serial.printf("[DATA] Sent: %.2fC, %.2f%%, RSSI:%d, Bat:%d%%\n",
-    //              temperature, humidity, rssi, battery);
+    Serial.write(packet, 21);
 }
 
 /**

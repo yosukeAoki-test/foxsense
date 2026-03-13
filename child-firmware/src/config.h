@@ -8,7 +8,7 @@
 // ファームウェアレベルでは設定不要（TWELITE内蔵シリアル使用）
 
 // プロトコルバージョン（親機と一致必須）
-#define PROTOCOL_VERSION 0x02
+#define PROTOCOL_VERSION 0x03  // v3: 気圧センサー対応
 
 // TWELITEプロトコルコマンド定義
 #define TWELITE_HEADER      0xA5

@@ -21,6 +21,7 @@ model User {
   updatedAt            DateTime              @updatedAt
   childDevices         ChildDevice[]
   foxCoinBalance       FoxCoinBalance?
+  fields               Field[]
   foxCoinLogs          FoxCoinLog[]
   foxCoinPurchases     FoxCoinPurchase[]
   parentDevices        ParentDevice[]
@@ -110,6 +111,7 @@ model SensorData {
   deviceType  String
   temperature Float
   humidity    Float
+  pressure    Float?
   battery     Float?
   rssi        Int?
   timestamp   DateTime      @default(now())
@@ -205,6 +207,22 @@ model PrintJob {
   createdBy String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model Field {
+  id        String   @id @default(uuid())
+  userId    String
+  name      String
+  cropType  String?
+  areaHa    Float?
+  bbox      String   // JSON: [lon_min, lat_min, lon_max, lat_max]
+  polygon   String?  // JSON: [[lon, lat], ...]
+  note      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model AlertSettings {

@@ -10,7 +10,7 @@
 #define DEVICE_SECRET "CHANGE_ME"          // デバイスシークレット（サーバー認証用）
 
 // プロトコルバージョン
-#define PROTOCOL_VERSION 0x02              // v2: parentIdHash対応
+#define PROTOCOL_VERSION 0x03              // v3: 気圧センサー対応（v2後方互換）
 
 // 動作モード設定
 #define USE_TEST_MODE false                // true=30秒間隔テスト, false=10分間隔本番

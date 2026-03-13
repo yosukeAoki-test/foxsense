@@ -38,6 +38,7 @@ struct ChildData {
     uint32_t deviceId;      // 子機ID
     float temperature;      // 温度
     float humidity;         // 湿度
+    float pressure;         // 気圧 (hPa, v3以降)
     int8_t rssi;            // 電波強度
     uint8_t battery;        // バッテリーレベル
     bool received;          // データ受信済みフラグ
@@ -91,10 +92,12 @@ struct ModemState {
 struct ParentData {
     float temperature;
     float humidity;
+    float pressure;    // 気圧 (hPa)
     int batteryLevel;
 } parentData;
 
 // 関数プロトタイプ
+bool readParentSensors();
 bool initModem();
 bool powerOnModem();
 void powerOffModem();
@@ -140,6 +143,77 @@ uint32_t computeParentIdHashLocal(const char* deviceId) {
         hash *= 16777619u;
     }
     return hash;
+}
+
+/**
+ * 親機BME280センサー多サンプリング読み取り
+ * ラズパイ report.sh の手法を移植:
+ *  - ウォームアップ読み捨て1回
+ *  - 5回測定 → 温度で挿入ソート → 中央値採用（外れ値に強い）
+ *  - 失敗時はI2C再初期化リトライ（最大1回）
+ */
+bool readParentSensors() {
+    const int NUM_SAMPLES = 5;
+    float temps[NUM_SAMPLES], humids[NUM_SAMPLES], presses[NUM_SAMPLES];
+    int validCount = 0;
+
+    // ウォームアップ（最初の1回は捨てる）
+    bme.readTemperature();
+    delay(100);
+
+    for (int i = 0; i < NUM_SAMPLES; i++) {
+        float t = bme.readTemperature();
+        float h = bme.readHumidity();
+        float p = bme.readPressure() / 100.0f;  // Pa → hPa
+
+        if (!isnan(t) && t >= -40.0f && t <= 85.0f &&
+            !isnan(h) && h >= 0.0f  && h <= 100.0f &&
+            !isnan(p) && p >= 300.0f && p <= 1100.0f) {
+            // 挿入ソート（温度基準）
+            int j = validCount - 1;
+            while (j >= 0 && temps[j] > t) {
+                temps[j+1]   = temps[j];
+                humids[j+1]  = humids[j];
+                presses[j+1] = presses[j];
+                j--;
+            }
+            temps[j+1]   = t;
+            humids[j+1]  = h;
+            presses[j+1] = p;
+            validCount++;
+        }
+        if (i < NUM_SAMPLES - 1) delay(200);
+    }
+
+    if (validCount == 0) {
+        // リトライ: I2C再初期化
+        Serial.println("[SENSOR] BME280 read failed, reinit I2C...");
+        Wire.end();
+        delay(300);
+        Wire.begin(BME280_SDA_PIN, BME280_SCL_PIN);
+        if (!bme.begin(0x76) && !bme.begin(0x77)) {
+            Serial.println("[ERROR] BME280 reinit failed");
+            parentData.temperature = 0;
+            parentData.humidity    = 0;
+            parentData.pressure    = 0;
+            return false;
+        }
+        delay(300);
+        float t = bme.readTemperature();
+        float h = bme.readHumidity();
+        float p = bme.readPressure() / 100.0f;
+        parentData.temperature = (!isnan(t) && t >= -40 && t <= 85) ? t : 0;
+        parentData.humidity    = (!isnan(h) && h >= 0 && h <= 100)  ? h : 0;
+        parentData.pressure    = (!isnan(p) && p >= 300 && p <= 1100) ? p : 0;
+        return parentData.temperature != 0;
+    }
+
+    // 中央値採用
+    int mid = validCount / 2;
+    parentData.temperature = temps[mid];
+    parentData.humidity    = humids[mid];
+    parentData.pressure    = presses[mid];
+    return true;
 }
 
 /**
@@ -235,13 +309,13 @@ void setup() {
                 childDataList[i].received = false;
                 childDataList[i].temperature = 0;
                 childDataList[i].humidity = 0;
+                childDataList[i].pressure = 0;
                 childDataList[i].needsPairing = false;
             }
 
             sendWakeSignalV2(cachedParentIdHash);
 
-            parentData.temperature = bme.readTemperature();
-            parentData.humidity = bme.readHumidity();
+            readParentSensors();
 
             if (activeChildCount > 0) {
                 collectChildData();
@@ -325,19 +399,14 @@ void setup() {
     Serial.println("\n[TWELITE] Sending v2 wake signal...");
     sendWakeSignalV2(cachedParentIdHash);
 
-    // 親機のセンサーデータ取得
-    Serial.println("\n[SENSOR] Reading parent BME280...");
-    parentData.temperature = bme.readTemperature();
-    parentData.humidity = bme.readHumidity();
-
-    if (isnan(parentData.temperature) || parentData.temperature < -40 || parentData.temperature > 85) {
-        Serial.println("[WARN] Invalid parent sensor data");
-        parentData.temperature = 0;
-        parentData.humidity = 0;
+    // 親機のセンサーデータ取得（5サンプル中央値フィルタ）
+    Serial.println("\n[SENSOR] Reading parent BME280 (5-sample median)...");
+    if (!readParentSensors()) {
+        Serial.println("[WARN] Parent sensor read failed, using zeros");
     }
-
     Serial.printf("  Parent Temp: %.2f C\n", parentData.temperature);
     Serial.printf("  Parent Humidity: %.2f %%\n", parentData.humidity);
+    Serial.printf("  Parent Pressure: %.1f hPa\n", parentData.pressure);
 
     // 子機データ収集（タイムアウトまで待機）
     if (activeChildCount > 0) {
@@ -472,58 +541,84 @@ bool collectChildData() {
 }
 
 /**
- * v2子機パケット解析（parentIdHash検証付き）
- * フォーマット: [0xA5][VERSION][CMD_DATA][PARENT_ID_HASH_4bytes][CHILD_ID_4bytes][TEMP_2bytes][HUMID_2bytes][RSSI][BATTERY][CHECKSUM][0x5A]
- * 合計: 19バイト
+ * 子機パケット解析（v3/v2/v1後方互換）
+ * v3 (21バイト): [0xA5][0x03][CMD_DATA][HASH_4][ID_4][TEMP_2][HUMID_2][PRES_2][RSSI][BAT][CHKSUM][0x5A]
+ * v2 (19バイト): [0xA5][0x02][CMD_DATA][HASH_4][ID_4][TEMP_2][HUMID_2][RSSI][BAT][CHKSUM][0x5A]
  */
 void parseChildPacketV2(uint8_t* buffer, int length) {
-    // v2パケット: 最低19バイト
-    if (length >= 19 && buffer[1] == PROTOCOL_VERSION && buffer[2] == TWELITE_CMD_DATA) {
-        // チェックサム検証
+    uint8_t pktVer = buffer[1];
+
+    // v3パケット: 21バイト（気圧あり）
+    if (length >= 21 && pktVer == 0x03 && buffer[2] == TWELITE_CMD_DATA) {
         uint8_t expectedChecksum = computeChecksum(buffer, length - 2);
         if (buffer[length - 2] != expectedChecksum) {
-            Serial.println("[TWELITE] v2 checksum mismatch, ignoring packet");
+            Serial.println("[TWELITE] v3 checksum mismatch");
             return;
         }
-
-        // parentIdHash検証
-        uint32_t receivedHash = ((uint32_t)buffer[3] << 24) |
-                                ((uint32_t)buffer[4] << 16) |
-                                ((uint32_t)buffer[5] << 8) |
-                                (uint32_t)buffer[6];
-
+        uint32_t receivedHash = ((uint32_t)buffer[3] << 24) | ((uint32_t)buffer[4] << 16) |
+                                ((uint32_t)buffer[5] << 8)  | (uint32_t)buffer[6];
         if (receivedHash != cachedParentIdHash) {
-            Serial.printf("[TWELITE] v2 parentIdHash mismatch: received 0x%08X, expected 0x%08X\n",
-                          receivedHash, cachedParentIdHash);
+            Serial.printf("[TWELITE] v3 hash mismatch: 0x%08X vs 0x%08X\n", receivedHash, cachedParentIdHash);
             return;
         }
+        uint32_t deviceId = ((uint32_t)buffer[7] << 24) | ((uint32_t)buffer[8] << 16) |
+                            ((uint32_t)buffer[9] << 8)  | (uint32_t)buffer[10];
+        float temperature = (int16_t)((buffer[11] << 8) | buffer[12]) / 100.0f;
+        float humidity    = (int16_t)((buffer[13] << 8) | buffer[14]) / 100.0f;
+        float pressure    = ((uint16_t)((buffer[15] << 8) | buffer[16])) / 10.0f;  // ×10 decode
+        int8_t rssi       = (int8_t)buffer[17];
+        uint8_t battery   = buffer[18];
 
-        // 子機ID取得
-        uint32_t deviceId = ((uint32_t)buffer[7] << 24) |
-                            ((uint32_t)buffer[8] << 16) |
-                            ((uint32_t)buffer[9] << 8) |
-                            (uint32_t)buffer[10];
+        Serial.printf("[TWELITE] v3 from 0x%08X: %.2fC %.2f%% %.1fhPa RSSI:%d Bat:%d%%\n",
+                      deviceId, temperature, humidity, pressure, rssi, battery);
 
-        // センサーデータ取得
-        int16_t tempRaw = (buffer[11] << 8) | buffer[12];
-        float temperature = tempRaw / 100.0;
-        int16_t humidRaw = (buffer[13] << 8) | buffer[14];
-        float humidity = humidRaw / 100.0;
-        int8_t rssi = (int8_t)buffer[15];
-        uint8_t battery = buffer[16];
-
-        Serial.printf("[TWELITE] v2 Received from 0x%08X: %.2fC, %.2f%%, RSSI:%d, Bat:%d%%\n",
-                      deviceId, temperature, humidity, rssi, battery);
-
-        // 該当する子機データを更新
         for (int i = 0; i < MAX_CHILD_DEVICES; i++) {
             if (childDataList[i].deviceId == deviceId) {
                 childDataList[i].temperature = temperature;
-                childDataList[i].humidity = humidity;
-                childDataList[i].rssi = rssi;
-                childDataList[i].battery = battery;
-                childDataList[i].received = true;
-                childDataList[i].timestamp = millis();
+                childDataList[i].humidity    = humidity;
+                childDataList[i].pressure    = pressure;
+                childDataList[i].rssi        = rssi;
+                childDataList[i].battery     = battery;
+                childDataList[i].received    = true;
+                childDataList[i].timestamp   = millis();
+                break;
+            }
+        }
+        return;
+    }
+
+    // v2パケット: 19バイト（後方互換）
+    if (length >= 19 && pktVer == 0x02 && buffer[2] == TWELITE_CMD_DATA) {
+        uint8_t expectedChecksum = computeChecksum(buffer, length - 2);
+        if (buffer[length - 2] != expectedChecksum) {
+            Serial.println("[TWELITE] v2 checksum mismatch");
+            return;
+        }
+        uint32_t receivedHash = ((uint32_t)buffer[3] << 24) | ((uint32_t)buffer[4] << 16) |
+                                ((uint32_t)buffer[5] << 8)  | (uint32_t)buffer[6];
+        if (receivedHash != cachedParentIdHash) {
+            Serial.printf("[TWELITE] v2 hash mismatch: 0x%08X vs 0x%08X\n", receivedHash, cachedParentIdHash);
+            return;
+        }
+        uint32_t deviceId = ((uint32_t)buffer[7] << 24) | ((uint32_t)buffer[8] << 16) |
+                            ((uint32_t)buffer[9] << 8)  | (uint32_t)buffer[10];
+        float temperature = (int16_t)((buffer[11] << 8) | buffer[12]) / 100.0f;
+        float humidity    = (int16_t)((buffer[13] << 8) | buffer[14]) / 100.0f;
+        int8_t rssi       = (int8_t)buffer[15];
+        uint8_t battery   = buffer[16];
+
+        Serial.printf("[TWELITE] v2 from 0x%08X: %.2fC %.2f%% RSSI:%d Bat:%d%%\n",
+                      deviceId, temperature, humidity, rssi, battery);
+
+        for (int i = 0; i < MAX_CHILD_DEVICES; i++) {
+            if (childDataList[i].deviceId == deviceId) {
+                childDataList[i].temperature = temperature;
+                childDataList[i].humidity    = humidity;
+                childDataList[i].pressure    = 0;  // v2には気圧なし
+                childDataList[i].rssi        = rssi;
+                childDataList[i].battery     = battery;
+                childDataList[i].received    = true;
+                childDataList[i].timestamp   = millis();
                 break;
             }
         }
@@ -1115,6 +1210,7 @@ bool sendAllDataToServer() {
     payload += "\"parent\":{";
     payload += "\"temperature\":" + String(parentData.temperature, 2) + ",";
     payload += "\"humidity\":" + String(parentData.humidity, 2) + ",";
+    payload += "\"pressure\":" + String(parentData.pressure, 1) + ",";
     payload += "\"battery\":" + String(parentData.batteryLevel) + ",";
     payload += "\"signal\":" + String(modemState.signalStrength);
     payload += "},";
@@ -1135,6 +1231,7 @@ bool sendAllDataToServer() {
             payload += "\"device_id\":\"" + String(hexId) + "\",";
             payload += "\"temperature\":" + String(childDataList[i].temperature, 2) + ",";
             payload += "\"humidity\":" + String(childDataList[i].humidity, 2) + ",";
+            payload += "\"pressure\":" + String(childDataList[i].pressure, 1) + ",";
             payload += "\"rssi\":" + String(childDataList[i].rssi) + ",";
             payload += "\"battery\":" + String(childDataList[i].battery) + ",";
             payload += "\"received\":" + String(childDataList[i].received ? "true" : "false");
