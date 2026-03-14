@@ -143,6 +143,7 @@ function App() {
           isOnline: !!childLatest,
           lastSeen: childLatest?.timestamp || null,
           battery: childLatest?.battery ?? null,
+          voltage: childLatest?.voltage ?? null,
           rssi: childLatest?.rssi ?? null,
           latestData: childLatest
             ? { temperature: childLatest.temperature, humidity: childLatest.humidity, timestamp: childLatest.timestamp }

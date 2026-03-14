@@ -52,20 +52,18 @@ const Dashboard = ({ device, latestData, historyData, alerts, isParent, onDelete
             </div>
 
             {/* バッテリー */}
-            {device.battery != null && (
+            {(device.battery != null || device.voltage != null) && (
               <div className="flex items-center gap-1">
-                <Battery
-                  className={`w-3 h-3 sm:w-4 sm:h-4 ${
-                    device.battery > 20 ? 'text-leaf-500' : 'text-red-500'
-                  }`}
-                />
-                <span
-                  className={`text-xs sm:text-sm ${
-                    device.battery > 20 ? 'text-gray-600' : 'text-red-500'
-                  }`}
-                >
-                  {device.battery}%
-                </span>
+                <Battery className={`w-3 h-3 sm:w-4 sm:h-4 ${(device.battery ?? 100) > 20 ? 'text-leaf-500' : 'text-red-500'}`} />
+                {device.voltage != null ? (
+                  <span className={`text-xs sm:text-sm ${(device.battery ?? 100) > 20 ? 'text-gray-600' : 'text-red-500'}`}>
+                    {(device.voltage / 1000).toFixed(2)}V{device.battery != null && ` (${device.battery}%)`}
+                  </span>
+                ) : (
+                  <span className={`text-xs sm:text-sm ${device.battery > 20 ? 'text-gray-600' : 'text-red-500'}`}>
+                    {device.battery}%
+                  </span>
+                )}
               </div>
             )}
 

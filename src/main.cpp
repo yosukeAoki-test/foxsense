@@ -40,7 +40,8 @@ struct ChildData {
     float humidity;         // 湿度
     float pressure;         // 気圧 (hPa, v3以降)
     int8_t rssi;            // 電波強度
-    uint8_t battery;        // バッテリーレベル
+    uint8_t battery;        // バッテリーレベル (0-100%)
+    uint16_t vccMv;         // VCC電圧 mV (MWX子機のみ、0=未取得)
     bool received;          // データ受信済みフラグ
     unsigned long timestamp;// 受信時刻
     uint8_t logicalId;      // 論理ID
@@ -116,6 +117,7 @@ uint64_t calculateSleepDuration();
 // TWELITE関数
 void initTwelite();
 void sendWakeSignalV2(uint32_t parentIdHash);
+void sendMWXWakeTrigger();
 bool collectChildData();
 void parseChildPacketV2(uint8_t* buffer, int length);
 bool isAllChildDataReceived();
@@ -310,10 +312,11 @@ void setup() {
                 childDataList[i].temperature = 0;
                 childDataList[i].humidity = 0;
                 childDataList[i].pressure = 0;
+                childDataList[i].vccMv = 0;
                 childDataList[i].needsPairing = false;
             }
 
-            // sendWakeSignalV2(cachedParentIdHash);  // MWX子機は自律送信のため不要
+            sendMWXWakeTrigger();
 
             readParentSensors();
 
@@ -381,6 +384,7 @@ void setup() {
         childDataList[i].received = false;
         childDataList[i].temperature = 0;
         childDataList[i].humidity = 0;
+        childDataList[i].vccMv = 0;
         childDataList[i].needsPairing = false;
 
         if (cachedChildIds[i] != 0x00000000) {
@@ -395,9 +399,8 @@ void setup() {
         executePairingMode();
     }
 
-    // MWX子機は自律送信のため起床信号不要
-    // （旧ATmega子機との互換が必要な場合のみ有効化）
-    // sendWakeSignalV2(cachedParentIdHash);
+    // 親機TWELITEに起床信号ブロードキャストを指示（15秒間送信）
+    sendMWXWakeTrigger();
 
     // 親機のセンサーデータ取得（5サンプル中央値フィルタ）
     Serial.println("\n[SENSOR] Reading parent BME280 (5-sample median)...");
@@ -464,7 +467,18 @@ void initTwelite() {
 }
 
 /**
- * v2起床信号送信（parentIdHash入り）
+ * MWX親機TWELITEに起床信号ブロードキャスト開始を指示
+ * フォーマット: [0xA5][0x01][0x01][0x5A] (4バイト)
+ * 親機TWELITEが15秒間起床パケットを送信 → 子機が50ms窓で確実に受信
+ */
+void sendMWXWakeTrigger() {
+    uint8_t cmd[4] = {0xA5, 0x01, 0x01, 0x5A};
+    tweliteSerial.write(cmd, 4);
+    Serial.println("[TWELITE] MWX wake trigger sent (15s broadcast)");
+}
+
+/**
+ * v2起床信号送信（parentIdHash入り、旧ATmega子機向け互換）
  * フォーマット: [0xA5][VERSION][CMD_WAKE][PARENT_ID_HASH_4bytes][TIMESTAMP_4bytes][CHECKSUM][0x5A]
  * 合計: 13バイト
  */
@@ -581,6 +595,7 @@ void parseChildPacketV2(uint8_t* buffer, int length) {
                 childDataList[i].pressure    = pressure;
                 childDataList[i].rssi        = rssi;
                 childDataList[i].battery     = battery;
+                childDataList[i].vccMv       = vcc_mv;
                 childDataList[i].received    = true;
                 childDataList[i].timestamp   = millis();
                 break;
@@ -1275,6 +1290,9 @@ bool sendAllDataToServer() {
             payload += "\"pressure\":" + String(childDataList[i].pressure, 1) + ",";
             payload += "\"rssi\":" + String(childDataList[i].rssi) + ",";
             payload += "\"battery\":" + String(childDataList[i].battery) + ",";
+            if (childDataList[i].vccMv > 0) {
+                payload += "\"voltage\":" + String(childDataList[i].vccMv) + ",";
+            }
             payload += "\"received\":" + String(childDataList[i].received ? "true" : "false");
             payload += "}";
         }

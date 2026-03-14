@@ -113,6 +113,7 @@ model SensorData {
   humidity    Float
   pressure    Float?
   battery     Float?
+  voltage     Float?
   rssi        Int?
   timestamp   DateTime      @default(now())
   child       ChildDevice?  @relation(fields: [childId], references: [id], onDelete: Cascade)

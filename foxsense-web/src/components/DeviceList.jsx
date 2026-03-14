@@ -73,7 +73,15 @@ const DeviceList = ({ parent, children, selectedDevice, onSelectDevice, latestDa
 
             {/* デバイス情報 */}
             <div className="flex items-center gap-3 mt-1.5 text-xs text-gray-400">
-              {device.battery != null && (
+              {device.voltage != null ? (
+                <div className="flex items-center gap-1">
+                  <Battery className="w-3 h-3" />
+                  <span>{(device.voltage / 1000).toFixed(2)}V</span>
+                  {device.battery != null && (
+                    <span className="text-gray-300">({device.battery}%)</span>
+                  )}
+                </div>
+              ) : device.battery != null && (
                 <div className="flex items-center gap-1">
                   <Battery className="w-3 h-3" />
                   <span>{device.battery}%</span>
