@@ -39,3 +39,38 @@ sigfox_token.txt
 
 # Claude作業ファイル
 shell/
+
+# MWSTAGE SDK (BIN内のカスタムアプリのみ管理)
+MWSTAGE202508_macOS_R2/MWSDK/
+MWSTAGE202508_macOS_R2/MWSDK2020_10/
+MWSTAGE202508_macOS_R2/MWSDK2020_12/
+MWSTAGE202508_macOS_R2/MWSDK2021_09/
+MWSTAGE202508_macOS_R2/MWSDK2021_12/
+MWSTAGE202508_macOS_R2/MWSDK2022_08/
+MWSTAGE202508_macOS_R2/MWSDK2024_08G/
+MWSTAGE202508_macOS_R2/TWELITE_Stage/
+MWSTAGE202508_macOS_R2/Tools/
+MWSTAGE202508_macOS_R2/log/
+MWSTAGE202508_macOS_R2/.claude/
+MWSTAGE202508_macOS_R2/.vscode/
+MWSTAGE202508_macOS_R2/*.command
+MWSTAGE202508_macOS_R2/*.ini
+MWSTAGE202508_macOS_R2/*.sav
+MWSTAGE202508_macOS_R2/*.txt
+MWSTAGE202508_macOS_R2/*.html
+MWSTAGE202508_macOS_R2/BIN/App_*.bin
+MWSTAGE202508_macOS_R2/BIN/BRD_*.bin
+MWSTAGE202508_macOS_R2/BIN/TWELITE_*.bin
+MWSTAGE202508_macOS_R2/BIN/JennicSniffer*.bin
+MWSTAGE202508_macOS_R2/BIN/twelite_pir_sensor*.bin
+MWSTAGE202508_macOS_R2/BIN/readme-j.txt
+
+# TWELITE MWX ビルド中間ファイル
+foxsense-twelite-child/build/
+foxsense-twelite-parent/build/objs_BLUE/
+foxsense-twelite-parent/build/_mwx_version.c
+foxsense-twelite-parent/build/foxsense-twelite-parent_BLUE_L1305_V1-0-0.bin
+
+# その他
+agri-iot2.zip
+tepra-bridge/print_worker_bin
