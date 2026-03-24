@@ -27,3 +27,8 @@ export const createCheckout = asyncHandler(async (req, res) => {
   const data = await foxcoinsService.createCheckoutSession(req.user.id, packageId);
   res.json({ success: true, data });
 });
+
+export const getReceipt = asyncHandler(async (req, res) => {
+  const data = await foxcoinsService.getReceipt(req.user.id, req.params.purchaseId);
+  res.json({ success: true, data });
+});

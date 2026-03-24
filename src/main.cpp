@@ -27,11 +27,14 @@
 #include <time.h>
 #include <sys/time.h>
 #include "esp_sleep.h"
+#define XPOWERS_CHIP_AXP2101
+#include "XPowersLib.h"
 #include "config.h"
 
 // ディープスリープ間隔
-#define MEASUREMENT_INTERVAL_MIN 10  // 10分間隔
+#define MEASUREMENT_INTERVAL_MIN 10  // 本番10分間隔
 #define NTP_SYNC_INTERVAL_SEC (24 * 60 * 60)  // 24時間
+#define SKIP_BATTERY_CHECK true
 
 // 子機データ構造体
 struct ChildData {
@@ -53,6 +56,7 @@ RTC_DATA_ATTR uint32_t bootCount = 0;
 RTC_DATA_ATTR time_t lastNtpSyncTime = 0;
 RTC_DATA_ATTR bool ntpSynced = false;
 RTC_DATA_ATTR int consecutiveFailures = 0;
+RTC_DATA_ATTR bool modemNeedsReset = false;  // SHCONN失敗時: 次回CFUN=1,1でHTTPモジュール再初期化
 
 // v2: RTCキャッシュ変数（サーバー設定）
 RTC_DATA_ATTR uint32_t cachedParentIdHash = 0;
@@ -78,6 +82,7 @@ int pendingChildCount = 0;
 
 // センサー・通信オブジェクト
 Adafruit_BME280 bme;
+XPowersPMU PMU;
 HardwareSerial modemSerial(1);   // SIM7080G
 HardwareSerial tweliteSerial(2); // TWELITE
 
@@ -107,8 +112,7 @@ bool syncNTP();
 bool sendAllDataToServer();
 String sendATCommand(const String& cmd, unsigned long timeout = 10000);
 void goToDeepSleep(uint64_t sleepTimeSec);
-float readBatteryVoltage();
-int calculateBatteryLevel(float voltage);
+bool initPMU();
 int getSignalStrength();
 void printCurrentTime();
 String getTimestamp();
@@ -188,7 +192,7 @@ bool readParentSensors() {
     }
 
     if (validCount == 0) {
-        // リトライ: I2C再初期化
+        // リトライ: BME280再初期化
         Serial.println("[SENSOR] BME280 read failed, reinit I2C...");
         Wire.end();
         delay(300);
@@ -259,13 +263,14 @@ void setup() {
             break;
     }
 
-    // ピン初期化
+    // ピン初期化 (PWRKEY はアイドル=LOW, アクティブ=HIGH)
     pinMode(MODEM_PWRKEY_PIN, OUTPUT);
     pinMode(MODEM_DTR_PIN, OUTPUT);
-    digitalWrite(MODEM_PWRKEY_PIN, HIGH);
+    digitalWrite(MODEM_PWRKEY_PIN, LOW);  // アイドル状態
     digitalWrite(MODEM_DTR_PIN, LOW);
 
-    // BME280初期化（親機センサー）
+    // BME280初期化（Wire0, SDA=IO2/CAM_SDA, SCL=IO1/CAM_SCK）
+    // カメラ搭載時はこのピンが競合するため配線変更が必要
     Wire.begin(BME280_SDA_PIN, BME280_SCL_PIN);
     bool bmeOk = bme.begin(0x76) || bme.begin(0x77);
     if (!bmeOk) {
@@ -274,14 +279,18 @@ void setup() {
         Serial.println("[OK] BME280 initialized (parent)");
     }
 
-    // バッテリー電圧確認
-    pinMode(BATTERY_PIN, INPUT);
-    float batteryVoltage = readBatteryVoltage();
-    parentData.batteryLevel = calculateBatteryLevel(batteryVoltage);
-    Serial.printf("[INFO] Battery: %.2fV (%d%%)\n", batteryVoltage, parentData.batteryLevel);
+    // バッテリー電圧確認 (AXP2101 PMU)
+    if (initPMU()) {
+        parentData.batteryLevel = PMU.isBatteryConnect() ? PMU.getBatteryPercent() : 0;
+        Serial.printf("[INFO] Battery: %dmV (%d%%) charging=%d\n",
+                      PMU.getBattVoltage(), parentData.batteryLevel, PMU.isCharging());
+    } else {
+        Serial.println("[WARN] PMU (AXP2101) not found, battery unknown");
+        parentData.batteryLevel = 0;
+    }
 
     // 低バッテリー時は長めにスリープ
-    if (parentData.batteryLevel < 10 && parentData.batteryLevel > 0) {
+    if (parentData.batteryLevel > 0 && parentData.batteryLevel < BATTERY_LOW_WARN_THRESHOLD) {
         Serial.println("[WARN] Low battery! Extending sleep duration...");
         goToDeepSleep(MEASUREMENT_INTERVAL_MIN * 60 * 3);
         return;
@@ -431,9 +440,9 @@ void setup() {
         consecutiveFailures++;
     }
 
-    // モデム電源オフ
-    Serial.println("\n[MODEM] Powering off...");
-    powerOffModem();
+    // モデムはOFFにしない: DC3がディープスリープ中も保持され
+    // 次回起動時に既にCat-M1登録済み状態を維持できるため
+    // powerOffModem() は呼ばない
 
     // 次の定時までのスリープ時間を計算
     uint64_t sleepDuration = calculateSleepDuration();
@@ -733,61 +742,86 @@ bool isAllChildDataReceived() {
 bool fetchConfigFromServer() {
     // HTTP GET リクエスト
     String configPath = String(SERVER_CONFIG_PATH) + DEVICE_ID + "?secret=" + DEVICE_SECRET;
-    String url = String("https://") + SERVER_HOST + configPath;
+    String url = String("http://") + SERVER_HOST + configPath;
 
-    sendATCommand("AT+SHDISC", 2000);
-    delay(500);
-
-    sendATCommand("AT+SHCONF=\"URL\",\"" + url + "\"", 3000);
-    sendATCommand("AT+SHCONF=\"BODYLEN\",2048", 2000);
-    sendATCommand("AT+SHCONF=\"HEADERLEN\",350", 2000);
-    sendATCommand("AT+CSSLCFG=\"sslversion\",0,3", 2000);
-    sendATCommand("AT+SHSSL=1,\"\"", 2000);
-
-    String response = sendATCommand("AT+SHCONN", 30000);
-    if (response.indexOf("OK") < 0) {
-        Serial.println("[CONFIG] Connection failed");
+    String r;
+    // 生TCP GETリクエスト (SHCONN はcid=0デフォルトで失敗するため回避)
+    r = sendATCommand("AT+CAOPEN=1,0,\"TCP\",\"" + String(SERVER_HOST) + "\",80", 15000);
+    Serial.printf("[CONFIG] CAOPEN: '%s'\n", r.c_str());
+    if (r.indexOf("OK") < 0) {
+        Serial.println("[CONFIG] TCP connection failed");
         return false;
     }
-
-    response = sendATCommand("AT+SHSTATE?", 3000);
-    if (response.indexOf("+SHSTATE: 1") < 0) {
-        sendATCommand("AT+SHDISC", 2000);
-        return false;
+    // +CAOPEN: <clientID>,0 からclientIDを取得
+    int cfgClientID = 0;
+    {
+        int cidx = r.indexOf("+CAOPEN: ");
+        if (cidx >= 0) {
+            int ns = cidx + 9;
+            int cm = r.indexOf(",", ns);
+            if (cm > ns) cfgClientID = r.substring(ns, cm).toInt();
+        }
     }
+    Serial.printf("[CONFIG] clientID: %d\n", cfgClientID);
+    delay(200);
 
-    sendATCommand("AT+SHCHEAD", 2000);
-    sendATCommand("AT+SHAHEAD=\"Accept\",\"application/json\"", 2000);
+    // GETリクエスト送信 (HTTP/1.1 + keep-alive)
+    String httpReq = "GET " + configPath + " HTTP/1.1\r\n";
+    httpReq += "Host: " + String(SERVER_HOST) + "\r\n";
+    httpReq += "Connection: keep-alive\r\n\r\n";
 
-    // GET リクエスト (method 1 = GET)
-    response = sendATCommand("AT+SHREQ=\"" + configPath + "\",1", 60000);
+    r = sendATCommand("AT+CASEND=" + String(cfgClientID) + "," + String(httpReq.length()), 5000);
+    Serial.printf("[CONFIG] CASEND prompt: '%s'\n", r.c_str());
+    modemSerial.print(httpReq);
+
+    // +CADATAIND 検出後すぐにCARECV (buffer clearなし)
+    String cfgBuf = "";
+    String cfgResp = "";
+    unsigned long t = millis();
+    while (millis() - t < 12000) {
+        while (modemSerial.available()) cfgBuf += (char)modemSerial.read();
+        if (cfgBuf.indexOf("+CADATAIND:") >= 0) {
+            modemSerial.print("AT+CARECV=1,1460\r\n");
+            unsigned long rt = millis();
+            while (millis() - rt < 5000) {
+                while (modemSerial.available()) cfgResp += (char)modemSerial.read();
+                if (cfgResp.indexOf("ERROR") >= 0 || (cfgResp.length() > 6 && cfgResp.endsWith("\r\nOK\r\n"))) break;
+                delay(10);
+            }
+            Serial.printf("[CONFIG] CARECV: '%s'\n", cfgResp.substring(0, 200).c_str());
+            break;
+        }
+        if (cfgBuf.indexOf("+CASTATE:") >= 0) break;
+        delay(50);
+    }
+    Serial.printf("[CONFIG] cfgBuf: '%s'\n", cfgBuf.substring(0, 100).c_str());
+
+    String response = cfgResp;
+    Serial.printf("[CONFIG] CARECV (first 200): '%s'\n", response.substring(0, 200).c_str());
+    sendATCommand("AT+CACLOSE=" + String(cfgClientID), 3000);
 
     bool success = false;
     int bodyLen = 0;
 
-    if (response.indexOf("+SHREQ:") >= 0) {
-        // レスポンスからステータスコードとボディ長を取得
-        int idx = response.indexOf(",");
-        if (idx > 0) {
-            int idx2 = response.indexOf(",", idx + 1);
-            if (idx2 > idx) {
-                String statusCode = response.substring(idx + 1, idx2);
-                statusCode.trim();
-                String bodyLenStr = response.substring(idx2 + 1);
-                bodyLenStr.trim();
-                bodyLen = bodyLenStr.toInt();
-                Serial.printf("[CONFIG] HTTP Status: %s, Body: %d bytes\n", statusCode.c_str(), bodyLen);
-                if (statusCode == "200" && bodyLen > 0) {
-                    success = true;
-                }
-            }
+    if (response.indexOf("HTTP/") >= 0 && (response.indexOf(" 200") >= 0 || response.indexOf(" 201") >= 0)) {
+        // HTTPヘッダーとボディを分離
+        int bodyStart = response.indexOf("\r\n\r\n");
+        if (bodyStart >= 0) {
+            response = response.substring(bodyStart + 4);  // ヘッダーを除去
         }
+        // +CARECV: 0,<len> プレフィックスを除去
+        int carecvEnd = response.indexOf("\r\n");
+        if (carecvEnd >= 0 && response.startsWith("+CARECV")) {
+            response = response.substring(carecvEnd + 2);
+            int nextEnd = response.indexOf("\r\n\r\n");
+            if (nextEnd >= 0) response = response.substring(nextEnd + 4);
+        }
+        bodyLen = response.length();
+        success = bodyLen > 0;
+        Serial.printf("[CONFIG] HTTP 200 OK, body: %d bytes\n", bodyLen);
     }
 
     if (success && bodyLen > 0) {
-        // ボディ読み取り
-        String readCmd = "AT+SHREAD=0," + String(bodyLen);
-        response = sendATCommand(readCmd, 10000);
 
         // JSONパース（簡易パーサー）
         // レスポンス例: {"success":true,"data":{"deviceId":"foxsense-001","parentIdHash":2849513012,...}}
@@ -902,7 +936,6 @@ bool fetchConfigFromServer() {
         }
     }
 
-    sendATCommand("AT+SHDISC", 2000);
     return success && cachedParentIdHash != 0;
 }
 
@@ -1044,13 +1077,12 @@ bool reportPairingResult(const char* childDeviceIdHex, const char* status) {
     sendATCommand("AT+SHDISC", 2000);
     delay(500);
 
-    String url = String("https://") + SERVER_HOST + pairingPath;
+    String url = String("http://") + SERVER_HOST + pairingPath;
     sendATCommand("AT+SHCONF=\"URL\",\"" + url + "\"", 3000);
-    sendATCommand("AT+SHCONF=\"BODYLEN\",1024", 2000);
+    sendATCommand("AT+SHCONF=\"BODYLEN\",2048", 2000);
     sendATCommand("AT+SHCONF=\"HEADERLEN\",350", 2000);
-    sendATCommand("AT+CSSLCFG=\"sslversion\",0,3", 2000);
-    sendATCommand("AT+SHSSL=1,\"\"", 2000);
-
+    sendATCommand("AT+SHCONF=\"CID\",1", 2000);
+    // HTTP: SSL設定不要
     String response = sendATCommand("AT+SHCONN", 30000);
     if (response.indexOf("OK") < 0) {
         return false;
@@ -1093,18 +1125,106 @@ bool reportPairingResult(const char* childDeviceIdHex, const char* status) {
 
 bool powerOnModem() {
     Serial.println("[MODEM] Powering on...");
-    digitalWrite(MODEM_PWRKEY_PIN, LOW);
-    delay(1000);
-    digitalWrite(MODEM_PWRKEY_PIN, HIGH);
-    delay(5000);
 
-    for (int i = 0; i < 15; i++) {
-        String response = sendATCommand("AT", 1000);
-        if (response.indexOf("OK") >= 0) {
+    // バッテリー電圧確認 (SIM7080G は LiPo VBAT 必須)
+    uint16_t battMv = PMU.getBattVoltage();
+    Serial.printf("[MODEM] Battery: %dmV\n", battMv);
+    if (battMv < 3000) {
+        if (SKIP_BATTERY_CHECK) {
+            Serial.println("[WARN] Battery low/missing, but SKIP_BATTERY_CHECK=true. Continuing...");
+        } else {
+            Serial.println("[ERROR] Battery voltage too low or not connected!");
+            Serial.println("[ERROR] SIM7080G requires LiPo battery (>3.0V) on VBAT pin.");
+            return false;
+        }
+    }
+
+    // まず既に起動中か確認 (DC3がディープスリープ中も保持されモデムが動いている場合)
+    // 複数回リトライ: 1回だけ試して失敗するとPWRKEYで動作中のモデムを切ってしまう
+    Serial.println("[MODEM] Checking if already running (5 tries)...");
+    auto tryATOnce = [&]() -> bool {
+        while (modemSerial.available()) modemSerial.read();
+        modemSerial.println("AT");
+        String r = "";
+        unsigned long t = millis();
+        while (millis() - t < 1500) {
+            while (modemSerial.available()) r += (char)modemSerial.read();
+            delay(10);
+        }
+        Serial.printf("[MODEM] tryAT: '%s'\n", r.c_str());
+        return r.indexOf("OK") >= 0;
+    };
+
+    for (int attempt = 0; attempt < 5; attempt++) {
+        if (tryATOnce()) {
+            Serial.println("[MODEM] Already running! Skipping PWRKEY.");
             return true;
         }
-        delay(1000);
+        delay(500);
     }
+
+    // 起動していないのでPWRKEYで起動
+    // PWRKEY シーケンス (LilyGo T-SIM7080G-S3 公式パターン)
+    // LOW(idle) → HIGH(active,1s) → LOW(idle)
+    Serial.println("[MODEM] Not running. PWRKEY: LOW→HIGH(1s)→LOW");
+    digitalWrite(MODEM_PWRKEY_PIN, LOW);
+    delay(100);
+    digitalWrite(MODEM_PWRKEY_PIN, HIGH);
+    delay(1000);
+    digitalWrite(MODEM_PWRKEY_PIN, LOW);
+    Serial.println("[MODEM] PWRKEY done, waiting 15s for boot...");
+    delay(15000);
+
+    // ATコマンド確認 (最大15回)
+    Serial.println("[MODEM] Trying AT commands...");
+    for (int i = 0; i < 15; i++) {
+        while (modemSerial.available()) modemSerial.read();
+        modemSerial.println("AT");
+        delay(500);
+        String response = "";
+        unsigned long t = millis();
+        while (millis() - t < 1000) {
+            while (modemSerial.available()) response += (char)modemSerial.read();
+            delay(10);
+        }
+        response.trim();
+        Serial.printf("[AT #%d] '%s'\n", i + 1, response.c_str());
+        if (response.indexOf("OK") >= 0) {
+            Serial.println("[MODEM] AT OK!");
+            return true;
+        }
+        delay(500);
+    }
+
+    // PWRKEYで起動に失敗した場合、もう1回PWRKEY試行
+    Serial.println("[MODEM] First boot attempt failed, trying PWRKEY again...");
+    digitalWrite(MODEM_PWRKEY_PIN, LOW);
+    delay(100);
+    digitalWrite(MODEM_PWRKEY_PIN, HIGH);
+    delay(1000);
+    digitalWrite(MODEM_PWRKEY_PIN, LOW);
+    Serial.println("[MODEM] Second PWRKEY done, waiting 15s...");
+    delay(15000);
+    for (int i = 0; i < 10; i++) {
+        while (modemSerial.available()) modemSerial.read();
+        modemSerial.println("AT");
+        delay(500);
+        String response = "";
+        unsigned long t = millis();
+        while (millis() - t < 1000) {
+            while (modemSerial.available()) response += (char)modemSerial.read();
+            delay(10);
+        }
+        response.trim();
+        Serial.printf("[AT2 #%d] '%s'\n", i + 1, response.c_str());
+        if (response.indexOf("OK") >= 0) {
+            Serial.println("[MODEM] AT OK (2nd attempt)!");
+            return true;
+        }
+        delay(500);
+    }
+
+    Serial.println("[MODEM] No AT response.");
     return false;
 }
 
@@ -1131,29 +1251,120 @@ bool initModem() {
     }
     Serial.println("[MODEM] SIM ready");
 
-    // APN設定はラジオ有効化前に行う（shell参考: at_only_lte_connect.sh）
+    // HTTPモジュール不調フラグ: CFUN=1,1 でモデムをソフトリセット
+    if (modemNeedsReset) {
+        Serial.println("[MODEM] HTTPモジュール再初期化のためCFUN=1,1ソフトリセット...");
+        sendATCommand("AT+CFUN=1,1", 5000);
+        delay(20000);  // モデム再起動待ち
+        // リセット後は通常フローで再登録
+        modemNeedsReset = false;
+        Serial.println("[MODEM] CFUN=1,1 done, re-initializing...");
+        // CPINが準備できるまで待つ
+        for (int i = 0; i < 15; i++) {
+            String cpin = sendATCommand("AT+CPIN?", 3000);
+            if (cpin.indexOf("READY") >= 0) break;
+            delay(2000);
+        }
+    }
+
+    // Cat-M1登録済みかを CFUN=0 の前に確認
+    // 登録済みかつモデムリセット不要なら CFUN=0/1 リセットをスキップ
+    String cpsiEarly = sendATCommand("AT+CPSI?", 3000);
+    Serial.printf("[MODEM] Early CPSI: %s\n", cpsiEarly.c_str());
+
+    if (cpsiEarly.indexOf("LTE CAT-M1,Online") >= 0 || cpsiEarly.indexOf("NB-IOT,Online") >= 0) {
+        // Cat-M1登録済みでも CFUN=1,1 でTCP/HTTPスタックを再初期化 (deep sleepで失われる)
+        Serial.println("[MODEM] Already on Cat-M1 - CFUN=1,1 to reinitialize TCP stack...");
+        sendATCommand("AT+CFUN=1,1", 5000);
+        delay(20000);
+        // SIM準備を待つ
+        for (int i = 0; i < 15; i++) {
+            String cpin = sendATCommand("AT+CPIN?", 3000);
+            if (cpin.indexOf("READY") >= 0) {
+                Serial.println("[MODEM] SIM ready after CFUN=1,1");
+                break;
+            }
+            delay(2000);
+        }
+        // ネットワーク再登録待ち
+        Serial.println("[MODEM] Waiting for re-registration...");
+        for (int i = 0; i < 30; i++) {
+            String cpsiNew = sendATCommand("AT+CPSI?", 2000);
+            if (cpsiNew.indexOf("LTE CAT-M1,Online") >= 0 || cpsiNew.indexOf("NB-IOT,Online") >= 0) {
+                Serial.printf("[MODEM] Re-registered: %s\n", cpsiNew.substring(0, 40).c_str());
+                break;
+            }
+            delay(2000);
+        }
+        modemState.signalStrength = getSignalStrength();
+        if (!connectNetwork()) {
+            return false;
+        }
+        modemState.isConnected = true;
+        return true;
+    }
+
+    // SIM情報取得
+    String imsi = sendATCommand("AT+CIMI", 3000);
+    Serial.printf("[MODEM] IMSI: %s\n", imsi.c_str());
+    String iccid = sendATCommand("AT+CCID", 3000);
+    Serial.printf("[MODEM] ICCID: %s\n", iccid.c_str());
+
+    // ラジオオフ→設定変更→オン の順で確実に設定
+    sendATCommand("AT+CFUN=0", 8000);
+    delay(2000);
+
+    // APN設定 (SORACOM) - シンプルな構成
     String apnCmd = String("AT+CGDCONT=1,\"IP\",\"") + LTE_APN + "\"";
     sendATCommand(apnCmd, 3000);
-    // SIM7080G固有: アプリケーション層コンテキストにAPNをマッピング
-    String cncfgCmd = String("AT+CNCFG=0,1,\"") + LTE_APN + "\"";
-    sendATCommand(cncfgCmd, 3000);
 
-    sendATCommand("AT+CFUN=1", 5000);
+    // LTE only + Cat-M1 only (plan-D は Cat-M1 対応、NB-IoT非対応)
+    sendATCommand("AT+CNMP=38", 3000);   // LTE only
+    sendATCommand("AT+CMNB=1", 3000);   // Cat-M1 only
+
+    sendATCommand("AT+CFUN=1", 8000);
+    delay(3000);
+
+    // CFUN=1後にオペレーター自動選択 (ラジオON後でないと有効にならない)
+    sendATCommand("AT+COPS=0", 5000);
     delay(2000);
-    // Cat-M1 + NB-IoT 両対応（1=NB-IoTのみ では接続できない場合がある）
-    sendATCommand("AT+CMNB=3", 3000);
-    sendATCommand("AT+COPS=0", 10000);
 
-    Serial.println("[MODEM] Waiting for network...");
+    // 接続前の診断情報
+    String csq = sendATCommand("AT+CSQ", 2000);
+    Serial.printf("[MODEM] Signal: %s\n", csq.c_str());
+    String cpsiNow = sendATCommand("AT+CPSI?", 3000);
+    Serial.printf("[MODEM] Network state: %s\n", cpsiNow.c_str());
+
+    // 既に登録済みか確認
+    if (cpsiNow.indexOf("LTE CAT-M1,Online") >= 0 || cpsiNow.indexOf("NB-IOT,Online") >= 0) {
+        Serial.println("[MODEM] Registered on Cat-M1/NB-IoT!");
+        modemState.signalStrength = getSignalStrength();
+        if (!connectNetwork()) {
+            return false;
+        }
+        modemState.isConnected = true;
+        return true;
+    }
+
+    Serial.println("[MODEM] Waiting for network registration...");
     bool registered = false;
     for (int i = 0; i < 60; i++) {
         response = sendATCommand("AT+CEREG?", 2000);
+        if (i < 5 || i % 10 == 0) {
+            Serial.printf("[NET #%d] CEREG: '%s'\n", i, response.c_str());
+        }
         if (response.indexOf(",1") >= 0 || response.indexOf(",5") >= 0) {
             registered = true;
             break;
         }
-        response = sendATCommand("AT+CGREG?", 2000);
-        if (response.indexOf(",1") >= 0 || response.indexOf(",5") >= 0) {
+        if (response.indexOf(",3") >= 0) {
+            Serial.println("[NET] Registration DENIED!");
+            break;
+        }
+        // CPSI でも確認
+        String cpsi = sendATCommand("AT+CPSI?", 2000);
+        if (cpsi.indexOf("LTE CAT-M1,Online") >= 0 || cpsi.indexOf("NB-IOT,Online") >= 0) {
+            Serial.printf("[NET] CPSI registered: %s\n", cpsi.c_str());
             registered = true;
             break;
         }
@@ -1178,18 +1389,18 @@ bool initModem() {
 bool connectNetwork() {
     Serial.println("[MODEM] Connecting...");
 
-    // 既存の接続をクリア
+    // CNACT=0 でコンテキスト0を使用 (CGDCONT=1がpdpidx=0に対応)
     sendATCommand("AT+CNACT=0,0", 5000);
     delay(1000);
 
-    // PDP Context有効化要求（AT+CNACT=0,1はOKを即返し、接続は非同期で確立）
+    // PDP Context有効化要求
     String response = sendATCommand("AT+CNACT=0,1", 5000);
     if (response.indexOf("ERROR") >= 0) {
         Serial.println("[MODEM] CNACT activate failed");
         return false;
     }
 
-    // 接続確立まで最大30秒ポーリング（shell参考: AT+CGACT後のAT+CGCONTRDP=1確認）
+    // 接続確立まで最大30秒ポーリング
     Serial.println("[MODEM] Waiting for PDP context activation...");
     unsigned long waitStart = millis();
     while (millis() - waitStart < 30000) {
@@ -1202,6 +1413,11 @@ bool connectNetwork() {
                 modemState.ipAddress = response.substring(start, end);
                 if (modemState.ipAddress.length() > 0 && modemState.ipAddress != "0.0.0.0") {
                     Serial.println("[MODEM] IP: " + modemState.ipAddress);
+                    // 3GPP標準PDP context も有効化 (CAOPEN/SHCONN に必要)
+                    String cgact = sendATCommand("AT+CGACT=1,1", 10000);
+                    Serial.printf("[MODEM] CGACT=1,1: '%s'\n", cgact.c_str());
+                    String cgactQ = sendATCommand("AT+CGACT?", 3000);
+                    Serial.printf("[MODEM] CGACT?: '%s'\n", cgactQ.c_str());
                     return true;
                 }
             }
@@ -1247,6 +1463,86 @@ bool syncNTP() {
         }
     }
     return false;
+}
+
+/**
+ * 生TCP (AT+CAOPEN cid=1) でHTTPリクエストを送信
+ * SHCONN がデフォルトでcid=0を使用するため動作しない問題を回避
+ */
+bool sendRawHTTPTCP(const String& method, const String& path,
+                    const String& host, const String& body) {
+    // TCP接続 (cid=1, clientID=0)
+    String r = sendATCommand("AT+CAOPEN=1,0,\"TCP\",\"" + host + "\",80", 15000);
+    Serial.printf("[TCP] CAOPEN: '%s'\n", r.c_str());
+    if (r.indexOf("OK") < 0) {
+        return false;
+    }
+    // +CAOPEN: <clientID>,0 からclientIDを取得 (モデムが割り当て)
+    int clientID = 0;
+    int idx = r.indexOf("+CAOPEN: ");
+    if (idx >= 0) {
+        int numStart = idx + 9;
+        int comma = r.indexOf(",", numStart);
+        if (comma > numStart) clientID = r.substring(numStart, comma).toInt();
+    }
+    Serial.printf("[TCP] Assigned clientID: %d\n", clientID);
+    delay(200);
+
+    // HTTPリクエスト構築 (HTTP/1.1 + keep-alive)
+    // HTTP/1.0+Connection:close はサーバーが応答後即FINを送り、
+    // +CADATAINDと+CASTATEが同時到着してCARECVが間に合わない問題を回避
+    String httpReq = method + " " + path + " HTTP/1.1\r\n";
+    httpReq += "Host: " + host + "\r\n";
+    httpReq += "Connection: keep-alive\r\n";
+    if (body.length() > 0) {
+        httpReq += "Content-Type: application/json\r\n";
+        httpReq += "Content-Length: " + String(body.length()) + "\r\n";
+    }
+    httpReq += "\r\n";
+    httpReq += body;
+
+    Serial.printf("[TCP] Sending HTTP %s, %d bytes\n", method.c_str(), httpReq.length());
+
+    // CASEND: データ送信 (">" プロンプト後にデータ送信)
+    r = sendATCommand("AT+CASEND=" + String(clientID) + "," + String(httpReq.length()), 5000);
+    Serial.printf("[TCP] CASEND prompt: '%s'\n", r.c_str());
+    modemSerial.print(httpReq);
+
+    // +CADATAIND 受信後すぐにCARECVを呼ぶ (接続がcloseされる前に)
+    // sendATCommandはbufferをクリアするのでここでは使わず直接読み書きする
+    String sBuf = "";
+    String httpResp = "";
+    unsigned long t = millis();
+    while (millis() - t < 12000) {
+        while (modemSerial.available()) sBuf += (char)modemSerial.read();
+
+        if (sBuf.indexOf("+CADATAIND:") >= 0) {
+            // +CADATAIND: <clientID> — clientIDは1 (CAOPEN URC先頭の数値)
+            // AT+CARECV=<clientID>,<datalen> datalen上限=1460
+            modemSerial.print("AT+CARECV=1,1460\r\n");
+            unsigned long rt = millis();
+            while (millis() - rt < 5000) {
+                while (modemSerial.available()) httpResp += (char)modemSerial.read();
+                if (httpResp.indexOf("ERROR") >= 0 || (httpResp.length() > 6 && httpResp.endsWith("\r\nOK\r\n"))) break;
+                delay(10);
+            }
+            Serial.printf("[TCP] CARECV resp: '%s'\n", httpResp.substring(0, 200).c_str());
+            break;
+        }
+        if (sBuf.indexOf("+CASTATE:") >= 0) {
+            Serial.printf("[TCP] State changed (too late): '%s'\n", sBuf.c_str());
+            break;
+        }
+        delay(50);
+    }
+    Serial.printf("[TCP] sBuf: '%s'\n", sBuf.substring(0, 100).c_str());
+    r = httpResp;
+
+    sendATCommand("AT+CACLOSE=" + String(clientID), 3000);
+
+    bool success = r.indexOf(" 200") >= 0 || r.indexOf(" 201") >= 0 || r.indexOf(" 204") >= 0;
+    if (success) modemNeedsReset = false;
+    return success;
 }
 
 /**
@@ -1303,55 +1599,14 @@ bool sendAllDataToServer() {
     Serial.println("[HTTP] Payload length: " + String(payload.length()));
     Serial.println("[HTTP] Payload: " + payload);
 
-    // HTTP送信
-    sendATCommand("AT+SHDISC", 2000);
-    delay(500);
-
-    String url = String("https://") + SERVER_HOST + SERVER_PATH;
-    sendATCommand("AT+SHCONF=\"URL\",\"" + url + "\"", 3000);
-    sendATCommand("AT+SHCONF=\"BODYLEN\",2048", 2000);
-    sendATCommand("AT+SHCONF=\"HEADERLEN\",350", 2000);
-    sendATCommand("AT+CSSLCFG=\"sslversion\",0,3", 2000);
-    sendATCommand("AT+SHSSL=1,\"\"", 2000);
-
-    String response = sendATCommand("AT+SHCONN", 30000);
-    if (response.indexOf("OK") < 0) {
-        return false;
+    // 生TCP HTTP送信 (SHCONN は cid=0 をデフォルト使用で失敗するため回避)
+    bool success = sendRawHTTPTCP("POST", String(SERVER_PATH), String(SERVER_HOST), payload);
+    if (success) {
+        Serial.println("[HTTP] Data sent successfully");
+    } else {
+        Serial.println("[HTTP] Data send failed");
+        modemNeedsReset = true;
     }
-
-    response = sendATCommand("AT+SHSTATE?", 3000);
-    if (response.indexOf("+SHSTATE: 1") < 0) {
-        sendATCommand("AT+SHDISC", 2000);
-        return false;
-    }
-
-    sendATCommand("AT+SHCHEAD", 2000);
-    sendATCommand("AT+SHAHEAD=\"Content-Type\",\"application/json\"", 2000);
-
-    sendATCommand("AT+SHBOD=" + String(payload.length()) + ",10000", 3000);
-    delay(100);
-    modemSerial.print(payload);
-    delay(1000);
-
-    response = sendATCommand("AT+SHREQ=\"" + String(SERVER_PATH) + "\",3", 60000);
-
-    bool success = false;
-    if (response.indexOf("+SHREQ:") >= 0) {
-        int idx = response.indexOf(",");
-        if (idx > 0) {
-            int idx2 = response.indexOf(",", idx + 1);
-            if (idx2 > idx) {
-                String statusCode = response.substring(idx + 1, idx2);
-                statusCode.trim();
-                Serial.println("[HTTP] Status: " + statusCode);
-                if (statusCode == "200" || statusCode == "201") {
-                    success = true;
-                }
-            }
-        }
-    }
-
-    sendATCommand("AT+SHDISC", 2000);
     return success;
 }
 
@@ -1370,7 +1625,8 @@ String sendATCommand(const String& cmd, unsigned long timeout) {
         if (response.indexOf("OK") >= 0 || response.indexOf("ERROR") >= 0 ||
             response.indexOf("+SHREQ:") >= 0 || response.indexOf(">") >= 0 ||
             response.indexOf("+CNTP:") >= 0 || response.indexOf("+SHREAD:") >= 0 ||
-            response.indexOf("+APP PDP:") >= 0) {  // SIM7080G PDP非同期通知
+            response.indexOf("+APP PDP:") >= 0 ||  // SIM7080G PDP非同期通知
+            response.indexOf("+CAURC:") >= 0) {    // TCP/UDP非同期通知
             break;
         }
         delay(10);
@@ -1390,31 +1646,46 @@ void goToDeepSleep(uint64_t sleepTimeSec) {
     esp_deep_sleep_start();
 }
 
-float readBatteryVoltage() {
-    uint32_t totalVoltage = 0;
-    for (int i = 0; i < 16; i++) {
-        totalVoltage += analogReadMilliVolts(BATTERY_PIN);
-        delay(1);
+bool initPMU() {
+    Wire1.begin(PMU_SDA_PIN, PMU_SCL_PIN);
+    if (!PMU.begin(Wire1, AXP2101_SLAVE_ADDRESS, PMU_SDA_PIN, PMU_SCL_PIN)) {
+        return false;
     }
-    float voltage = totalVoltage / 16 / 1000.0;
-    return voltage < 0.1 ? 0.0 : voltage;
-}
-
-int calculateBatteryLevel(float voltage) {
-    if (voltage < 0.1) return 0;
-    if (voltage >= BATTERY_FULL_VOLTAGE) return 100;
-    if (voltage >= 2.05) return 95;
-    if (voltage >= 2.00) return 90;
-    if (voltage >= 1.95) return 80;
-    if (voltage >= 1.90) return 70;
-    if (voltage >= 1.85) return 60;
-    if (voltage >= 1.80) return 50;
-    if (voltage >= 1.75) return 40;
-    if (voltage >= 1.70) return 30;
-    if (voltage >= 1.65) return 20;
-    if (voltage >= 1.55) return 10;
-    if (voltage >= 1.50) return 5;
-    return 2;
+    // PMU電源レール状態診断
+    Serial.printf("[PMU] DC1=%s(%umV) DC2=%s(%umV) DC3=%s(%umV)\n",
+        PMU.isEnableDC1()?"ON":"OFF", PMU.getDC1Voltage(),
+        PMU.isEnableDC2()?"ON":"OFF", PMU.getDC2Voltage(),
+        PMU.isEnableDC3()?"ON":"OFF", PMU.getDC3Voltage());
+    Serial.printf("[PMU] ALDO1=%s(%umV) ALDO2=%s(%umV) ALDO3=%s(%umV) ALDO4=%s(%umV)\n",
+        PMU.isEnableALDO1()?"ON":"OFF", PMU.getALDO1Voltage(),
+        PMU.isEnableALDO2()?"ON":"OFF", PMU.getALDO2Voltage(),
+        PMU.isEnableALDO3()?"ON":"OFF", PMU.getALDO3Voltage(),
+        PMU.isEnableALDO4()?"ON":"OFF", PMU.getALDO4Voltage());
+    Serial.printf("[PMU] BLDO1=%s(%umV) BLDO2=%s(%umV)\n",
+        PMU.isEnableBLDO1()?"ON":"OFF", PMU.getBLDO1Voltage(),
+        PMU.isEnableBLDO2()?"ON":"OFF", PMU.getBLDO2Voltage());
+    // SIM7080G電源を有効化 (DC3 + ALDO4 + BLDO2 全試行)
+    PMU.setDC3Voltage(3400);
+    PMU.enableDC3();
+    PMU.setALDO4Voltage(3300);
+    PMU.enableALDO4();
+    PMU.setBLDO2Voltage(3300);
+    PMU.enableBLDO2();
+    delay(500);
+    // 有効化後の実際の状態を再確認
+    Serial.printf("[PMU] After enable: DC3=%s(%umV) ALDO4=%s(%umV) BLDO2=%s(%umV)\n",
+        PMU.isEnableDC3()?"ON":"OFF", PMU.getDC3Voltage(),
+        PMU.isEnableALDO4()?"ON":"OFF", PMU.getALDO4Voltage(),
+        PMU.isEnableBLDO2()?"ON":"OFF", PMU.getBLDO2Voltage());
+    Serial.printf("[PMU] VBUS=%umV BattConn=%d\n",
+        PMU.getVbusVoltage(), PMU.isBatteryConnect());
+    delay(1500);  // モデム電源安定待ち (合計2秒)
+    PMU.disableTSPinMeasure();        // 充電正常動作に必須
+    PMU.enableBattDetection();
+    PMU.enableBattVoltageMeasure();
+    PMU.setLowBatWarnThreshold(BATTERY_LOW_WARN_THRESHOLD);
+    PMU.setLowBatShutdownThreshold(BATTERY_LOW_SHUTDOWN_THRESHOLD);
+    return true;
 }
 
 int getSignalStrength() {

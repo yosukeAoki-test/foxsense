@@ -140,9 +140,11 @@ export const createParentDevice = async (userId, data) => {
     include: { alertSettings: true },
   });
 
-  // SIMが紐付いていればSORAACOM上の名前もユーザー名に設定
+  // SIMが紐付いていればSORAACOM上の名前をデバイスIDに設定
   if (resolvedSimId) {
-    setSimName(resolvedSimId, data.name);
+    setSimName(resolvedSimId, deviceId).catch(e =>
+      console.warn('SORACOM setSimName failed (non-fatal):', e.message)
+    );
   }
 
   return created;
@@ -157,9 +159,11 @@ export const updateParentDevice = async (id, userId, data) => {
     data: { name: data.name, location: data.location },
   });
 
-  // 名前変更時もSORAACOM上の名前を同期
-  if (data.name && device.soracomSimId) {
-    setSimName(device.soracomSimId, data.name);
+  // 名前変更時もSORAACOM上の名前はデバイスIDで固定
+  if (device.soracomSimId) {
+    setSimName(device.soracomSimId, device.deviceId).catch(e =>
+      console.warn('SORACOM setSimName failed (non-fatal):', e.message)
+    );
   }
 
   return updated;

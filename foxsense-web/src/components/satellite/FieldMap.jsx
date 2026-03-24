@@ -54,7 +54,16 @@ function calcAreaHa(layer) {
   return Math.round(latM * lonM / 10000 * 10) / 10
 }
 
-const SATELLITE_BASE = import.meta.env.VITE_SATELLITE_API_URL || '/api'
+const SATELLITE_BASE   = import.meta.env.VITE_SATELLITE_API_URL || '/api'
+const SATELLITE_APIKEY = import.meta.env.VITE_SATELLITE_API_KEY || ''
+
+const CROP_COLOR = {
+  '水稲': { color: '#047857', fillColor: '#10b981' },
+  '大豆': { color: '#b45309', fillColor: '#f59e0b' },
+  '小麦': { color: '#c2410c', fillColor: '#f97316' },
+  '野菜': { color: '#0f766e', fillColor: '#14b8a6' },
+}
+const DEFAULT_FIELD_COLOR = { color: '#4b5563', fillColor: '#9ca3af' }
 
 const FieldMap = forwardRef(function FieldMap({ lat, lon, onAreaSelected, onParcelSelected }, ref) {
   const divRef              = useRef(null)
@@ -63,6 +72,30 @@ const FieldMap = forwardRef(function FieldMap({ lat, lon, onAreaSelected, onParc
   const selectedLayerRef    = useRef(null)
   const overlayLayerRef     = useRef(null)
   const selectedParcelLayer = useRef(null)
+  const savedFieldLayersRef = useRef(new Map()) // fieldId -> L.polygon
+
+  const makeFieldPolygon = (field, highlighted = false) => {
+    const bbox = typeof field.bbox === 'string' ? JSON.parse(field.bbox) : field.bbox
+    const raw = field.polygon
+      ? (typeof field.polygon === 'string' ? JSON.parse(field.polygon) : field.polygon)
+      : null
+    const coords = raw ?? [
+      [bbox[0], bbox[1]], [bbox[2], bbox[1]],
+      [bbox[2], bbox[3]], [bbox[0], bbox[3]],
+      [bbox[0], bbox[1]],
+    ]
+    const latlngs = coords.map(([lng, lat]) => [lat, lng])
+    const { color, fillColor } = CROP_COLOR[field.cropType] ?? DEFAULT_FIELD_COLOR
+    const layer = L.polygon(latlngs, {
+      color, fillColor,
+      weight: highlighted ? 3 : 1.5,
+      fillOpacity: highlighted ? 0.55 : 0.25,
+      opacity: highlighted ? 1 : 0.6,
+    })
+    const label = `<b>${field.name}</b><br>${field.cropType ?? ''} ${field.areaHa ? field.areaHa + ' ha' : ''}`
+    layer.bindTooltip(label, { permanent: highlighted, direction: 'center', className: 'field-label' })
+    return layer
+  }
 
   useImperativeHandle(ref, () => ({
     flyTo: (lat, lon, zoom = 14) => mapRef.current?.flyTo([lat, lon], zoom),
@@ -72,15 +105,49 @@ const FieldMap = forwardRef(function FieldMap({ lat, lon, onAreaSelected, onParc
         { padding: [30, 30] }
       )
     },
+    showAllSavedFields: (fields) => {
+      const map = mapRef.current
+      if (!map) return
+      savedFieldLayersRef.current.forEach(l => map.removeLayer(l))
+      savedFieldLayersRef.current.clear()
+      fields.forEach(field => {
+        const layer = makeFieldPolygon(field, false)
+        layer._fieldData = field
+        layer.addTo(map)
+        savedFieldLayersRef.current.set(field.id, layer)
+      })
+    },
+    highlightSavedField: (field) => {
+      const map = mapRef.current
+      if (!map) return
+      // 全レイヤーを薄く戻す
+      savedFieldLayersRef.current.forEach(layer => {
+        const f = layer._fieldData
+        const { color, fillColor } = CROP_COLOR[f?.cropType] ?? DEFAULT_FIELD_COLOR
+        layer.setStyle({ color, fillColor, weight: 1.5, fillOpacity: 0.2, opacity: 0.5 })
+        layer.closeTooltip()
+      })
+      // 対象をハイライト
+      const target = savedFieldLayersRef.current.get(field.id)
+      if (target) {
+        const { color, fillColor } = CROP_COLOR[field.cropType] ?? DEFAULT_FIELD_COLOR
+        target.setStyle({ color, fillColor, weight: 3, fillOpacity: 0.55, opacity: 1 })
+        target.openTooltip()
+        target.bringToFront()
+      }
+    },
     setOverlay: (base64png, bbox) => {
       const map = mapRef.current
       if (!map) return
       if (overlayLayerRef.current) map.removeLayer(overlayLayerRef.current)
+      // 選択域・保存済み圃場ポリゴンをすべて非表示
+      if (selectedLayerRef.current) selectedLayerRef.current.setStyle({ opacity: 0, fillOpacity: 0 })
+      savedFieldLayersRef.current.forEach(l => l.setStyle({ opacity: 0, fillOpacity: 0 }))
       const bounds = [[bbox[1], bbox[0]], [bbox[3], bbox[2]]]
       overlayLayerRef.current = L.imageOverlay(
         `data:image/png;base64,${base64png}`,
         bounds,
-        { opacity: 0.75, interactive: false }
+        { opacity: 0.9, interactive: false }
       ).addTo(map)
     },
     clearOverlay: () => {
@@ -88,6 +155,16 @@ const FieldMap = forwardRef(function FieldMap({ lat, lon, onAreaSelected, onParc
         mapRef.current.removeLayer(overlayLayerRef.current)
         overlayLayerRef.current = null
       }
+      // 選択域を再表示
+      if (selectedLayerRef.current) {
+        selectedLayerRef.current.setStyle({ opacity: 1, fillOpacity: 0.2 })
+      }
+      // 保存済み圃場ポリゴンを元のスタイルに戻す
+      savedFieldLayersRef.current.forEach(layer => {
+        const f = layer._fieldData
+        const { color, fillColor } = CROP_COLOR[f?.cropType] ?? DEFAULT_FIELD_COLOR
+        layer.setStyle({ color, fillColor, weight: 1.5, opacity: 0.6, fillOpacity: 0.25 })
+      })
     },
   }))
 
@@ -166,7 +243,8 @@ const FieldMap = forwardRef(function FieldMap({ lat, lon, onAreaSelected, onParc
     try {
       const [lonMin, latMin, lonMax, latMax] = bbox
       const res = await fetch(
-        `${SATELLITE_BASE}/fields/parcels?lon_min=${lonMin}&lat_min=${latMin}&lon_max=${lonMax}&lat_max=${latMax}`
+        `${SATELLITE_BASE}/fields/parcels?lon_min=${lonMin}&lat_min=${latMin}&lon_max=${lonMax}&lat_max=${latMax}`,
+        { headers: { 'X-API-Key': SATELLITE_APIKEY } }
       )
       const geojson = await res.json()
       if (!geojson.features?.length) return
@@ -207,7 +285,7 @@ const FieldMap = forwardRef(function FieldMap({ lat, lon, onAreaSelected, onParc
 
   return (
     <div className="relative">
-      <div ref={divRef} className="w-full h-64" />
+      <div ref={divRef} className="w-full h-[420px]" />
       <div className="absolute bottom-2 right-2 bg-white/90 rounded-lg px-2 py-1 text-xs text-gray-500 z-[1000] pointer-events-none">
         矩形/ポリゴンで範囲選択 → 農地区画が表示されます
       </div>

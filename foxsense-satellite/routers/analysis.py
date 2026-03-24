@@ -118,8 +118,8 @@ def analysis_field(req: AnalysisFieldRequest):
                 r = f.result(timeout=45)
                 if r:
                     scenes.append(r)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("シーン読み込み失敗 (スキップ): %s", e)
 
     if not scenes:
         raise HTTPException(status_code=422, detail="有効なシーンがありませんでした。")
@@ -129,7 +129,11 @@ def analysis_field(req: AnalysisFieldRequest):
     # Sentinel-2 NDRE（並行取得）
     with ThreadPoolExecutor(max_workers=1) as pool:
         ndre_future = pool.submit(_get_s2_ndre, req.bbox, req.end_date)
-        ndre_peak = ndre_future.result(timeout=60)
+        try:
+            ndre_peak = ndre_future.result(timeout=60)
+        except Exception as e:
+            logger.warning("NDRE取得タイムアウトまたは失敗 (スキップ): %s", e)
+            ndre_peak = None
 
     return {
         "scenes": scenes,
@@ -201,6 +205,6 @@ def analysis_colormap(req: ColormapRequest):
 
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception:
         logger.exception("colormap failed")
-        raise HTTPException(status_code=500, detail=f"カラーマップ生成エラー: {e}")
+        raise HTTPException(status_code=500, detail="カラーマップの生成に失敗しました。時間をおいて再試行してください。")

@@ -105,6 +105,27 @@ body {
   background: #4ade80;
 }
 
+/* Leaflet / Geoman ツールバーアイコン保護 (Tailwind preflight 上書き防止) */
+.leaflet-pm-toolbar .button-container button,
+.leaflet-pm-toolbar .button-container a {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  background-color: white !important;
+  color: inherit !important;
+}
+.leaflet-pm-toolbar .button-container button svg,
+.leaflet-pm-toolbar .button-container a svg {
+  display: block !important;
+}
+.leaflet-container a {
+  color: inherit;
+}
+/* Tailwind が img/svg に pointer-events:none を付けないようにする */
+.leaflet-pm-toolbar a {
+  pointer-events: auto !important;
+}
+
 /* 領収書印刷用 */
 @media print {
   body > * {
@@ -121,3 +142,15 @@ body {
     padding: 2rem !important;
   }
 }
+
+/* 保存済み圃場ラベル */
+.field-label {
+  background: rgba(255, 255, 255, 0.9) !important;
+  border: 1px solid rgba(0,0,0,0.15) !important;
+  border-radius: 6px !important;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.15) !important;
+  padding: 3px 8px !important;
+  font-size: 11px !important;
+  white-space: nowrap;
+}
+.field-label::before { display: none !important; }

@@ -16,8 +16,8 @@ export default function CarbonPanel({ areaHa, drainageDays }) {
   return (
     <div className="space-y-4">
       <div className="bg-white rounded-xl border p-4 space-y-3">
-        <p className="text-sm font-medium text-gray-700">カーボンクレジット収入の試算</p>
-        <p className="text-xs text-gray-400">中干しの延長でCO2を削減した分が収入になります</p>
+        <p className="text-sm font-medium text-gray-700">CO2削減量の見える化</p>
+        <p className="text-xs text-gray-400">中干しを延長した分のメタン削減量・CO2換算量を確認できます。JAへの交渉材料や補助金申請の参考数値としてご活用ください。</p>
 
         <div className="flex items-center gap-3">
           <span className="text-sm text-gray-500 w-24">田んぼの広さ</span>
@@ -67,7 +67,7 @@ export default function CarbonPanel({ areaHa, drainageDays }) {
           <div className={`rounded-xl border p-4 ${data.eligible ? 'bg-green-50 border-green-300' : 'bg-yellow-50 border-yellow-300'}`}>
             <p className="text-xs text-gray-400 mb-1">J-クレジット 申請資格</p>
             <p className={`font-bold text-lg ${data.eligible ? 'text-green-700' : 'text-yellow-700'}`}>
-              {data.eligible ? '✓ クレジット申請できる可能性があります' : '△ 中干しの延長があと少し必要です'}
+              {data.eligible ? '✓ J-クレジット基準（7日超）を満たしています' : '△ 基準まであと少しです（7日超が目安）'}
             </p>
             <p className="text-xs text-gray-400 mt-1">通常より {data.extension_days}日長く中干しをしました</p>
           </div>
@@ -94,7 +94,7 @@ export default function CarbonPanel({ areaHa, drainageDays }) {
             <p className="text-4xl font-bold text-green-700 mt-1">
               ¥{data.estimated_credit_value_jpy.toLocaleString()}
             </p>
-            <p className="text-xs text-gray-400 mt-1">※ 単価2,500円/t-CO2で試算。実際の価格は市場による。</p>
+            <p className="text-xs text-gray-400 mt-1">※ 参考試算（単価2,500円/t-CO2）。実際の申請はJAや専門機関にご相談ください。</p>
           </div>
         </div>
       )}

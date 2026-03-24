@@ -13,6 +13,23 @@ import {
   Check,
 } from 'lucide-react';
 
+const CROP_PRESETS = [
+  { label: 'スイカ',     baseTemp: 10, targetGDD: 1050 },
+  { label: 'メロン',     baseTemp: 10, targetGDD: 1150 },
+  { label: 'トマト',     baseTemp: 10, targetGDD: 1150 },
+  { label: 'ミニトマト', baseTemp: 10, targetGDD: 1050 },
+  { label: 'キュウリ',   baseTemp: 12, targetGDD: 250  },
+  { label: 'ナス',       baseTemp: 10, targetGDD: 350  },
+  { label: 'ピーマン',   baseTemp: 10, targetGDD: 300  },
+  { label: 'カボチャ',   baseTemp: 12, targetGDD: 950  },
+  { label: 'キャベツ',   baseTemp:  5, targetGDD: 850  },
+  { label: 'ブロッコリー', baseTemp: 5, targetGDD: 950 },
+  { label: 'ハクサイ',   baseTemp: 10, targetGDD: 950  },
+  { label: 'ダイコン',   baseTemp:  5, targetGDD: 950  },
+  { label: 'ニンジン',   baseTemp:  5, targetGDD: 1050 },
+  { label: 'イネ',       baseTemp: 10, targetGDD: 1100 },
+];
+
 const CropManagement = ({ historyData, latestData, alerts, onClose }) => {
   const [activeTab, setActiveTab] = useState('frost'); // frost, gdd
   const [pollinationRecords, setPollinationRecords] = useState(() => {
@@ -436,6 +453,22 @@ const CropManagement = ({ historyData, latestData, alerts, onClose }) => {
             {showAddRecord ? (
               <div className="bg-gray-50 rounded-xl p-3 sm:p-4 space-y-3 sm:space-y-4">
                 <h4 className="font-medium text-gray-800 text-sm sm:text-base">積算温度を記録</h4>
+
+                <div>
+                  <label className="block text-xs sm:text-sm text-gray-600 mb-1">作物プリセット</label>
+                  <select
+                    onChange={(e) => {
+                      const preset = CROP_PRESETS.find(p => p.label === e.target.value);
+                      if (preset) setNewRecord(r => ({ ...r, baseTemp: preset.baseTemp, targetGDD: preset.targetGDD, note: r.note || preset.label }));
+                    }}
+                    className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:border-leaf-400 outline-none text-sm bg-white"
+                  >
+                    <option value="">-- 選択して自動入力 --</option>
+                    {CROP_PRESETS.map(p => (
+                      <option key={p.label} value={p.label}>{p.label}（基準{p.baseTemp}℃ / 目標{p.targetGDD}℃日）</option>
+                    ))}
+                  </select>
+                </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                   <div>

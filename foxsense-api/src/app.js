@@ -20,6 +20,7 @@ import soracomRoutes from './modules/soracom/soracom.routes.js';
 import foxcoinsRoutes from './modules/foxcoins/foxcoins.routes.js';
 import adminRoutes from './modules/admin/admin.routes.js';
 import printRoutes from './modules/print/print.routes.js';
+import fieldsRoutes from './modules/fields/fields.routes.js';
 
 const app = express();
 
@@ -27,7 +28,13 @@ const app = express();
 app.set('trust proxy', 1);
 
 // Security middleware
-app.use(helmet());
+app.use(helmet({
+  hsts: {
+    maxAge: 31536000,       // 1年
+    includeSubDomains: true,
+    preload: true,
+  },
+}));
 app.use(cors({
   origin: config.frontendUrl,
   credentials: true,
@@ -83,6 +90,7 @@ app.use('/api/soracom', soracomRoutes);
 app.use('/api/foxcoins', foxcoinsRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/print', printRoutes);
+app.use('/api/fields', fieldsRoutes);
 
 // 404 handler
 app.use((req, res) => {

@@ -6,22 +6,23 @@
 // SIM7080G: Cat-M1/NB-IoT モジュール
 
 // デバイス識別
-#define DEVICE_ID "foxsense-001"           // デバイスID（サーバー登録用）
-#define DEVICE_SECRET "CHANGE_ME"          // デバイスシークレット（サーバー認証用）
+#define DEVICE_ID "6C265A30"               // デバイスID（サーバー登録済み）
+#define DEVICE_SECRET "d1b03e43-0b3c-480d-8d4a-2fb753322d72"  // デバイスシークレット
 
 // プロトコルバージョン
 #define PROTOCOL_VERSION 0x03              // v3: 気圧センサー対応（v2後方互換）
 
 // 動作モード設定
-#define USE_TEST_MODE false                // true=30秒間隔テスト, false=10分間隔本番
+#define USE_TEST_MODE true                 // true=30秒間隔テスト, false=10分間隔本番
 #define SEND_INTERVAL_MINUTES 10           // 本番モード送信間隔 (分)
 #define TEST_INTERVAL_SECONDS 30           // テストモード送信間隔 (秒)
 
 // ===== ピン配置設定 (LILYGO T-SIM7080G-S3) =====
 
-// BME280 I2Cピン
-#define BME280_SDA_PIN 21                  // BME280 SDAピン (GPIO21)
-#define BME280_SCL_PIN 22                  // BME280 SCLピン (GPIO22)
+// BME280 I2Cピン（Wire0使用）
+// IO45/IO46 はカメラ搭載時も空き → 配線変更不要
+#define BME280_SDA_PIN 45                  // IO45 = P1 "IO45"
+#define BME280_SCL_PIN 46                  // IO46 = P2 "IO46"
 
 // SIM7080G モデムピン（オンボード固定）
 #define MODEM_TX_PIN 5                     // ESP32 TX → SIM7080G RX
@@ -30,18 +31,19 @@
 #define MODEM_DTR_PIN 42                   // SIM7080G DTR
 #define MODEM_RI_PIN 3                     // SIM7080G RI（着信表示）
 
-// バッテリー監視ピン
-#define BATTERY_PIN 35                     // バッテリー測定ピン（ADC対応ピン）
+// AXP2101 PMU (電源管理IC、Wire1 使用)
+#define PMU_SDA_PIN 15                     // AXP2101 I2C SDA
+#define PMU_SCL_PIN 7                      // AXP2101 I2C SCL
+#define PMU_IRQ_PIN 6                      // AXP2101 割り込みピン
 
-// LEDピン（オプション）
-#define LED_PIN 12                         // ステータスLED
 
 // ===== TWELITE設定 =====
 // TWELITE DIP（親機）シリアル接続
-#define TWELITE_TX_PIN 17                  // ESP32 TX → TWELITE RX
-#define TWELITE_RX_PIN 16                  // ESP32 RX ← TWELITE TX
+// GPIO43/44: USB CDC (IO19/IO20) が Serial を担うため UART0 は空き → TWELITE に転用
+#define TWELITE_TX_PIN 43                  // IO43 = P1 "TXD"
+#define TWELITE_RX_PIN 44                  // IO44 = P1 "RXD"
 #define TWELITE_BAUD_RATE 115200           // TWELITE通信速度
-#define TWELITE_RST_PIN 18                 // TWELITE リセットピン（オプション）
+// TWELITE_RST_PIN は未使用（IO45/IO46 を BME280 に割り当てるため省略）
 
 // 子機管理設定
 #define MAX_CHILD_DEVICES 8                // 最大子機数
@@ -62,11 +64,9 @@
 #define TWELITE_CMD_PAIR    0x10           // ペアリング要求
 #define TWELITE_CMD_PAIR_ACK 0x11          // ペアリング応答
 
-// ===== バッテリー監視設定 =====
-#define BATTERY_VOLTAGE_DIVIDER_RATIO 2.0  // 分圧回路比 (実電圧÷測定値)
-#define BATTERY_FULL_VOLTAGE 2.1           // 満充電時の測定値 (V)
-#define BATTERY_EMPTY_VOLTAGE 1.5          // 空の時の測定値 (V)
-#define BATTERY_WARNING_VOLTAGE 1.65       // 警告レベル (V)
+// ===== バッテリー監視設定 (AXP2101 PMU) =====
+#define BATTERY_LOW_WARN_THRESHOLD 0       // 低バッテリー警告しきい値 (%) ※0=無効
+#define BATTERY_LOW_SHUTDOWN_THRESHOLD 3   // 低バッテリーシャットダウンしきい値 (%)
 
 // ===== LTE通信設定 (SIM7080G) =====
 #define MODEM_BAUD_RATE 115200             // SIM7080G通信速度

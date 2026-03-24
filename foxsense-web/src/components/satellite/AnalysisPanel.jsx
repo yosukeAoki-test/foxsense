@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useSatelliteApi } from '../../hooks/useSatelliteApi'
 import SatelliteLoader from './SatelliteLoader'
+import LegendBar from './LegendBar'
 
 const INDEX_OPTIONS = [
   { id: 'ndvi', label: 'NDVI', desc: '生育状況' },
@@ -34,7 +35,7 @@ export default function AnalysisPanel({ selectedArea, startDate, endDate, mapRef
       polygon: activePolygon,
       start_date: startDate,
       end_date: endDate,
-      cloud_max: 30,
+      cloud_max: 60,
     })
     setOverlayOn(false)
     mapRef.current?.clearOverlay()
@@ -48,6 +49,7 @@ export default function AnalysisPanel({ selectedArea, startDate, endDate, mapRef
       bbox: selectedArea.bbox,
       date,
       index,
+      polygon: activePolygon ?? null,
     })
     if (res?.image_base64) {
       mapRef.current?.setOverlay(res.image_base64, selectedArea.bbox)
@@ -101,19 +103,10 @@ export default function AnalysisPanel({ selectedArea, startDate, endDate, mapRef
           {colormap.error && <p className="text-xs text-red-500">{colormap.error}</p>}
 
           {overlayOn && colormap.data?.legend && (
-            <div className="mt-1">
-              <p className="text-xs text-gray-400 mb-1">{INDEX_OPTIONS.find(o => o.id === activeIndex)?.desc} 凡例</p>
-              <div className="flex rounded overflow-hidden h-3">
-                {colormap.data.legend.map((tick, i) => (
-                  <div key={i} style={{ flex: 1, background: tick.color }} />
-                ))}
-              </div>
-              <div className="flex justify-between text-[10px] text-gray-400 mt-0.5">
-                {colormap.data.legend.map((tick, i) => (
-                  <span key={i}>{tick.value}</span>
-                ))}
-              </div>
-            </div>
+            <LegendBar
+              legend={colormap.data.legend}
+              label={INDEX_OPTIONS.find(o => o.id === activeIndex)?.desc + ' 凡例'}
+            />
           )}
         </div>
       )}

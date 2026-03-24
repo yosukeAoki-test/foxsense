@@ -49,6 +49,39 @@ export const getPurchases = async (userId) => {
   });
 };
 
+export const getReceipt = async (userId, purchaseId) => {
+  const purchase = await prisma.foxCoinPurchase.findFirst({
+    where: { id: purchaseId, userId },
+    include: { package: true, user: { select: { name: true, email: true } } },
+  });
+  if (!purchase) throw new AppError('領収書が見つかりません', 404);
+
+  // 内税10%計算
+  const priceIncTax = purchase.price;
+  const priceExTax  = Math.round(priceIncTax * 100 / 110);
+  const taxAmount   = priceIncTax - priceExTax;
+
+  return {
+    receiptNo:    `RC-${purchase.id.slice(0, 8).toUpperCase()}`,
+    issuedAt:     purchase.purchasedAt,
+    buyerName:    purchase.user.name,
+    buyerEmail:   purchase.user.email,
+    itemName:     purchase.package?.name ?? `FoxCoin ${purchase.coins}枚`,
+    coins:        purchase.coins,
+    priceIncTax,
+    priceExTax,
+    taxAmount,
+    taxRate:      10,
+    // 適格請求書発行事業者情報
+    issuer: {
+      name:           'geoAlpine合同会社',
+      registrationNo: 'T5390003002074',
+      address:        '山形県東根市温泉町1-20-1',
+      email:          'info@geoalpine.net',
+    },
+  };
+};
+
 // 管理者がユーザーにコインを付与（または手動購入処理）
 export const grantCoins = async (userId, coins, packageId, price, note, stripeSessionId = null) => {
   // Stripe セッション ID による冪等性チェック（重複 webhook 対策）

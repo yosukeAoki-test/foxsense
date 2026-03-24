@@ -14,6 +14,9 @@ import DevicesPage from './pages/DevicesPage.jsx'
 import SettingsPage from './pages/SettingsPage.jsx'
 import CropsPage from './pages/CropsPage.jsx'
 import SatellitePage from './pages/SatellitePage.jsx'
+import TokushohoPage from './pages/TokushohoPage.jsx'
+import FoxCoinSuccessPage from './pages/FoxCoinSuccessPage.jsx'
+import ReceiptPage from './pages/ReceiptPage.jsx'
 
 // 認証が必要なルートを保護するコンポーネント
 const ProtectedRoute = ({ children }) => {
@@ -99,6 +102,8 @@ createRoot(document.getElementById('root')).render(
           />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
+          <Route path="/tokushoho" element={<TokushohoPage />} />
+          <Route path="/receipt/:purchaseId" element={<ReceiptPage />} />
 
           {/* 認証が必要なルート */}
           <Route
@@ -120,20 +125,7 @@ createRoot(document.getElementById('root')).render(
             path="/foxcoins/success"
             element={
               <ProtectedRoute>
-                <div className="min-h-screen bg-green-50 flex items-center justify-center p-4">
-                  <div className="bg-white rounded-xl shadow-lg p-8 text-center max-w-md">
-                    <div className="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <svg className="w-8 h-8 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                    </div>
-                    <h1 className="text-2xl font-bold text-gray-900 mb-2">購入完了</h1>
-                    <p className="text-gray-600 mb-6">FoxCoinが有効になりました。</p>
-                    <a href="/" className="inline-block bg-yellow-500 hover:bg-yellow-600 text-white font-medium py-2.5 px-6 rounded-lg transition-colors">
-                      ダッシュボードへ
-                    </a>
-                  </div>
-                </div>
+                <FoxCoinSuccessPage />
               </ProtectedRoute>
             }
           />

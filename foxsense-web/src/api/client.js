@@ -283,6 +283,10 @@ export const foxCoinApi = {
     const response = await client.get('/foxcoins/purchases');
     return response.data.data;
   },
+  getReceipt: async (purchaseId) => {
+    const response = await client.get(`/foxcoins/purchases/${purchaseId}/receipt`);
+    return response.data.data;
+  },
 };
 
 // ===== Admin Inventory API =====

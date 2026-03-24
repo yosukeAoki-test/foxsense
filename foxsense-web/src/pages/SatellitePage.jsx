@@ -1,37 +1,53 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import FieldMap from '../components/satellite/FieldMap'
 import AddressSearch from '../components/satellite/AddressSearch'
 import NDVIChart from '../components/satellite/NDVIChart'
 import FarmerSummary from '../components/satellite/FarmerSummary'
-import DrainagePanel from '../components/satellite/DrainagePanel'
-import CarbonPanel from '../components/satellite/CarbonPanel'
 import AnalysisPanel from '../components/satellite/AnalysisPanel'
 import SatelliteLoader from '../components/satellite/SatelliteLoader'
+import DiseaseRiskPanel from '../components/satellite/DiseaseRiskPanel'
 import { useSatelliteApi } from '../hooks/useSatelliteApi'
+import MyFieldsPanel, { SaveFieldModal } from '../components/satellite/MyFieldsPanel'
+import { fieldsApi } from '../api/fields'
+import MapLayersPanel from '../components/satellite/MapLayersPanel'
+import SprayWeatherPanel from '../components/satellite/SprayWeatherPanel'
+import { foxCoinApi } from '../api/client'
 
 const DEFAULT_CENTER = { lat: 38.73, lon: 139.83 }
 
 const TABS = [
+  { id: 'myfields', label: '圃場管理' },
   { id: 'ndvi',     label: 'NDVI 生育' },
-  { id: 'drainage', label: '中干し' },
-  { id: 'carbon',   label: 'CO2試算' },
   { id: 'analysis', label: '圃場解析' },
+  { id: 'disease',  label: '病害予測' },
+  { id: 'maplayers', label: 'マップ' },
+  { id: 'spray',    label: '散布予報' },
 ]
 
 export default function SatellitePage() {
-  const [tab, setTab] = useState('ndvi')
+  const [tab, setTab] = useState('myfields')
   const [expertMode, setExpertMode] = useState(false)
   const mapRef = useRef(null)
   const [selectedArea, setSelectedArea] = useState(null)
   const [selectedParcel, setSelectedParcel] = useState(null)
+  const [showSaveModal, setShowSaveModal] = useState(false)
+  const [coinBalance, setCoinBalance] = useState(null)
+  const [coinLoading, setCoinLoading] = useState(true)
+  const [coinError, setCoinError] = useState(false)
+
+  useEffect(() => {
+    foxCoinApi.getBalance()
+      .then(data => { setCoinBalance(data); setCoinError(false) })
+      .catch(() => { setCoinError(true); setCoinBalance(null) })
+      .finally(() => setCoinLoading(false))
+  }, [])
 
   const now = new Date()
   const season = now.getMonth() >= 4 ? now.getFullYear() : now.getFullYear() - 1
   const [startDate, setStartDate] = useState(`${season}-05-01`)
   const [endDate, setEndDate]     = useState(`${season}-09-30`)
 
-  const ndvi     = useSatelliteApi()
-  const drainage = useSatelliteApi()
+  const ndvi = useSatelliteApi()
 
   const areaHa = selectedParcel?.properties?.area_ha ?? selectedArea?.areaHa ?? 1.0
 
@@ -45,18 +61,61 @@ export default function SatellitePage() {
       polygon: activePolygon,
       start_date: startDate,
       end_date: endDate,
-      cloud_max: 30,
+      cloud_max: 60,
     })
   }
 
-  const fetchDrainage = () => {
-    if (!selectedArea) return
-    drainage.post('/drainage/polygon', {
-      bbox: selectedArea.bbox,
-      polygon: activePolygon,
-      year: season,
-      cloud_max: 30,
-    })
+  if (coinLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="w-6 h-6 border-2 border-green-600 border-t-transparent rounded-full animate-spin" />
+      </div>
+    )
+  }
+
+  if (coinError) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <div className="bg-green-700 text-white px-4 py-3">
+          <h2 className="text-base font-bold">農地衛星モニタリング</h2>
+          <p className="text-green-200 text-xs mt-0.5">Sentinel-2 / NASA HLS 衛星データによる農地モニタリング</p>
+        </div>
+        <div className="flex flex-col items-center justify-center p-10 text-center gap-4">
+          <div className="text-4xl">⚠️</div>
+          <h3 className="text-lg font-bold text-gray-700">接続エラー</h3>
+          <p className="text-sm text-gray-500">残高情報を取得できませんでした。ネットワークを確認してページを再読み込みしてください。</p>
+          <button onClick={() => window.location.reload()}
+            className="mt-2 bg-green-600 text-white px-5 py-2.5 rounded-lg text-sm font-medium">
+            再読み込み
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  if (coinBalance && coinBalance.balance <= 0) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <div className="bg-green-700 text-white px-4 py-3">
+          <h2 className="text-base font-bold">農地衛星モニタリング</h2>
+          <p className="text-green-200 text-xs mt-0.5">Sentinel-2 / NASA HLS 衛星データによる農地モニタリング</p>
+        </div>
+        <div className="flex flex-col items-center justify-center p-10 text-center gap-4">
+          <div className="text-5xl">🪙</div>
+          <h3 className="text-lg font-bold text-gray-700">FoxCoin が必要です</h3>
+          <p className="text-sm text-gray-500">
+            衛星モニタリング機能を利用するには FoxCoin の残高が必要です。<br />
+            ダッシュボードのコインアイコンから購入してください。
+          </p>
+          <a
+            href="/"
+            className="mt-2 bg-green-600 text-white px-5 py-2.5 rounded-lg text-sm font-medium"
+          >
+            ダッシュボードへ戻る
+          </a>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -64,7 +123,7 @@ export default function SatellitePage() {
       {/* ページヘッダー */}
       <div className="bg-green-700 text-white px-4 py-3">
         <h2 className="text-base font-bold">農地衛星モニタリング</h2>
-        <p className="text-green-200 text-xs mt-0.5">Sentinel-2 衛星データ × カーボンクレジット試算</p>
+        <p className="text-green-200 text-xs mt-0.5">Sentinel-2 / NASA HLS 衛星データによる農地モニタリング</p>
       </div>
 
       {/* 選択状態バー */}
@@ -121,20 +180,22 @@ export default function SatellitePage() {
       />
 
       {/* タブ */}
-      <div className="flex bg-white border-b sticky top-0 z-10">
-        {TABS.map(t => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={`flex-1 py-3 text-xs font-medium border-b-2 transition-colors ${
-              tab === t.id
-                ? 'border-green-600 text-green-700'
-                : 'border-transparent text-gray-400'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
+      <div className="bg-white border-b sticky top-0 z-10 overflow-x-auto">
+        <div className="flex min-w-max">
+          {TABS.map(t => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={`px-4 py-3 text-xs font-medium border-b-2 whitespace-nowrap transition-colors ${
+                tab === t.id
+                  ? 'border-green-600 text-green-700'
+                  : 'border-transparent text-gray-400'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* コンテンツ */}
@@ -189,27 +250,6 @@ export default function SatellitePage() {
           </div>
         )}
 
-        {/* 中干し検出タブ */}
-        {tab === 'drainage' && selectedArea && (
-          <div className="space-y-3">
-            <button onClick={fetchDrainage} disabled={drainage.loading}
-              className="w-full bg-blue-600 text-white py-2.5 rounded-lg font-medium text-sm disabled:opacity-50">
-              {drainage.loading ? '解析中...' : `${season}年の中干し期間を検出`}
-            </button>
-            {drainage.error && <p className="text-xs text-red-500 bg-red-50 rounded p-2">{drainage.error}</p>}
-            {drainage.loading && <SatelliteLoader label="中干し期間を衛星データから検出中..." />}
-            {drainage.data && !drainage.loading && <DrainagePanel data={drainage.data} areaHa={areaHa} />}
-          </div>
-        )}
-
-        {/* CO2試算タブ */}
-        {tab === 'carbon' && (
-          <CarbonPanel
-            areaHa={areaHa}
-            drainageDays={drainage.data?.drainage_detection?.duration_days ?? null}
-          />
-        )}
-
         {/* 圃場解析タブ */}
         {tab === 'analysis' && (
           <AnalysisPanel
@@ -220,7 +260,62 @@ export default function SatellitePage() {
             activePolygon={activePolygon}
           />
         )}
+
+        {/* 病害リスク予測タブ */}
+        {tab === 'disease' && (
+          <DiseaseRiskPanel
+            selectedArea={selectedArea}
+            startDate={startDate}
+            endDate={endDate}
+            activePolygon={activePolygon}
+          />
+        )}
+
+        {/* マップレイヤータブ */}
+        {tab === 'maplayers' && (
+          <MapLayersPanel
+            selectedArea={selectedArea}
+            activePolygon={activePolygon}
+            mapRef={mapRef}
+          />
+        )}
+
+        {/* 散布予報タブ */}
+        {tab === 'spray' && (
+          <SprayWeatherPanel
+            selectedArea={selectedArea}
+          />
+        )}
+
+        {/* 圃場管理タブ */}
+        {tab === 'myfields' && (
+          <MyFieldsPanel
+            pendingArea={selectedArea}
+            activePolygon={activePolygon}
+            mapRef={mapRef}
+            onSaveRequest={() => setShowSaveModal(true)}
+            onLoad={field => {
+              const bbox = JSON.parse(field.bbox)
+              mapRef.current?.fitBbox(bbox)
+              mapRef.current?.highlightSavedField(field)
+              setSelectedArea({
+                bbox,
+                areaHa: field.areaHa ?? 1,
+                polygon: field.polygon ? JSON.parse(field.polygon) : null,
+              })
+            }}
+          />
+        )}
       </div>
+
+      {/* 保存モーダル */}
+      {showSaveModal && (
+        <SaveFieldModal
+          area={selectedArea}
+          onSave={data => fieldsApi.create(data)}
+          onClose={() => setShowSaveModal(false)}
+        />
+      )}
     </div>
   )
 }

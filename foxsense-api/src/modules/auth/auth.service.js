@@ -72,10 +72,10 @@ export const login = async ({ email, password }) => {
     throw new AppError('Invalid email or password', 401);
   }
 
-  // アカウントロック確認
+  // アカウントロック確認（401で返してアカウント存在を漏洩しない）
   if (user.lockedUntil && user.lockedUntil > new Date()) {
     const remainMin = Math.ceil((user.lockedUntil - Date.now()) / 60000);
-    throw new AppError(`アカウントがロックされています。${remainMin}分後に再試行してください。`, 423);
+    throw new AppError(`ログイン試行回数が上限を超えました。${remainMin}分後に再試行してください。`, 401);
   }
 
   const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
@@ -90,7 +90,7 @@ export const login = async ({ email, password }) => {
       },
     });
     if (isLocked) {
-      throw new AppError(`ログイン失敗が${MAX_LOGIN_ATTEMPTS}回に達しました。30分間アカウントをロックします。`, 423);
+      throw new AppError(`ログイン試行回数が上限を超えました。30分後に再試行してください。`, 401);
     }
     throw new AppError('Invalid email or password', 401);
   }

@@ -14,6 +14,16 @@ if (process.env.NODE_ENV === 'production') {
     console.error('[Config] JWT_REFRESH_SECRET must be at least 32 characters');
     process.exit(1);
   }
+  // Stripe が設定されている場合はWebhookシークレットも必須
+  if (process.env.STRIPE_SECRET_KEY && !process.env.STRIPE_WEBHOOK_SECRET) {
+    console.error('[Config] STRIPE_WEBHOOK_SECRET is required when STRIPE_SECRET_KEY is set');
+    process.exit(1);
+  }
+  // テスト用Stripeキーが本番に混入していないか確認
+  if (process.env.STRIPE_SECRET_KEY?.startsWith('sk_test_')) {
+    console.error('[Config] STRIPE_SECRET_KEY is a test key but NODE_ENV=production');
+    process.exit(1);
+  }
 }
 
 const config = {

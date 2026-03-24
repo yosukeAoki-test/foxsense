@@ -1,6 +1,7 @@
 import { useState } from 'react'
 
 const BASE = import.meta.env.VITE_SATELLITE_API_URL || '/api'
+const API_KEY = import.meta.env.VITE_SATELLITE_API_KEY || ''
 
 export function useSatelliteApi() {
   const [data, setData] = useState(null)
@@ -11,7 +12,9 @@ export function useSatelliteApi() {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch(`${BASE}${path}`)
+      const res = await fetch(`${BASE}${path}`, {
+        headers: { 'X-API-Key': API_KEY },
+      })
       if (!res.ok) {
         const json = await res.json().catch(() => ({}))
         throw new Error(json.detail ?? 'エラーが発生しました')
@@ -30,7 +33,7 @@ export function useSatelliteApi() {
     try {
       const res = await fetch(`${BASE}${path}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY },
         body: JSON.stringify(body),
       })
       if (!res.ok) {

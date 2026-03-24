@@ -664,6 +664,11 @@ function App() {
               ))}
             </div>
             <p className="text-xs text-gray-400 mt-4 text-center">Stripe の安全な決済画面に移動します</p>
+            <p className="text-xs text-gray-400 mt-1 text-center">
+              <a href="/tokushoho" target="_blank" rel="noreferrer" className="underline hover:text-gray-600">
+                特定商取引法に基づく表記
+              </a>
+            </p>
           </div>
         </div>
       )}
