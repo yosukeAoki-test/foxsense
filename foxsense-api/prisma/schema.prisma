@@ -196,6 +196,7 @@ model DeviceInventory {
   imsi      String?   @unique // SORACOM SIM IMSI（親機のみ）
   claimed   Boolean   @default(false)
   claimedAt DateTime?
+  deletedAt DateTime?
   createdAt DateTime  @default(now())
 }
 

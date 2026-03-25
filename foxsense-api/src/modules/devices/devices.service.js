@@ -103,7 +103,7 @@ export const createParentDevice = async (userId, data) => {
     }
     await prisma.deviceInventory.update({
       where: { id: invItem.id },
-      data: { claimed: true, claimedAt: new Date() },
+      data: { claimed: true, claimedAt: new Date(), deletedAt: null },
     });
     if (invItem.imsi) {
       // IMSI の重複チェック
@@ -174,6 +174,12 @@ export const deleteParentDevice = async (id, userId) => {
   if (!device) throw new AppError('Parent device not found', 404);
 
   await prisma.parentDevice.delete({ where: { id } });
+
+  // 在庫を「削除済み」に更新
+  await prisma.deviceInventory.updateMany({
+    where: { deviceId: device.deviceId },
+    data: { claimed: false, deletedAt: new Date() },
+  });
 };
 
 // ===== Child Devices (ユーザー所有) =====
@@ -233,7 +239,7 @@ export const createChildDevice = async (userId, data) => {
     }
     await prisma.deviceInventory.update({
       where: { id: invItem.id },
-      data: { claimed: true, claimedAt: new Date() },
+      data: { claimed: true, claimedAt: new Date(), deletedAt: null },
     });
   }
 
@@ -262,6 +268,12 @@ export const deleteChildDevice = async (id, userId) => {
   if (!child) throw new AppError('Child device not found', 404);
 
   await prisma.childDevice.delete({ where: { id } });
+
+  // 在庫を「削除済み」に更新
+  await prisma.deviceInventory.updateMany({
+    where: { deviceId: child.deviceId },
+    data: { claimed: false, deletedAt: new Date() },
+  });
 };
 
 // ===== Assignments (紐付け管理) =====

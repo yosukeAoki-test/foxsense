@@ -611,6 +611,15 @@ ${labels.map(l => `  <div class="label">
     });
   };
 
+  const handleRestoreInventory = async (id) => {
+    try {
+      await adminInventoryApi.restore(id);
+      loadInventory();
+    } catch (e) {
+      setError(e.response?.data?.message || '復元に失敗しました');
+    }
+  };
+
   const parents = inventory.filter(i => i.type === 'PARENT');
   const children = inventory.filter(i => i.type === 'CHILD');
 
@@ -848,6 +857,8 @@ ${labels.map(l => `  <div class="label">
                     <td className="px-3 py-2">
                       {item.claimed ? (
                         <span className="flex items-center gap-1 text-gray-400"><Check className="w-3 h-3" />登録済</span>
+                      ) : item.deletedAt ? (
+                        <span className="flex items-center gap-1 text-red-400 font-medium">✕ 削除済み</span>
                       ) : (
                         <span className="flex items-center gap-1 text-emerald-600 font-medium">● 未使用</span>
                       )}
@@ -858,6 +869,11 @@ ${labels.map(l => `  <div class="label">
                         <button onClick={() => handleUnregisterInventory(item.id, item.deviceId)}
                           className="text-xs px-2 py-1 rounded text-orange-500 hover:text-orange-700 hover:bg-orange-50 transition-colors border border-orange-200">
                           登録解除
+                        </button>
+                      ) : item.deletedAt ? (
+                        <button onClick={() => handleRestoreInventory(item.id)}
+                          className="text-xs px-2 py-1 rounded text-blue-500 hover:text-blue-700 hover:bg-blue-50 transition-colors border border-blue-200">
+                          再登録可能にする
                         </button>
                       ) : (
                         <button onClick={() => handleDeleteInventory(item.id)}

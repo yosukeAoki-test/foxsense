@@ -235,6 +235,17 @@ export const unregisterInventoryItem = async (id) => {
   });
 };
 
+export const restoreInventoryItem = async (id) => {
+  const item = await prisma.deviceInventory.findUnique({ where: { id } });
+  if (!item) throw new AppError('在庫IDが見つかりません', 404);
+  if (!item.deletedAt) throw new AppError('このデバイスは削除済みではありません', 400);
+
+  await prisma.deviceInventory.update({
+    where: { id },
+    data: { deletedAt: null },
+  });
+};
+
 // ===== パスワード変更 =====
 
 export const changePassword = async (userId, currentPassword, newPassword) => {

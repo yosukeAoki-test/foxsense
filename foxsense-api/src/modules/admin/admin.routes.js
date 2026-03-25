@@ -27,7 +27,8 @@ router.put('/packages/:id', adminController.updatePackage);
 router.get('/inventory', adminController.getInventory);
 router.post('/inventory', adminController.bulkCreateInventory);
 router.delete('/inventory/:id', adminController.deleteInventoryItem);
-router.post('/inventory/:id/unregister', adminController.unregisterInventoryItem);
+router.post('/inventory/:id/unregister', adminController.unregisterInventoryItem)
+router.post('/inventory/:id/restore', adminController.restoreInventoryItem);
 
 // SORACOM (管理者向け)
 router.get('/soracom/available-sims', adminController.getAvailableSims);

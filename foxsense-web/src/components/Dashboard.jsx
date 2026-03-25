@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { format } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import { MapPin, Battery, Signal, Clock, Radio, Trash2 } from 'lucide-react';
@@ -28,12 +29,26 @@ const SignalBars = ({ csq }) => {
 };
 
 const Dashboard = ({ device, latestData, historyData, alerts, isParent, onDelete }) => {
+  const [showConfirm, setShowConfirm] = useState(false);
+
   const lastUpdate = latestData?.timestamp
     ? format(new Date(latestData.timestamp), 'M月d日 HH:mm', { locale: ja })
     : '--';
 
   return (
     <div className="space-y-4 sm:space-y-6">
+      {showConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl shadow-xl p-6 mx-4 w-full max-w-sm">
+            <p className="text-gray-800 font-medium mb-1">{isParent ? '親機' : '子機'}を削除しますか？</p>
+            <p className="text-sm text-gray-500 mb-5">「{device.name}」を削除します。センサーデータも削除されます。</p>
+            <div className="flex gap-3 justify-end">
+              <button onClick={() => setShowConfirm(false)} className="px-4 py-2 text-sm rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200">キャンセル</button>
+              <button onClick={() => { setShowConfirm(false); onDelete(device.id); }} className="px-4 py-2 text-sm rounded-lg bg-red-500 text-white hover:bg-red-600">削除する</button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* デバイス情報ヘッダー */}
       <div className="card p-4 sm:p-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
@@ -124,7 +139,7 @@ const Dashboard = ({ device, latestData, historyData, alerts, isParent, onDelete
             {/* 削除ボタン（子機のみ） */}
             {!isParent && onDelete && (
               <button
-                onClick={() => onDelete(device.id)}
+                onClick={() => setShowConfirm(true)}
                 className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
                 title="この子機を削除"
               >

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Thermometer, Droplets, Battery, ChevronRight, Radio, Wifi, Trash2 } from 'lucide-react';
 
 // CSQ (AT+CSQ 値 0-31) → バーレベル(0-4) + 色
@@ -24,11 +25,18 @@ const SignalBars = ({ csq }) => {
 };
 
 const DeviceList = ({ parent, children, selectedDevice, onSelectDevice, latestData, onAddChild, onDeleteChild }) => {
-  const handleDelete = (e, deviceId) => {
-    e.stopPropagation(); // 親のonClickが発火しないように
-    if (onDeleteChild) {
-      onDeleteChild(deviceId);
+  const [confirmTarget, setConfirmTarget] = useState(null); // { id, name }
+
+  const handleDelete = (e, deviceId, deviceName) => {
+    e.stopPropagation();
+    setConfirmTarget({ id: deviceId, name: deviceName });
+  };
+
+  const handleConfirmDelete = () => {
+    if (confirmTarget && onDeleteChild) {
+      onDeleteChild(confirmTarget.id);
     }
+    setConfirmTarget(null);
   };
 
   const renderDeviceCard = (device, isParent = false) => {
@@ -48,7 +56,7 @@ const DeviceList = ({ parent, children, selectedDevice, onSelectDevice, latestDa
         {/* 削除ボタン（子機のみ、モバイルでは常に表示） */}
         {!isParent && (
           <button
-            onClick={(e) => handleDelete(e, device.id)}
+            onClick={(e) => handleDelete(e, device.id, device.name)}
             className="absolute top-2 right-2 p-1.5 rounded-lg bg-white/80 text-gray-400 hover:text-red-500 hover:bg-red-50 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-all shadow-sm"
             title="子機を削除"
           >
@@ -146,6 +154,20 @@ const DeviceList = ({ parent, children, selectedDevice, onSelectDevice, latestDa
 
   return (
     <div className="card p-3 sm:p-4">
+      {/* 削除確認ダイアログ */}
+      {confirmTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl shadow-xl p-6 mx-4 w-full max-w-sm">
+            <p className="text-gray-800 font-medium mb-1">子機を削除しますか？</p>
+            <p className="text-sm text-gray-500 mb-5">「{confirmTarget.name}」を削除します。センサーデータも削除されます。</p>
+            <div className="flex gap-3 justify-end">
+              <button onClick={() => setConfirmTarget(null)} className="px-4 py-2 text-sm rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200">キャンセル</button>
+              <button onClick={handleConfirmDelete} className="px-4 py-2 text-sm rounded-lg bg-red-500 text-white hover:bg-red-600">削除する</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 親機セクション */}
       <div className="mb-3 sm:mb-4">
         <h3 className="font-bold text-gray-800 mb-2 sm:mb-3 px-2 flex items-center gap-2 text-sm sm:text-base">
