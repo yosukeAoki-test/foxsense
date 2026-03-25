@@ -1,4 +1,4 @@
-import { Thermometer, Droplets, Battery, ChevronRight, Radio, Wifi, Plus, Trash2 } from 'lucide-react';
+import { Thermometer, Droplets, Battery, ChevronRight, Radio, Wifi, Trash2 } from 'lucide-react';
 
 // CSQ (AT+CSQ 値 0-31) → バーレベル(0-4) + 色
 const csqToLevel = (csq) => {
@@ -186,18 +186,6 @@ const DeviceList = ({ parent, children, selectedDevice, onSelectDevice, latestDa
         )}
       </div>
 
-      {/* 子機追加ボタン */}
-      {children.length > 0 && (
-        <div className="mt-4 pt-4 border-t border-gray-100">
-          <button
-            onClick={onAddChild}
-            className="w-full py-2.5 text-sm text-leaf-600 hover:text-leaf-700 hover:bg-leaf-50 rounded-lg transition-colors flex items-center justify-center gap-2"
-          >
-            <Plus className="w-4 h-4" />
-            子機を追加
-          </button>
-        </div>
-      )}
     </div>
   );
 };

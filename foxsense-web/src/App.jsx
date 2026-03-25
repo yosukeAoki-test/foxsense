@@ -365,8 +365,8 @@ function App() {
           </div>
 
           <div className="flex items-center gap-1.5 flex-shrink-0">
-            {/* 親機セレクター */}
-            {parentDevices.length > 0 && (
+            {/* 親機セレクター（2台以上の場合のみ表示） */}
+            {parentDevices.length > 1 && (
               <div className="relative">
                 <button onClick={() => setShowParentMenu(prev => !prev)}
                   className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-medium transition-colors border border-blue-200 max-w-[130px] sm:max-w-[160px]">
