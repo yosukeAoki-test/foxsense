@@ -130,6 +130,7 @@ function App() {
         isOnline: !!latestApiData?.parent,
         lastSeen: latestApiData?.parent?.timestamp || null,
         battery: latestApiData?.parent?.battery ?? null,
+        voltage: latestApiData?.parent?.voltage ?? null,
         signal: latestApiData?.parent?.rssi ?? null,
         latestData: latestApiData?.parent
           ? { temperature: latestApiData.parent.temperature, humidity: latestApiData.parent.humidity, timestamp: latestApiData.parent.timestamp }

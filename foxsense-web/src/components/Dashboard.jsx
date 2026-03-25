@@ -1,17 +1,30 @@
 import { format } from 'date-fns';
 import { ja } from 'date-fns/locale';
-import { MapPin, Battery, Signal, Clock, Wifi, Radio, Trash2 } from 'lucide-react';
+import { MapPin, Battery, Signal, Clock, Radio, Trash2 } from 'lucide-react';
 import GaugeCard from './GaugeCard';
 import HistoryChart from './HistoryChart';
 
-// CSQ (AT+CSQ 値 0-31) → 表示ラベルと色
-const csqToSignal = (csq) => {
+// CSQ (AT+CSQ 値 0-31) → バーレベル(0-4) + 色
+const csqToLevel = (csq) => {
   if (!csq || csq >= 99) return null;
+  const level = csq <= 5 ? 0 : csq <= 11 ? 1 : csq <= 17 ? 2 : csq <= 23 ? 3 : 4;
+  const color = level >= 3 ? 'text-green-500' : level >= 2 ? 'text-leaf-500' : level >= 1 ? 'text-yellow-500' : 'text-red-500';
   const dBm = -113 + 2 * csq;
-  if (dBm >= -70) return { label: `良好 (${dBm}dBm)`, color: 'text-green-500' };
-  if (dBm >= -85) return { label: `普通 (${dBm}dBm)`, color: 'text-leaf-500' };
-  if (dBm >= -100) return { label: `弱い (${dBm}dBm)`, color: 'text-yellow-500' };
-  return { label: `圏外 (${dBm}dBm)`, color: 'text-red-500' };
+  return { level, color, dBm };
+};
+
+const SignalBars = ({ csq }) => {
+  const sig = csqToLevel(csq);
+  if (!sig) return null;
+  return (
+    <div className={`flex items-end gap-px ${sig.color}`} title={`${sig.dBm}dBm`}>
+      {[5, 8, 11, 14].map((h, i) => (
+        <div key={i} className={`w-2 rounded-sm ${i < sig.level ? 'bg-current' : 'bg-gray-200'}`}
+          style={{ height: `${h}px` }} />
+      ))}
+      <span className="text-xs sm:text-sm ml-1">LTE {sig.dBm}dBm</span>
+    </div>
+  );
 };
 
 const Dashboard = ({ device, latestData, historyData, alerts, isParent, onDelete }) => {
@@ -61,33 +74,31 @@ const Dashboard = ({ device, latestData, historyData, alerts, isParent, onDelete
               </span>
             </div>
 
-            {/* バッテリー */}
-            {(device.voltage != null || (device.battery != null && device.battery > 0)) && (
+            {/* バッテリー / 電源 */}
+            {device.battery != null && device.battery > 0 ? (
               <div className="flex items-center gap-1">
-                <Battery className={`w-3 h-3 sm:w-4 sm:h-4 ${(device.battery ?? 100) > 20 ? 'text-leaf-500' : 'text-red-500'}`} />
-                {device.voltage != null ? (
-                  <span className={`text-xs sm:text-sm ${(device.battery ?? 100) > 20 ? 'text-gray-600' : 'text-red-500'}`}>
-                    {(device.voltage / 1000).toFixed(2)}V{device.battery != null && device.battery > 0 && ` (${device.battery}%)`}
-                  </span>
-                ) : (
-                  <span className={`text-xs sm:text-sm ${device.battery > 20 ? 'text-gray-600' : 'text-red-500'}`}>
-                    {device.battery}%
-                  </span>
-                )}
+                <Battery className={`w-3 h-3 sm:w-4 sm:h-4 ${device.battery > 20 ? 'text-leaf-500' : 'text-red-500'}`} />
+                <span className={`text-xs sm:text-sm ${device.battery > 20 ? 'text-gray-600' : 'text-red-500'}`}>
+                  {device.battery}%
+                </span>
               </div>
-            )}
+            ) : device.voltage != null && device.battery == null ? (
+              // 子機 VCC電圧
+              <div className="flex items-center gap-1">
+                <Battery className="w-3 h-3 sm:w-4 sm:h-4 text-leaf-500" />
+                <span className="text-xs sm:text-sm text-gray-600">{(device.voltage / 1000).toFixed(2)}V</span>
+              </div>
+            ) : isParent && device.voltage != null && device.voltage > 3000 ? (
+              // 親機 VBUS (USB/安定化電源)
+              <div className="flex items-center gap-1 text-blue-500">
+                <Battery className="w-3 h-3 sm:w-4 sm:h-4" />
+                <span className="text-xs sm:text-sm">USB給電 {(device.voltage / 1000).toFixed(1)}V</span>
+              </div>
+            ) : null}
 
             {/* 電波強度 */}
             {isParent ? (
-              device.signal != null && (() => {
-                const sig = csqToSignal(device.signal);
-                return sig ? (
-                  <div className={`flex items-center gap-1 ${sig.color}`}>
-                    <Wifi className="w-3 h-3 sm:w-4 sm:h-4" />
-                    <span className="text-xs sm:text-sm">LTE {sig.label}</span>
-                  </div>
-                ) : null;
-              })()
+              <SignalBars csq={device.signal} />
             ) : (
               device.rssi != null && (
                 <div className="flex items-center gap-1">

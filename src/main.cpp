@@ -100,6 +100,7 @@ struct ParentData {
     float humidity;
     float pressure;    // 気圧 (hPa)
     int batteryLevel;
+    int vbusMv = 0;    // VBUS電圧 mV (USB/安定化電源給電時)
 } parentData;
 
 // 関数プロトタイプ
@@ -282,8 +283,9 @@ void setup() {
     // バッテリー電圧確認 (AXP2101 PMU)
     if (initPMU()) {
         parentData.batteryLevel = PMU.isBatteryConnect() ? PMU.getBatteryPercent() : 0;
-        Serial.printf("[INFO] Battery: %dmV (%d%%) charging=%d\n",
-                      PMU.getBattVoltage(), parentData.batteryLevel, PMU.isCharging());
+        parentData.vbusMv = (int)PMU.getVbusVoltage();
+        Serial.printf("[INFO] Battery: %dmV (%d%%) charging=%d VBUS=%dmV\n",
+                      PMU.getBattVoltage(), parentData.batteryLevel, PMU.isCharging(), parentData.vbusMv);
     } else {
         Serial.println("[WARN] PMU (AXP2101) not found, battery unknown");
         parentData.batteryLevel = 0;
@@ -1563,6 +1565,7 @@ bool sendAllDataToServer() {
     payload += "\"humidity\":" + String(parentData.humidity, 2) + ",";
     payload += "\"pressure\":" + String(parentData.pressure, 1) + ",";
     payload += "\"battery\":" + String(parentData.batteryLevel) + ",";
+    payload += "\"vbus_mv\":" + String(parentData.vbusMv) + ",";
     payload += "\"signal\":" + String(modemState.signalStrength);
     payload += "},";
 

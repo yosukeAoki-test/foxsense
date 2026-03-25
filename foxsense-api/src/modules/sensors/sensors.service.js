@@ -201,7 +201,8 @@ export const recordBulkSensorData = async (data) => {
         temperature: p.temperature,
         humidity: p.humidity,
         pressure: (typeof p.pressure === 'number' && p.pressure > 0) ? p.pressure : null,
-        battery: p.battery ?? null,
+        battery: (typeof p.battery === 'number' && p.battery > 0) ? p.battery : null,
+        voltage: (typeof p.vbus_mv === 'number' && p.vbus_mv > 0) ? p.vbus_mv : null,
         rssi: p.signal ?? null,
       },
     });
