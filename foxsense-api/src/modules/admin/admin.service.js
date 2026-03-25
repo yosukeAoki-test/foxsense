@@ -173,10 +173,53 @@ export const createPackage = async (data) => {
 // ===== デバイス在庫管理 =====
 
 export const getInventory = async ({ type } = {}) => {
-  return prisma.deviceInventory.findMany({
+  const items = await prisma.deviceInventory.findMany({
     where: type ? { type } : undefined,
     orderBy: { createdAt: 'desc' },
   });
+
+  const ONLINE_THRESHOLD_MS = 30 * 60 * 1000; // 30分
+  const now = Date.now();
+
+  return Promise.all(items.map(async (item) => {
+    if (!item.claimed && !item.deletedAt) {
+      return { ...item, deviceName: null, userName: null, lastSeen: null, isOnline: false };
+    }
+
+    let deviceName = null, userName = null, lastSeen = null;
+
+    if (item.type === 'PARENT') {
+      const device = await prisma.parentDevice.findUnique({
+        where: { deviceId: item.deviceId },
+        include: {
+          user: { select: { name: true, email: true } },
+          sensorData: { orderBy: { timestamp: 'desc' }, take: 1 },
+        },
+      });
+      if (device) {
+        deviceName = device.name;
+        userName = device.user?.name || device.user?.email || null;
+        lastSeen = device.sensorData[0]?.timestamp ?? null;
+      }
+    } else {
+      const device = await prisma.childDevice.findUnique({
+        where: { deviceId: item.deviceId },
+        include: {
+          user: { select: { name: true, email: true } },
+          sensorData: { orderBy: { timestamp: 'desc' }, take: 1 },
+        },
+      });
+      if (device) {
+        deviceName = device.name;
+        userName = device.user?.name || device.user?.email || null;
+        lastSeen = device.sensorData[0]?.timestamp ?? null;
+      }
+    }
+
+    const isOnline = lastSeen ? (now - new Date(lastSeen).getTime()) < ONLINE_THRESHOLD_MS : false;
+
+    return { ...item, deviceName, userName, lastSeen, isOnline };
+  }));
 };
 
 export const bulkCreateInventory = async (devices) => {

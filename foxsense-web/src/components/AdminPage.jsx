@@ -620,6 +620,26 @@ ${labels.map(l => `  <div class="label">
     }
   };
 
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterType, setFilterType] = useState('ALL');
+  const [filterStatus, setFilterStatus] = useState('ALL');
+
+  const getItemStatus = (item) => {
+    if (item.deletedAt) return 'deleted';
+    if (item.claimed) return item.isOnline ? 'online' : 'offline';
+    return 'unused';
+  };
+
+  const filteredInventory = inventory.filter(item => {
+    const q = searchQuery.toLowerCase();
+    if (q && !item.deviceId.toLowerCase().includes(q) &&
+        !(item.deviceName || '').toLowerCase().includes(q) &&
+        !(item.userName || '').toLowerCase().includes(q)) return false;
+    if (filterType !== 'ALL' && item.type !== filterType) return false;
+    if (filterStatus !== 'ALL' && getItemStatus(item) !== filterStatus) return false;
+    return true;
+  });
+
   const parents = inventory.filter(i => i.type === 'PARENT');
   const children = inventory.filter(i => i.type === 'CHILD');
 
@@ -814,14 +834,14 @@ ${labels.map(l => `  <div class="label">
         )}
       </div>
 
-      {/* 在庫一覧 */}
+      {/* 登録済みデバイス */}
       <div className="bg-white rounded-xl border p-5">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-semibold text-gray-900 flex items-center gap-2">
             <Database className="w-4 h-4 text-gray-500" />
-            在庫一覧
+            登録済みデバイス
             <span className="text-xs font-normal text-gray-400 ml-1">
-              親機 {parents.filter(i => !i.claimed).length}/{parents.length}未使用 ／ 子機 {children.filter(i => !i.claimed).length}/{children.length}未使用
+              全{inventory.length}件 ／ 未使用 親機{parents.filter(i => !i.claimed && !i.deletedAt).length} 子機{children.filter(i => !i.claimed && !i.deletedAt).length}
             </span>
           </h3>
           <button onClick={loadInventory} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 transition-colors">
@@ -829,61 +849,89 @@ ${labels.map(l => `  <div class="label">
           </button>
         </div>
 
+        {/* 検索・フィルター */}
+        <div className="flex flex-wrap gap-2 mb-4">
+          <input
+            type="text"
+            placeholder="デバイスID / デバイス名 / ユーザー名で検索..."
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            className="flex-1 min-w-[200px] px-3 py-1.5 text-xs border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-300"
+          />
+          <select value={filterType} onChange={e => setFilterType(e.target.value)}
+            className="px-2 py-1.5 text-xs border rounded-lg bg-white focus:outline-none">
+            <option value="ALL">すべての種別</option>
+            <option value="PARENT">親機</option>
+            <option value="CHILD">子機</option>
+          </select>
+          <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
+            className="px-2 py-1.5 text-xs border rounded-lg bg-white focus:outline-none">
+            <option value="ALL">すべての状態</option>
+            <option value="online">オンライン</option>
+            <option value="offline">オフライン</option>
+            <option value="deleted">削除済み</option>
+            <option value="unused">未使用</option>
+          </select>
+        </div>
+
         {inventory.length === 0 ? (
           <p className="text-sm text-gray-400 text-center py-6">在庫IDがありません。上のパネルでIDを発行してDBに登録してください。</p>
+        ) : filteredInventory.length === 0 ? (
+          <p className="text-sm text-gray-400 text-center py-6">該当するデバイスが見つかりません</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead className="bg-gray-50 border-b">
                 <tr>
-                  {['デバイスID', '種別', 'IMSI', '状態', '登録日', ''].map(h => (
-                    <th key={h} className="text-left px-3 py-2 text-gray-500 font-medium">{h}</th>
+                  {['デバイスID', '種別', 'デバイス名', 'ユーザー', '利用状況', '最終通信', ''].map(h => (
+                    <th key={h} className="text-left px-3 py-2 text-gray-500 font-medium whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {inventory.map(item => (
-                  <tr key={item.id} className="hover:bg-gray-50">
-                    <td className="px-3 py-2 font-mono font-semibold text-gray-800">{item.deviceId}</td>
-                    <td className="px-3 py-2">
-                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${item.type === 'PARENT' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}>
-                        {item.type === 'PARENT' ? <Radio className="w-3 h-3" /> : <Cpu className="w-3 h-3" />}
-                        {item.type === 'PARENT' ? '親機' : '子機'}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2 font-mono text-gray-500">
-                      {item.imsi || <span className="text-gray-300">—</span>}
-                    </td>
-                    <td className="px-3 py-2">
-                      {item.claimed ? (
-                        <span className="flex items-center gap-1 text-gray-400"><Check className="w-3 h-3" />登録済</span>
-                      ) : item.deletedAt ? (
-                        <span className="flex items-center gap-1 text-red-400 font-medium">✕ 削除済み</span>
-                      ) : (
-                        <span className="flex items-center gap-1 text-emerald-600 font-medium">● 未使用</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-gray-400">{new Date(item.createdAt).toLocaleDateString('ja-JP')}</td>
-                    <td className="px-3 py-2 text-right">
-                      {item.claimed ? (
-                        <button onClick={() => handleUnregisterInventory(item.id, item.deviceId)}
-                          className="text-xs px-2 py-1 rounded text-orange-500 hover:text-orange-700 hover:bg-orange-50 transition-colors border border-orange-200">
-                          登録解除
-                        </button>
-                      ) : item.deletedAt ? (
-                        <button onClick={() => handleRestoreInventory(item.id)}
-                          className="text-xs px-2 py-1 rounded text-blue-500 hover:text-blue-700 hover:bg-blue-50 transition-colors border border-blue-200">
-                          再登録可能にする
-                        </button>
-                      ) : (
-                        <button onClick={() => handleDeleteInventory(item.id)}
-                          className="p-1 rounded text-gray-300 hover:text-red-400 hover:bg-red-50 transition-colors">
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                {filteredInventory.map(item => {
+                  const status = getItemStatus(item);
+                  return (
+                    <tr key={item.id} className="hover:bg-gray-50">
+                      <td className="px-3 py-2 font-mono font-semibold text-gray-800">{item.deviceId}</td>
+                      <td className="px-3 py-2">
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${item.type === 'PARENT' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}>
+                          {item.type === 'PARENT' ? <Radio className="w-3 h-3" /> : <Cpu className="w-3 h-3" />}
+                          {item.type === 'PARENT' ? '親機' : '子機'}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-gray-700">{item.deviceName || <span className="text-gray-300">—</span>}</td>
+                      <td className="px-3 py-2 text-gray-500">{item.userName || <span className="text-gray-300">—</span>}</td>
+                      <td className="px-3 py-2">
+                        {status === 'online' && <span className="flex items-center gap-1 text-green-600 font-medium"><span className="w-2 h-2 rounded-full bg-green-500 inline-block" />オンライン</span>}
+                        {status === 'offline' && <span className="flex items-center gap-1 text-gray-400"><span className="w-2 h-2 rounded-full bg-gray-300 inline-block" />オフライン</span>}
+                        {status === 'deleted' && <span className="flex items-center gap-1 text-red-400 font-medium">✕ 削除済み</span>}
+                        {status === 'unused' && <span className="flex items-center gap-1 text-emerald-600 font-medium">● 未使用</span>}
+                      </td>
+                      <td className="px-3 py-2 text-gray-400 whitespace-nowrap">
+                        {item.lastSeen ? new Date(item.lastSeen).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : <span className="text-gray-300">—</span>}
+                      </td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap">
+                        {item.claimed ? (
+                          <button onClick={() => handleUnregisterInventory(item.id, item.deviceId)}
+                            className="text-xs px-2 py-1 rounded text-orange-500 hover:text-orange-700 hover:bg-orange-50 transition-colors border border-orange-200">
+                            登録解除
+                          </button>
+                        ) : item.deletedAt ? (
+                          <button onClick={() => handleRestoreInventory(item.id)}
+                            className="text-xs px-2 py-1 rounded text-blue-500 hover:text-blue-700 hover:bg-blue-50 transition-colors border border-blue-200">
+                            再登録可能にする
+                          </button>
+                        ) : (
+                          <button onClick={() => handleDeleteInventory(item.id)}
+                            className="p-1 rounded text-gray-300 hover:text-red-400 hover:bg-red-50 transition-colors">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
