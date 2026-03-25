@@ -13,7 +13,7 @@
 #define PROTOCOL_VERSION 0x03              // v3: 気圧センサー対応（v2後方互換）
 
 // 動作モード設定
-#define USE_TEST_MODE true                 // true=30秒間隔テスト, false=10分間隔本番
+#define USE_TEST_MODE false                // true=30秒間隔テスト, false=10分間隔本番
 #define SEND_INTERVAL_MINUTES 10           // 本番モード送信間隔 (分)
 #define TEST_INTERVAL_SECONDS 30           // テストモード送信間隔 (秒)
 

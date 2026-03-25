@@ -4,9 +4,9 @@
  * 配線:
  *   TWELITE DIP          BME280
  *   VCC  (pin 28) ────── VCC
- *   GND  (pin 12) ────── GND
- *   DIO5 (pin  4) ────── SDA   ← I2C SDA (MWX Wire固定)
- *   DIO6 (pin  5) ────── SCL   ← I2C SCL (MWX Wire固定)
+ *   GND  (pin  1) ────── GND
+ *   DIO5 (pin 19) ────── SDA   ← I2C SDA (MWX Wire固定)
+ *   DIO6 (pin  2) ────── SCL   ← I2C SCL (MWX Wire固定)
  *                        SDO ── GND  (I2C addr: 0x76)
  *
  * 動作フロー:
@@ -199,7 +199,7 @@ static bool bme_read_data() {
         pv1 = ((int32_t)s_bme.P9 * (int32_t)(((p>>3)*(p>>3))>>13)) >> 12;
         pv2 = ((int32_t)(p>>2) * (int32_t)s_bme.P8) >> 13;
         p = (uint32_t)((int32_t)p + ((pv1 + pv2 + (int32_t)s_bme.P7) >> 4));
-        // p は Pa * 256 (Q24.8)
+        // p は Pa * 256 (Q24.8形式): Bosch 32bit整数補正式の仕様
         p >>= 8;  // → Pa
     }
     // 0.1 hPa単位: Pa / 10
@@ -230,6 +230,7 @@ void setup() {
 
     Serial << "--- FoxSenseChild v1.0 ---" << mwx::crlf
            << "AppID=0x67F56A23 Ch=" << int(CHANNEL) << mwx::crlf
+           << format("HWADDR:%08X", the_twelite.get_hw_serial()) << mwx::crlf
            << "Listening for FSWK..." << mwx::crlf;
 }
 
@@ -257,6 +258,13 @@ void loop() {
 
         // --------------------------------------------------
         case STATE::LISTEN:
+            // '?' コマンド受信でHWADDR再出力（管理画面でのアドレス取得用）
+            while (Serial.available()) {
+                uint8_t c = (uint8_t)Serial.read();
+                if (c == '?') {
+                    Serial << format("HWADDR:%08X", the_twelite.get_hw_serial()) << mwx::crlf;
+                }
+            }
             // "FSWK" 受信待機
             if (s_triggered) {
                 step.next(STATE::SENSOR_START);

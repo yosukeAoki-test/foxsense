@@ -111,7 +111,7 @@ const Dashboard = ({ device, latestData, historyData, alerts, isParent, onDelete
           <GaugeCard
             type="temperature"
             value={latestData?.temperature}
-            min={0}
+            min={-20}
             max={50}
             alertMin={alerts.tempMin}
             alertMax={alerts.tempMax}

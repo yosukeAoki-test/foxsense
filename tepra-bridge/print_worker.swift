@@ -393,10 +393,11 @@ let isCut = printText == "CUT"
 let renderTarget = isQR ? String(printText.dropFirst(3)) : printText
 let rasterRows: [[UInt8]]
 if isCut {
-    // カットトリガー: 1列の空白ラスターのみ（テープ送り最小化）
+    // カット: カッターは印刷ヘッドから約30mm先のため最低212行送る必要がある
     let rBPR = (tapePixels + 7) / 8
-    rasterRows = [[UInt8](repeating: 0x00, count: rBPR)]
-    print("[Worker] カットトリガーモード")
+    let blankRow = [UInt8](repeating: 0x00, count: rBPR)
+    rasterRows = [[UInt8]](repeating: blankRow, count: 212)
+    print("[Worker] カットモード (212行空白送り)")
 } else if isQR {
     // "DEVICEID" または "DEVICEID:IMSI" 形式
     let parts = renderTarget.split(separator: ":", maxSplits: 1)
@@ -437,16 +438,14 @@ for (i, rowBytes) in rasterRows.enumerated() {
 }
 runLoop(1.0)
 
-// ラスター送信後にSTATUS_OFFを送ってからSEND_AND_CUT (print_test.swiftと同じシーケンス)
-print("[Worker] STATUS_OFF送信 (カット前チェック)...")
-delegate.buf = Data()
-send(STATUS_OFF)
-runLoop(1.5)
-print("[Worker] STATUS応答: \(delegate.buf.count)バイト")
-
 print("[Worker] SEND_AND_CUT送信...")
 send(SEND_AND_CUT)
 runLoop(6.0)
+
+// JobEnvironmentCommand の 0x40 (PRINT_END) が物理カットをトリガーする
+print("[Worker] カットトリガー送信...")
+send(makeJobEnvironmentCommand())
+runLoop(3.0)
 
 rfcomm.close()
 print("[Worker] 印刷完了")

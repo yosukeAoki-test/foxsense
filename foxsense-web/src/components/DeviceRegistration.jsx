@@ -5,9 +5,9 @@ import {
   Radio, Cpu, Loader2, ChevronLeft, Clock, Plus,
 } from 'lucide-react';
 import {
-  registerChildDevice, deleteChildDevice,
+  registerChildDevice,
   createParentDevice, getParentDevices, deleteParentDevice,
-  assignChildToParent,
+  assignChildToParent, unassignChild,
 } from '../api/client';
 
 // ===== QRスキャンフック =====
@@ -511,7 +511,7 @@ const ListView = ({ parents, loading, error, onAddParent, onAddChild, onDeletePa
                       <div className="flex items-center gap-2 flex-shrink-0">
                         <PairingBadge status={child.pairingStatus} />
                         <button
-                          onClick={() => onDeleteChild(child.id, child.name)}
+                          onClick={() => onDeleteChild(child.assignmentId, child.name)}
                           className="p-1 rounded text-gray-300 hover:text-red-400 hover:bg-red-50 transition-colors"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -545,6 +545,25 @@ const ListView = ({ parents, loading, error, onAddParent, onAddChild, onDeletePa
   );
 };
 
+// ===== 削除確認ダイアログ =====
+const ConfirmDialog = ({ message, confirmLabel = '削除する', onConfirm, onCancel }) => (
+  <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[60] p-4">
+    <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+      <p className="text-sm text-gray-700 mb-5">{message}</p>
+      <div className="flex gap-2 justify-end">
+        <button onClick={onCancel}
+          className="px-4 py-2 rounded-xl border text-sm text-gray-600 hover:bg-gray-50 transition-colors">
+          キャンセル
+        </button>
+        <button onClick={onConfirm}
+          className="px-4 py-2 rounded-xl bg-red-600 text-white text-sm font-medium hover:bg-red-700 transition-colors">
+          {confirmLabel}
+        </button>
+      </div>
+    </div>
+  </div>
+);
+
 // ===== メインモーダル =====
 const DeviceRegistration = ({ onClose, onRefresh }) => {
   const [view, setView] = useState('list');
@@ -552,6 +571,7 @@ const DeviceRegistration = ({ onClose, onRefresh }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [targetParent, setTargetParent] = useState(null);
+  const [confirmDialog, setConfirmDialog] = useState(null); // { message, onConfirm }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -568,29 +588,45 @@ const DeviceRegistration = ({ onClose, onRefresh }) => {
 
   useEffect(() => { load(); }, [load]);
 
-  const handleDeleteParent = async (id, name) => {
-    if (!window.confirm(`「${name}」を削除しますか？\n子機との接続もすべて解除されます。`)) return;
-    try {
-      await deleteParentDevice(id);
-      load();
-      onRefresh();
-    } catch (e) {
-      setError(e.response?.data?.message || '削除に失敗しました');
-    }
+  const handleDeleteParent = (id, name) => {
+    setConfirmDialog({
+      message: `「${name}」を削除しますか？\n子機との接続もすべて解除されます。`,
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        try {
+          await deleteParentDevice(id);
+          load();
+          onRefresh();
+        } catch (e) {
+          setError(e.response?.data?.message || '削除に失敗しました');
+        }
+      },
+    });
   };
 
-  const handleDeleteChild = async (childId, name) => {
-    if (!window.confirm(`「${name}」を削除しますか？`)) return;
-    try {
-      await deleteChildDevice(childId);
-      load();
-      onRefresh();
-    } catch (e) {
-      setError(e.response?.data?.message || '削除に失敗しました');
-    }
+  const handleDeleteChild = (assignmentId, name) => {
+    setConfirmDialog({
+      message: `「${name}」の紐付けを解除しますか？\n別の親機に再度紐付けることができます。`,
+      confirmLabel: '紐付けを解除する',
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        setParents(prev => prev.map(p => ({
+          ...p,
+          activeChildren: p.activeChildren.filter(c => c.assignmentId !== assignmentId),
+        })));
+        try {
+          await unassignChild(assignmentId);
+          onRefresh();
+        } catch (e) {
+          setError(e.response?.data?.message || '解除に失敗しました');
+          load();
+        }
+      },
+    });
   };
 
   return (
+    <>
     <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center p-4 z-50">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] flex flex-col">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 flex-shrink-0">
@@ -630,6 +666,15 @@ const DeviceRegistration = ({ onClose, onRefresh }) => {
         </div>
       </div>
     </div>
+    {confirmDialog && (
+      <ConfirmDialog
+        message={confirmDialog.message}
+        confirmLabel={confirmDialog.confirmLabel}
+        onConfirm={confirmDialog.onConfirm}
+        onCancel={() => setConfirmDialog(null)}
+      />
+    )}
+    </>
   );
 };
 

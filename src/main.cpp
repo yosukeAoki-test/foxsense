@@ -421,13 +421,12 @@ void setup() {
     Serial.printf("  Parent Pressure: %.1f hPa\n", parentData.pressure);
 
     // 子機データ収集（タイムアウトまで待機）
-    if (activeChildCount > 0) {
-        Serial.println("\n[TWELITE] Collecting data from children (v2)...");
-        bool allReceived = collectChildData();
+    // activeChildCount==0でも未登録子機のIDを検出するため常に受信待機
+    Serial.println("\n[TWELITE] Collecting data from children (v2)...");
+    bool allReceived = collectChildData();
 
-        if (!allReceived) {
-            Serial.println("[WARN] Not all children responded");
-        }
+    if (activeChildCount > 0 && !allReceived) {
+        Serial.println("[WARN] Not all children responded");
     }
 
     // 全データをサーバーに送信

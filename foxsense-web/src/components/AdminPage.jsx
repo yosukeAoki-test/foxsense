@@ -332,6 +332,10 @@ const randomHex = (len) => {
   return Array.from({ length: len }, () => chars[Math.floor(Math.random() * 16)]).join('');
 };
 
+// ===== TWELITE R2 Web Serial ハードウェアアドレス取得 =====
+// 子機起動時のシリアル出力 "HWADDR:XXXXXXXX" を読み取る
+const HWADDR_RE = /HWADDR:([0-9A-Fa-f]{8})/;
+
 const LabelsTab = () => {
   const [deviceType, setDeviceType] = useState('PARENT');
   const [count, setCount] = useState(5);
@@ -345,6 +349,8 @@ const LabelsTab = () => {
   const [bridgeStatus, setBridgeStatus] = useState(null); // null | 'ok' | 'error'
   const [bridgePrinting, setBridgePrinting] = useState(false);
   const [bridgeProgress, setBridgeProgress] = useState('');
+  const [r2Detecting, setR2Detecting] = useState(false);
+  const [r2Status, setR2Status] = useState(''); // 検出状況メッセージ
   const [availableSims, setAvailableSims] = useState(null); // null=未ロード, []=ロード済み
   const [loadingSims, setLoadingSims] = useState(false);
   const printRef = useRef(null);
@@ -391,12 +397,82 @@ const LabelsTab = () => {
   const generate = () => {
     setRegisterResult(null);
     setError('');
-    const newLabels = Array.from({ length: count }, () => ({
-      deviceId: randomHex(8),
-      type: deviceType,
-      imsi: '',
-    }));
+    const existingIds = new Set([
+      ...inventory.map(i => i.deviceId),
+      ...labels.map(l => l.deviceId),
+    ]);
+    const newLabels = [];
+    let attempts = 0;
+    while (newLabels.length < count && attempts < 10000) {
+      const id = randomHex(8);
+      if (!existingIds.has(id)) {
+        existingIds.add(id);
+        newLabels.push({ deviceId: id, type: deviceType, imsi: '' });
+      }
+      attempts++;
+    }
     setLabels(newLabels);
+  };
+
+  const handleR2Detect = async () => {
+    if (!('serial' in navigator)) {
+      setError('Web Serial APIはChrome/Edgeが必要です（Chrome/Edgeをご使用ください）');
+      return;
+    }
+    setR2Status('');
+    setError('');
+    let port;
+    try {
+      port = await navigator.serial.requestPort();
+      await port.open({ baudRate: 115200 });
+    } catch (e) {
+      setError('ポートを開けませんでした: ' + e.message);
+      return;
+    }
+    setR2Detecting(true);
+    setR2Status('アドレスを要求中...');
+    try {
+      const writer = port.writable.getWriter();
+      await writer.write(new Uint8Array([0x3F])); // '?'
+      writer.releaseLock();
+    } catch {}
+    setR2Status('子機の電源を入れるか、既に起動済みなら数秒待ってください...');
+
+    const existingIds = new Set([
+      ...inventory.map(i => i.deviceId),
+      ...labels.map(l => l.deviceId),
+    ]);
+    let lineBuffer = '';
+    let newCount = 0;
+    const decoder = new TextDecoder();
+    const reader = port.readable.getReader();
+    const timer = setTimeout(() => reader.cancel(), 30000);
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        lineBuffer += decoder.decode(value, { stream: true });
+        const lines = lineBuffer.split('\n');
+        lineBuffer = lines.pop();
+        for (const line of lines) {
+          const m = line.match(HWADDR_RE);
+          if (m) {
+            const id = m[1].toUpperCase();
+            if (!existingIds.has(id)) {
+              existingIds.add(id);
+              setLabels(prev => [...prev, { deviceId: id, type: 'CHILD', imsi: '' }]);
+              newCount++;
+              setR2Status(`検出: ${id} — 電源を入れ直すと次の子機を追加できます`);
+            }
+          }
+        }
+      }
+    } catch {}
+    clearTimeout(timer);
+    try { reader.releaseLock(); } catch {}
+    try { await port.close(); } catch {}
+    setR2Detecting(false);
+    setR2Status(newCount > 0 ? `完了: ${newCount}台を追加しました` : '検出されませんでした（子機の電源を確認してください）');
   };
 
   const handleRemove = (idx) => {
@@ -562,24 +638,36 @@ ${labels.map(l => `  <div class="label">
             </div>
           </div>
 
-          {/* 枚数 */}
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">発行枚数</label>
-            <div className="flex items-center gap-1">
-              <button onClick={() => setCount(c => Math.max(1, c - 1))} className="w-8 h-9 rounded-lg border flex items-center justify-center hover:bg-gray-50"><Minus className="w-3 h-3" /></button>
-              <input type="number" value={count} min={1} max={100}
-                onChange={e => setCount(Math.min(100, Math.max(1, parseInt(e.target.value) || 1)))}
-                className="w-16 text-center py-2 border rounded-lg text-sm outline-none focus:border-blue-400" />
-              <button onClick={() => setCount(c => Math.min(100, c + 1))} className="w-8 h-9 rounded-lg border flex items-center justify-center hover:bg-gray-50"><Plus className="w-3 h-3" /></button>
+          {deviceType === 'PARENT' && (<>
+            {/* 枚数 */}
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">発行枚数</label>
+              <div className="flex items-center gap-1">
+                <button onClick={() => setCount(c => Math.max(1, c - 1))} className="w-8 h-9 rounded-lg border flex items-center justify-center hover:bg-gray-50"><Minus className="w-3 h-3" /></button>
+                <input type="number" value={count} min={1} max={100}
+                  onChange={e => setCount(Math.min(100, Math.max(1, parseInt(e.target.value) || 1)))}
+                  className="w-16 text-center py-2 border rounded-lg text-sm outline-none focus:border-blue-400" />
+                <button onClick={() => setCount(c => Math.min(100, c + 1))} className="w-8 h-9 rounded-lg border flex items-center justify-center hover:bg-gray-50"><Plus className="w-3 h-3" /></button>
+              </div>
             </div>
-          </div>
+            <div className="flex items-end">
+              <button onClick={generate}
+                className="flex items-center gap-2 px-5 py-2 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors">
+                <RotateCcw className="w-4 h-4" />ID発行
+              </button>
+            </div>
+          </>)}
 
-          <div className="flex items-end">
-            <button onClick={generate}
-              className="flex items-center gap-2 px-5 py-2 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors">
-              <RotateCcw className="w-4 h-4" />ID発行
-            </button>
-          </div>
+          {deviceType === 'CHILD' && (
+            <div className="flex items-end flex-col gap-1">
+              <button onClick={handleR2Detect} disabled={r2Detecting}
+                className="flex items-center gap-2 px-5 py-2 rounded-xl bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 transition-colors disabled:opacity-50">
+                {r2Detecting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Cpu className="w-4 h-4" />}
+                R2で検出
+              </button>
+              {r2Status && <p className="text-xs text-emerald-700">{r2Status}</p>}
+            </div>
+          )}
         </div>
 
         {/* ラベルプレビュー */}
