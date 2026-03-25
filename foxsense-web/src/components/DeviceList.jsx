@@ -96,22 +96,29 @@ const DeviceList = ({ parent, children, selectedDevice, onSelectDevice, latestDa
 
             {/* デバイス情報 */}
             <div className="flex items-center gap-3 mt-1.5 text-xs text-gray-400">
-              {device.battery != null && device.battery > 0 ? (
+              {device.voltage != null ? (
+                isParent ? (
+                  // 親機: VBUS (ファームウェア更新後に表示)
+                  device.voltage > 3000 && (
+                    <div className="flex items-center gap-1 text-blue-400">
+                      <Battery className="w-3 h-3" />
+                      <span>USB {(device.voltage / 1000).toFixed(1)}V</span>
+                    </div>
+                  )
+                ) : (
+                  // 子機: VCC電圧 (+ バッテリー% )
+                  <div className="flex items-center gap-1">
+                    <Battery className="w-3 h-3" />
+                    <span>{(device.voltage / 1000).toFixed(2)}V</span>
+                    {device.battery != null && device.battery > 0 && (
+                      <span className="text-gray-300">({device.battery}%)</span>
+                    )}
+                  </div>
+                )
+              ) : device.battery != null && device.battery > 0 ? (
                 <div className="flex items-center gap-1">
                   <Battery className="w-3 h-3" />
                   <span>{device.battery}%</span>
-                </div>
-              ) : device.voltage != null && device.battery == null ? (
-                // 子機 VCC電圧
-                <div className="flex items-center gap-1">
-                  <Battery className="w-3 h-3" />
-                  <span>{(device.voltage / 1000).toFixed(2)}V</span>
-                </div>
-              ) : isParent && device.voltage != null && device.voltage > 3000 ? (
-                // 親機 VBUS (USB/安定化電源)
-                <div className="flex items-center gap-1 text-blue-400">
-                  <Battery className="w-3 h-3" />
-                  <span>USB {(device.voltage / 1000).toFixed(1)}V</span>
                 </div>
               ) : null}
               {isParent ? (

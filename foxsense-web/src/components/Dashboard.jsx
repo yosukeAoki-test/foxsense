@@ -75,24 +75,31 @@ const Dashboard = ({ device, latestData, historyData, alerts, isParent, onDelete
             </div>
 
             {/* バッテリー / 電源 */}
-            {device.battery != null && device.battery > 0 ? (
+            {device.voltage != null ? (
+              isParent ? (
+                // 親機: VBUS (ファームウェア更新後に表示)
+                device.voltage > 3000 && (
+                  <div className="flex items-center gap-1 text-blue-500">
+                    <Battery className="w-3 h-3 sm:w-4 sm:h-4" />
+                    <span className="text-xs sm:text-sm">USB給電 {(device.voltage / 1000).toFixed(1)}V</span>
+                  </div>
+                )
+              ) : (
+                // 子機: VCC電圧 (+ バッテリー%)
+                <div className="flex items-center gap-1">
+                  <Battery className={`w-3 h-3 sm:w-4 sm:h-4 ${(device.battery ?? 100) > 20 ? 'text-leaf-500' : 'text-red-500'}`} />
+                  <span className={`text-xs sm:text-sm ${(device.battery ?? 100) > 20 ? 'text-gray-600' : 'text-red-500'}`}>
+                    {(device.voltage / 1000).toFixed(2)}V
+                    {device.battery != null && device.battery > 0 && ` (${device.battery}%)`}
+                  </span>
+                </div>
+              )
+            ) : device.battery != null && device.battery > 0 ? (
               <div className="flex items-center gap-1">
                 <Battery className={`w-3 h-3 sm:w-4 sm:h-4 ${device.battery > 20 ? 'text-leaf-500' : 'text-red-500'}`} />
                 <span className={`text-xs sm:text-sm ${device.battery > 20 ? 'text-gray-600' : 'text-red-500'}`}>
                   {device.battery}%
                 </span>
-              </div>
-            ) : device.voltage != null && device.battery == null ? (
-              // 子機 VCC電圧
-              <div className="flex items-center gap-1">
-                <Battery className="w-3 h-3 sm:w-4 sm:h-4 text-leaf-500" />
-                <span className="text-xs sm:text-sm text-gray-600">{(device.voltage / 1000).toFixed(2)}V</span>
-              </div>
-            ) : isParent && device.voltage != null && device.voltage > 3000 ? (
-              // 親機 VBUS (USB/安定化電源)
-              <div className="flex items-center gap-1 text-blue-500">
-                <Battery className="w-3 h-3 sm:w-4 sm:h-4" />
-                <span className="text-xs sm:text-sm">USB給電 {(device.voltage / 1000).toFixed(1)}V</span>
               </div>
             ) : null}
 
