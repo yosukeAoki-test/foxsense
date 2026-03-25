@@ -643,7 +643,7 @@ const DeviceRegistration = ({ onClose, onRefresh }) => {
           {view === 'addParent' && (
             <AddParentView
               onBack={() => setView('list')}
-              onSuccess={() => { load(); onRefresh(); setView('list'); }}
+              onSuccess={async () => { await load(); onRefresh(); setView('list'); }}
             />
           )}
 
@@ -651,7 +651,7 @@ const DeviceRegistration = ({ onClose, onRefresh }) => {
             <AddChildView
               parent={targetParent}
               onBack={() => { load(); setView('list'); }}
-              onDone={() => { load(); onRefresh(); setView('list'); }}
+              onDone={async () => { await load(); onRefresh(); setView('list'); }}
             />
           )}
         </div>
