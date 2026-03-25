@@ -4,6 +4,16 @@ import { MapPin, Battery, Signal, Clock, Wifi, Radio, Trash2 } from 'lucide-reac
 import GaugeCard from './GaugeCard';
 import HistoryChart from './HistoryChart';
 
+// CSQ (AT+CSQ 値 0-31) → 表示ラベルと色
+const csqToSignal = (csq) => {
+  if (!csq || csq >= 99) return null;
+  const dBm = -113 + 2 * csq;
+  if (dBm >= -70) return { label: `良好 (${dBm}dBm)`, color: 'text-green-500' };
+  if (dBm >= -85) return { label: `普通 (${dBm}dBm)`, color: 'text-leaf-500' };
+  if (dBm >= -100) return { label: `弱い (${dBm}dBm)`, color: 'text-yellow-500' };
+  return { label: `圏外 (${dBm}dBm)`, color: 'text-red-500' };
+};
+
 const Dashboard = ({ device, latestData, historyData, alerts, isParent, onDelete }) => {
   const lastUpdate = latestData?.timestamp
     ? format(new Date(latestData.timestamp), 'M月d日 HH:mm', { locale: ja })
@@ -52,12 +62,12 @@ const Dashboard = ({ device, latestData, historyData, alerts, isParent, onDelete
             </div>
 
             {/* バッテリー */}
-            {(device.battery != null || device.voltage != null) && (
+            {(device.voltage != null || (device.battery != null && device.battery > 0)) && (
               <div className="flex items-center gap-1">
                 <Battery className={`w-3 h-3 sm:w-4 sm:h-4 ${(device.battery ?? 100) > 20 ? 'text-leaf-500' : 'text-red-500'}`} />
                 {device.voltage != null ? (
                   <span className={`text-xs sm:text-sm ${(device.battery ?? 100) > 20 ? 'text-gray-600' : 'text-red-500'}`}>
-                    {(device.voltage / 1000).toFixed(2)}V{device.battery != null && ` (${device.battery}%)`}
+                    {(device.voltage / 1000).toFixed(2)}V{device.battery != null && device.battery > 0 && ` (${device.battery}%)`}
                   </span>
                 ) : (
                   <span className={`text-xs sm:text-sm ${device.battery > 20 ? 'text-gray-600' : 'text-red-500'}`}>
@@ -69,12 +79,15 @@ const Dashboard = ({ device, latestData, historyData, alerts, isParent, onDelete
 
             {/* 電波強度 */}
             {isParent ? (
-              device.signal != null && (
-                <div className="flex items-center gap-1">
-                  <Wifi className="w-3 h-3 sm:w-4 sm:h-4 text-blue-500" />
-                  <span className="text-xs sm:text-sm text-gray-600">LTE {device.signal}</span>
-                </div>
-              )
+              device.signal != null && (() => {
+                const sig = csqToSignal(device.signal);
+                return sig ? (
+                  <div className={`flex items-center gap-1 ${sig.color}`}>
+                    <Wifi className="w-3 h-3 sm:w-4 sm:h-4" />
+                    <span className="text-xs sm:text-sm">LTE {sig.label}</span>
+                  </div>
+                ) : null;
+              })()
             ) : (
               device.rssi != null && (
                 <div className="flex items-center gap-1">

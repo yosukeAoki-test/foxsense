@@ -79,6 +79,11 @@ export const deleteInventoryItem = asyncHandler(async (req, res) => {
   res.json({ success: true, message: '削除しました' });
 });
 
+export const unregisterInventoryItem = asyncHandler(async (req, res) => {
+  await adminService.unregisterInventoryItem(req.params.id);
+  res.json({ success: true, message: '登録解除しました' });
+});
+
 // SORACOM: 未割当SIM一覧（管理者向け）
 export const getAvailableSims = asyncHandler(async (req, res) => {
   const data = await getAvailableSimsForAdmin();

@@ -1,17 +1,20 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { Outlet, Link } from 'react-router-dom';
+import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { format, addDays } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import { getParentDevices, deleteChildDevice, foxCoinApi, getLatestData, getHistoryData, getAlertSettings, updateAlertSettings } from './api/client';
 import { useAuth } from './contexts/AuthContext';
-import { Settings, RefreshCw, Plus, Sprout, Snowflake, AlertTriangle, X, Flower2, LogOut, User, Radio, ChevronDown, Coins, ShieldCheck, Loader2, Satellite } from 'lucide-react';
+import { Settings, RefreshCw, Plus, Sprout, Snowflake, AlertTriangle, X, Flower2, LogOut, User, Radio, ChevronDown, Coins, ShieldCheck, Loader2, Satellite, Home, LayoutDashboard } from 'lucide-react';
 import OnboardingBanner from './components/OnboardingBanner';
 import TwoFactorSetupModal from './components/TwoFactorSetupModal';
 
 
 function App() {
   const { user, logout } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [show2faModal, setShow2faModal] = useState(() => false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
 
   // 2FA未設定なら初回レンダリング後にモーダルを表示
   useEffect(() => {
@@ -346,48 +349,43 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen p-3 sm:p-4 md:p-8">
+    <div className="min-h-screen p-3 sm:p-4 md:p-8 pb-20 lg:pb-8">
       {/* ヘッダー */}
-      <header className="relative z-10 mb-4 sm:mb-6 md:mb-8 fade-in">
+      <header className="relative z-10 mb-4 sm:mb-6 fade-in">
         <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-            <img
-              src="/logo.jpg"
-              alt="FoxSense Logo"
-              className="w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 rounded-lg sm:rounded-xl object-contain flex-shrink-0"
-            />
-            <div className="min-w-0">
-              <h1 className="text-lg sm:text-xl md:text-2xl font-bold gradient-text truncate">FoxSense</h1>
-              <p className="text-xs sm:text-sm text-leaf-600/70 hidden sm:block">農業環境モニタリング</p>
+          {/* ロゴ */}
+          <div className="flex items-center gap-2 min-w-0">
+            <img src="/logo.jpg" alt="FoxSense Logo"
+              className="w-9 h-9 sm:w-11 sm:h-11 rounded-lg object-contain flex-shrink-0" />
+            <div className="min-w-0 hidden sm:block">
+              <h1 className="text-xl font-bold gradient-text leading-none">FoxSense</h1>
+              <p className="text-xs text-leaf-600/70">農業環境モニタリング</p>
             </div>
           </div>
-          <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+
+          <div className="flex items-center gap-1.5 flex-shrink-0">
             {/* 親機セレクター */}
             {parentDevices.length > 0 && (
               <div className="relative">
-                <button
-                  onClick={() => setShowParentMenu(prev => !prev)}
-                  className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-medium transition-colors border border-blue-200 max-w-[140px]"
-                >
+                <button onClick={() => setShowParentMenu(prev => !prev)}
+                  className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-medium transition-colors border border-blue-200 max-w-[130px] sm:max-w-[160px]">
                   <Radio className="w-3.5 h-3.5 flex-shrink-0" />
                   <span className="truncate">{selectedParent?.name || '親機選択'}</span>
                   <ChevronDown className="w-3 h-3 flex-shrink-0" />
                 </button>
                 {showParentMenu && (
-                  <div className="absolute right-0 top-full mt-1 bg-white rounded-xl shadow-lg border border-gray-100 z-50 min-w-[180px] overflow-hidden max-h-72 overflow-y-auto">
+                  <div className="absolute left-0 top-full mt-1 bg-white rounded-xl shadow-lg border border-gray-100 z-50 min-w-[200px] overflow-hidden max-h-72 overflow-y-auto">
                     {parentDevices.map(p => (
                       <button key={p.id} onClick={() => { setSelectedParent(p); setShowParentMenu(false); }}
                         className={`w-full text-left px-3 py-2.5 text-sm hover:bg-gray-50 transition-colors ${selectedParent?.id === p.id ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700'}`}>
                         <div className="font-medium">{p.name}</div>
                         <div className="text-xs text-gray-400 font-mono">{p.deviceId}</div>
+                        <div className="text-xs text-gray-400 mt-0.5">子機 {p.activeChildren?.length || 0}台</div>
                       </button>
                     ))}
                     <div className="border-t border-gray-100">
-                      <Link
-                        to="/devices"
-                        onClick={() => setShowParentMenu(false)}
-                        className="w-full text-left px-3 py-2.5 text-sm text-green-600 hover:bg-green-50 transition-colors flex items-center gap-2"
-                      >
+                      <Link to="/devices" onClick={() => setShowParentMenu(false)}
+                        className="w-full text-left px-3 py-2.5 text-sm text-green-600 hover:bg-green-50 transition-colors flex items-center gap-2">
                         <Plus className="w-3.5 h-3.5" />親機を追加...
                       </Link>
                     </div>
@@ -395,80 +393,68 @@ function App() {
                 )}
               </div>
             )}
-            <Link
-              to="/devices"
-              className="p-2 sm:p-3 rounded-lg sm:rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white shadow-lg shadow-orange-500/30 transition-all flex items-center gap-1 sm:gap-2"
-            >
-              <Plus className="w-4 h-4 sm:w-5 sm:h-5" />
-              <span className="hidden sm:inline text-xs sm:text-sm font-medium">デバイス管理</span>
+
+            {/* デバイス管理（PCのみ） */}
+            <Link to="/devices"
+              className="hidden lg:flex items-center gap-1.5 p-2 sm:p-2.5 rounded-lg bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white shadow-md shadow-orange-500/30 transition-all text-xs font-medium">
+              <Plus className="w-4 h-4" />
+              <span>デバイス管理</span>
             </Link>
-            <Link
-              to="/crops"
-              className="p-2 sm:p-3 rounded-lg sm:rounded-xl bg-white/80 hover:bg-white text-leaf-600 shadow-sm transition-all flex items-center gap-1 sm:gap-2"
-              title="栽培管理"
-            >
-              <Sprout className="w-4 h-4 sm:w-5 sm:h-5" />
-              <span className="hidden md:inline text-sm font-medium">栽培管理</span>
+
+            {/* 栽培管理・衛星（PCのみ） */}
+            <Link to="/crops" className="hidden lg:flex p-2.5 rounded-lg bg-white/80 hover:bg-white text-leaf-600 shadow-sm transition-all" title="栽培管理">
+              <Sprout className="w-4 h-4" />
             </Link>
-            <Link
-              to="/satellite"
-              className="p-2 sm:p-3 rounded-lg sm:rounded-xl bg-white/80 hover:bg-white text-leaf-600 shadow-sm transition-all flex items-center gap-1 sm:gap-2"
-              title="衛星モニタリング"
-            >
-              <Satellite className="w-4 h-4 sm:w-5 sm:h-5" />
-              <span className="hidden md:inline text-sm font-medium">衛星解析</span>
+            <Link to="/satellite" className="hidden lg:flex p-2.5 rounded-lg bg-white/80 hover:bg-white text-leaf-600 shadow-sm transition-all" title="衛星解析">
+              <Satellite className="w-4 h-4" />
             </Link>
-            <button
-              onClick={handleRefresh}
-              className={`p-2 sm:p-3 rounded-lg sm:rounded-xl bg-white/80 hover:bg-white text-leaf-600 shadow-sm transition-all ${
-                isRefreshing ? 'animate-spin' : ''
-              }`}
-              disabled={isRefreshing}
-            >
-              <RefreshCw className="w-4 h-4 sm:w-5 sm:h-5" />
-            </button>
-            <Link
-              to="/settings"
-              className="p-2 sm:p-3 rounded-lg sm:rounded-xl bg-white/80 hover:bg-white text-leaf-600 shadow-sm transition-all"
-              title="設定"
-            >
-              <Settings className="w-4 h-4 sm:w-5 sm:h-5" />
-            </Link>
-            {/* FoxCoin 残高（クリックで購入） */}
-            <button
-              onClick={() => { setShowFoxCoinShop(true); if (!foxCoinBalance) loadFoxCoinBalance(); }}
-              className={`flex items-center gap-1.5 px-2.5 py-2 rounded-lg text-xs font-medium border transition-opacity hover:opacity-80 ${
-                foxCoinBalance?.simStatus === 'ACTIVE' ? 'bg-yellow-50 border-yellow-200 text-yellow-700' :
-                foxCoinBalance?.simStatus === 'SUSPENDED' ? 'bg-red-50 border-red-200 text-red-600' :
-                'bg-gray-50 border-gray-200 text-gray-500'
-              }`}
-              title="FoxCoinを購入"
-            >
-              <Coins className="w-3.5 h-3.5" />
-              <span className="font-bold">{foxCoinBalance?.balance ?? '…'}</span>
-              <span className="hidden sm:inline">FC</span>
+
+            {/* 更新ボタン */}
+            <button onClick={handleRefresh} disabled={isRefreshing}
+              className="p-2 sm:p-2.5 rounded-lg bg-white/80 hover:bg-white text-leaf-600 shadow-sm transition-all">
+              <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
             </button>
 
-            {/* ユーザー情報・ログアウト */}
-            <div className="flex items-center gap-1 sm:gap-2 ml-1 sm:ml-2 pl-2 sm:pl-3 border-l border-gray-200">
-              <div className="hidden sm:flex items-center gap-1.5 text-sm text-gray-600">
+            {/* ユーザーメニュー */}
+            <div className="relative">
+              <button onClick={() => setShowUserMenu(prev => !prev)}
+                className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg bg-white/80 hover:bg-white shadow-sm transition-all text-gray-600 text-xs">
                 <User className="w-4 h-4" />
-                <span className="max-w-[100px] truncate">{user?.name}</span>
-              </div>
-              {user?.role === 'ADMIN' && (
-                <a href="/admin"
-                  className="p-2 sm:p-3 rounded-lg sm:rounded-xl bg-white/80 hover:bg-purple-50 text-gray-500 hover:text-purple-600 shadow-sm transition-all"
-                  title="管理画面">
-                  <ShieldCheck className="w-4 h-4 sm:w-5 sm:h-5" />
-                </a>
-              )}
-              <button
-                onClick={logout}
-                className="p-2 sm:p-3 rounded-lg sm:rounded-xl bg-white/80 hover:bg-red-50 text-gray-500 hover:text-red-500 shadow-sm transition-all"
-                title="ログアウト"
-              >
-                <LogOut className="w-4 h-4 sm:w-5 sm:h-5" />
+                <span className="hidden sm:inline max-w-[80px] truncate">{user?.name}</span>
+                <ChevronDown className="w-3 h-3" />
               </button>
+              {showUserMenu && (
+                <div className="absolute right-0 top-full mt-1 bg-white rounded-xl shadow-lg border border-gray-100 z-50 min-w-[180px] overflow-hidden">
+                  {/* FoxCoin */}
+                  <button onClick={() => { setShowFoxCoinShop(true); setShowUserMenu(false); if (!foxCoinBalance) loadFoxCoinBalance(); }}
+                    className={`w-full text-left px-3 py-2.5 text-sm hover:bg-gray-50 transition-colors flex items-center justify-between ${
+                      foxCoinBalance?.simStatus === 'ACTIVE' ? 'text-yellow-700' :
+                      foxCoinBalance?.simStatus === 'SUSPENDED' ? 'text-red-600' : 'text-gray-600'
+                    }`}>
+                    <div className="flex items-center gap-2">
+                      <Coins className="w-4 h-4" />
+                      <span>FoxCoin</span>
+                    </div>
+                    <span className="font-bold text-yellow-600">{foxCoinBalance?.balance ?? '…'} FC</span>
+                  </button>
+                  <div className="border-t border-gray-100" />
+                  <Link to="/settings" onClick={() => setShowUserMenu(false)}
+                    className="flex items-center gap-2 px-3 py-2.5 text-sm text-gray-600 hover:bg-gray-50 transition-colors">
+                    <Settings className="w-4 h-4" />設定
+                  </Link>
+                  {user?.role === 'ADMIN' && (
+                    <a href="/admin" onClick={() => setShowUserMenu(false)}
+                      className="flex items-center gap-2 px-3 py-2.5 text-sm text-purple-600 hover:bg-purple-50 transition-colors">
+                      <ShieldCheck className="w-4 h-4" />管理画面
+                    </a>
+                  )}
+                  <div className="border-t border-gray-100" />
+                  <button onClick={() => { logout(); setShowUserMenu(false); }}
+                    className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-red-500 hover:bg-red-50 transition-colors">
+                    <LogOut className="w-4 h-4" />ログアウト
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -549,57 +535,6 @@ function App() {
         </div>
       )}
 
-      {/* システム概要 */}
-      <div className="card p-4 mb-6 fade-in">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <div className="text-sm">
-              {selectedParent ? (
-                <>
-                  <span className="text-gray-500">選択中の親機: </span>
-                  <span className="font-medium text-gray-700">{selectedParent.name}</span>
-                  <span className="ml-2 text-xs text-gray-400 font-mono">{selectedParent.deviceId}</span>
-                  <span className="ml-2 px-2 py-0.5 rounded-full text-xs bg-blue-100 text-blue-700">
-                    子機 {selectedParent.activeChildren?.length || 0}台紐付け中
-                  </span>
-                </>
-              ) : mockData ? (
-                <>
-                  <span className="text-gray-500">親機: </span>
-                  <span className="font-medium text-gray-700">{mockData.parent.name}</span>
-                  <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${
-                    mockData.parent.isOnline ? 'bg-leaf-100 text-leaf-700' : 'bg-gray-100 text-gray-500'
-                  }`}>
-                    {mockData.parent.isOnline ? 'オンライン' : 'オフライン'}
-                  </span>
-                </>
-              ) : null}
-            </div>
-          </div>
-          <div className="flex items-center gap-4 text-sm">
-            {parentDevices.length > 0 && (
-              <div>
-                <span className="text-gray-500">登録親機: </span>
-                <span className="font-bold text-blue-600">{parentDevices.length}</span>
-                <span className="text-gray-500">台</span>
-              </div>
-            )}
-            <div>
-              <span className="text-gray-500">登録子機: </span>
-              <span className="font-bold text-leaf-600">{mockData?.children.length ?? 0}</span>
-              <span className="text-gray-500">台</span>
-            </div>
-            <div>
-              <span className="text-gray-500">オンライン: </span>
-              <span className="font-bold text-leaf-600">
-                {(mockData?.children ?? []).filter(c => c.isOnline).length}
-              </span>
-              <span className="text-gray-500">台</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
       {/* メインコンテンツ（ページアウトレット） */}
       <Outlet context={{
         mockData,
@@ -611,6 +546,27 @@ function App() {
         handleSaveAlerts,
         handleDeviceRefresh,
       }} />
+
+      {/* ボトムナビ（モバイルのみ） */}
+      <nav className="fixed bottom-0 left-0 right-0 lg:hidden bg-white/95 backdrop-blur border-t border-gray-200 z-40 safe-area-pb">
+        <div className="flex">
+          {[
+            { to: '/', icon: LayoutDashboard, label: 'ホーム' },
+            { to: '/devices', icon: Plus, label: 'デバイス' },
+            { to: '/crops', icon: Sprout, label: '栽培管理' },
+            { to: '/satellite', icon: Satellite, label: '衛星解析' },
+          ].map(({ to, icon: Icon, label }) => {
+            const active = to === '/' ? location.pathname === '/' : location.pathname.startsWith(to);
+            return (
+              <Link key={to} to={to}
+                className={`flex-1 flex flex-col items-center justify-center py-2 gap-0.5 text-xs transition-colors ${active ? 'text-leaf-600' : 'text-gray-400'}`}>
+                <Icon className="w-5 h-5" />
+                <span>{label}</span>
+              </Link>
+            );
+          })}
+        </div>
+      </nav>
 
       {/* 2FA設定モーダル */}
       {show2faModal && (

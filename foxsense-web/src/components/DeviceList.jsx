@@ -1,5 +1,15 @@
 import { Thermometer, Droplets, Battery, ChevronRight, Radio, Wifi, Plus, Trash2 } from 'lucide-react';
 
+// CSQ (AT+CSQ 値 0-31) → 表示ラベルと色
+const csqToSignal = (csq) => {
+  if (!csq || csq >= 99) return null;
+  const dBm = -113 + 2 * csq;
+  if (dBm >= -70) return { label: '良好', color: 'text-green-500' };
+  if (dBm >= -85) return { label: '普通', color: 'text-leaf-500' };
+  if (dBm >= -100) return { label: '弱い', color: 'text-yellow-500' };
+  return { label: '圏外', color: 'text-red-500' };
+};
+
 const DeviceList = ({ parent, children, selectedDevice, onSelectDevice, latestData, onAddChild, onDeleteChild }) => {
   const handleDelete = (e, deviceId) => {
     e.stopPropagation(); // 親のonClickが発火しないように
@@ -77,23 +87,26 @@ const DeviceList = ({ parent, children, selectedDevice, onSelectDevice, latestDa
                 <div className="flex items-center gap-1">
                   <Battery className="w-3 h-3" />
                   <span>{(device.voltage / 1000).toFixed(2)}V</span>
-                  {device.battery != null && (
+                  {device.battery != null && device.battery > 0 && (
                     <span className="text-gray-300">({device.battery}%)</span>
                   )}
                 </div>
-              ) : device.battery != null && (
+              ) : (device.battery != null && device.battery > 0) && (
                 <div className="flex items-center gap-1">
                   <Battery className="w-3 h-3" />
                   <span>{device.battery}%</span>
                 </div>
               )}
               {isParent ? (
-                device.signal != null && (
-                  <div className="flex items-center gap-1">
-                    <Wifi className="w-3 h-3" />
-                    <span>LTE {device.signal}</span>
-                  </div>
-                )
+                device.signal != null && (() => {
+                  const sig = csqToSignal(device.signal);
+                  return sig ? (
+                    <div className={`flex items-center gap-1 ${sig.color}`}>
+                      <Wifi className="w-3 h-3" />
+                      <span>LTE {sig.label}</span>
+                    </div>
+                  ) : null;
+                })()
               ) : (
                 device.rssi != null && (
                   <div className="flex items-center gap-1">

@@ -216,6 +216,25 @@ export const deleteInventoryItem = async (id) => {
   await prisma.deviceInventory.delete({ where: { id } });
 };
 
+export const unregisterInventoryItem = async (id) => {
+  const item = await prisma.deviceInventory.findUnique({ where: { id } });
+  if (!item) throw new AppError('在庫IDが見つかりません', 404);
+  if (!item.claimed) throw new AppError('このデバイスは未登録です', 400);
+
+  // 対応するデバイスレコードを削除（カスケードでSensorData/Assignment等も削除される）
+  if (item.type === 'PARENT') {
+    await prisma.parentDevice.deleteMany({ where: { deviceId: item.deviceId } });
+  } else {
+    await prisma.childDevice.deleteMany({ where: { deviceId: item.deviceId } });
+  }
+
+  // 在庫を未使用状態に戻す
+  await prisma.deviceInventory.update({
+    where: { id },
+    data: { claimed: false, claimedAt: null },
+  });
+};
+
 // ===== パスワード変更 =====
 
 export const changePassword = async (userId, currentPassword, newPassword) => {

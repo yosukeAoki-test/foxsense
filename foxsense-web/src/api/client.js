@@ -305,6 +305,10 @@ export const adminInventoryApi = {
     const response = await client.delete(`/admin/inventory/${id}`);
     return response.data;
   },
+  unregister: async (id) => {
+    const response = await client.post(`/admin/inventory/${id}/unregister`);
+    return response.data;
+  },
   getAvailableSims: async () => {
     const response = await client.get('/admin/soracom/available-sims');
     return response.data.data;

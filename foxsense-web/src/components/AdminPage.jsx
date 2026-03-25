@@ -353,6 +353,7 @@ const LabelsTab = () => {
   const [r2Status, setR2Status] = useState(''); // 検出状況メッセージ
   const [availableSims, setAvailableSims] = useState(null); // null=未ロード, []=ロード済み
   const [loadingSims, setLoadingSims] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState(null); // { message, onConfirm }
   const printRef = useRef(null);
 
   const loadInventory = useCallback(() => {
@@ -578,14 +579,36 @@ ${labels.map(l => `  <div class="label">
     setBridgeProgress('');
   };
 
-  const handleDeleteInventory = async (id) => {
-    if (!window.confirm('この在庫IDを削除しますか？')) return;
-    try {
-      await adminInventoryApi.delete(id);
-      loadInventory();
-    } catch (e) {
-      setError(e.response?.data?.message || '削除に失敗しました');
-    }
+  const handleDeleteInventory = (id) => {
+    setConfirmDialog({
+      message: 'この在庫IDを削除しますか？',
+      confirmLabel: '削除する',
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        try {
+          await adminInventoryApi.delete(id);
+          loadInventory();
+        } catch (e) {
+          setError(e.response?.data?.message || '削除に失敗しました');
+        }
+      },
+    });
+  };
+
+  const handleUnregisterInventory = (id, deviceId) => {
+    setConfirmDialog({
+      message: `「${deviceId}」の登録を解除しますか？\nユーザーのデバイス登録・センサーデータがすべて削除され、在庫に戻ります。`,
+      confirmLabel: '登録解除する',
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        try {
+          await adminInventoryApi.unregister(id);
+          loadInventory();
+        } catch (e) {
+          setError(e.response?.data?.message || '登録解除に失敗しました');
+        }
+      },
+    });
   };
 
   const parents = inventory.filter(i => i.type === 'PARENT');
@@ -593,6 +616,23 @@ ${labels.map(l => `  <div class="label">
 
   return (
     <div className="space-y-6">
+      {confirmDialog && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+            <p className="text-sm text-gray-700 mb-5 whitespace-pre-line">{confirmDialog.message}</p>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setConfirmDialog(null)}
+                className="px-4 py-2 rounded-xl border text-sm text-gray-600 hover:bg-gray-50 transition-colors">
+                キャンセル
+              </button>
+              <button onClick={confirmDialog.onConfirm}
+                className="px-4 py-2 rounded-xl bg-red-600 text-white text-sm font-medium hover:bg-red-700 transition-colors">
+                {confirmDialog.confirmLabel || '削除する'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {error && (
         <div className="flex items-center gap-2 p-3 bg-red-50 rounded-lg text-red-600 text-sm">
           <AlertCircle className="w-4 h-4 flex-shrink-0" />{error}
@@ -813,8 +853,13 @@ ${labels.map(l => `  <div class="label">
                       )}
                     </td>
                     <td className="px-3 py-2 text-gray-400">{new Date(item.createdAt).toLocaleDateString('ja-JP')}</td>
-                    <td className="px-3 py-2">
-                      {!item.claimed && (
+                    <td className="px-3 py-2 text-right">
+                      {item.claimed ? (
+                        <button onClick={() => handleUnregisterInventory(item.id, item.deviceId)}
+                          className="text-xs px-2 py-1 rounded text-orange-500 hover:text-orange-700 hover:bg-orange-50 transition-colors border border-orange-200">
+                          登録解除
+                        </button>
+                      ) : (
                         <button onClick={() => handleDeleteInventory(item.id)}
                           className="p-1 rounded text-gray-300 hover:text-red-400 hover:bg-red-50 transition-colors">
                           <Trash2 className="w-3.5 h-3.5" />
