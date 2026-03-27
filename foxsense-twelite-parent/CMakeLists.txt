@@ -36,6 +36,7 @@ endif()
 ### INCLUDE DIRS
 list(APPEND MWS_INCLUDE_DIRS
         ./
+        ${MWS_MWSDK}/TWENET/current/TWENETmcu
         )
 
 ### C SOURCE FILES

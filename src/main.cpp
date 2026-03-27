@@ -30,6 +30,7 @@
 #define XPOWERS_CHIP_AXP2101
 #include "XPowersLib.h"
 #include "config.h"
+#include "ca_cert.h"
 
 // ディープスリープ間隔
 #define MEASUREMENT_INTERVAL_MIN 10  // 本番10分間隔
@@ -65,6 +66,7 @@ RTC_DATA_ATTR uint8_t cachedChildLogicalIds[MAX_CHILD_DEVICES] = {0};
 RTC_DATA_ATTR uint8_t cachedChildCount = 0;
 RTC_DATA_ATTR uint32_t lastConfigFetch = 0;       // 最後に設定取得したブート回数
 RTC_DATA_ATTR bool configFetched = false;          // 設定取得済みフラグ
+RTC_DATA_ATTR bool caCertUploaded = false;         // CA証明書アップロード済みフラグ
 
 // 子機データ配列
 ChildData childDataList[MAX_CHILD_DEVICES];
@@ -129,6 +131,7 @@ bool isAllChildDataReceived();
 
 // v2新規関数
 uint8_t computeChecksum(uint8_t* buffer, int length);
+bool uploadCACert();
 bool fetchConfigFromServer();
 void sendPairingCommand(uint32_t parentIdHash, uint32_t targetChildId, uint8_t logicalId);
 bool waitForPairingResponse(uint32_t targetChildId);
@@ -260,7 +263,8 @@ void setup() {
             Serial.println("Wakeup: Power on / Reset");
             ntpSynced = false;
             lastNtpSyncTime = 0;
-            configFetched = false;  // 電源オン時は設定を再取得
+            configFetched = false;   // 電源オン時は設定を再取得
+            caCertUploaded = false;  // 電源オン時はCA証明書を再アップロード
             break;
     }
 
@@ -346,6 +350,11 @@ void setup() {
     }
     modemState.isInitialized = true;
 
+    // CA証明書をモデムファイルシステムにアップロード (電源オン初回のみ)
+    if (!uploadCACert()) {
+        Serial.println("[SSL] CA cert upload failed, falling back to no-verify mode");
+    }
+
     // NTP同期
     time_t now;
     time(&now);
@@ -386,8 +395,6 @@ void setup() {
 
     // 子機データ初期化（サーバー/キャッシュから）
     activeChildCount = 0;
-    hasPendingChildren = false;
-    pendingChildCount = 0;
 
     for (int i = 0; i < MAX_CHILD_DEVICES; i++) {
         childDataList[i].deviceId = cachedChildIds[i];
@@ -405,13 +412,16 @@ void setup() {
 
     Serial.printf("[TWELITE] Active children: %d\n", activeChildCount);
 
+    // 親機TWELITEに起床信号ブロードキャストを指示（15秒間送信）
+    // ※ ペアリングより先に送り、子機を起こしてから対話する
+    sendMWXWakeTrigger();
+
     // ペアリングモード実行（PENDING子機がある場合）
+    // 起床トリガー送信後500ms待って子機が受信窓に入るのを待つ
     if (hasPendingChildren && pendingChildCount > 0) {
+        delay(500);
         executePairingMode();
     }
-
-    // 親機TWELITEに起床信号ブロードキャストを指示（15秒間送信）
-    sendMWXWakeTrigger();
 
     // 親機のセンサーデータ取得（5サンプル中央値フィルタ）
     Serial.println("\n[SENSOR] Reading parent BME280 (5-sample median)...");
@@ -461,6 +471,7 @@ void loop() {
  * TWELITE初期化
  */
 void initTwelite() {
+    tweliteSerial.setRxBufferSize(1024);
     tweliteSerial.begin(TWELITE_BAUD_RATE, SERIAL_8N1, TWELITE_RX_PIN, TWELITE_TX_PIN);
     delay(100);
 
@@ -485,6 +496,10 @@ void sendMWXWakeTrigger() {
     uint8_t cmd[4] = {0xA5, 0x01, 0x01, 0x5A};
     tweliteSerial.write(cmd, 4);
     Serial.println("[TWELITE] MWX wake trigger sent (15s broadcast)");
+
+    // 親機の初期応答をバッファから読み捨て（バッファオーバーフロー防止）
+    delay(500);
+    while (tweliteSerial.available()) tweliteSerial.read();
 }
 
 /**
@@ -734,6 +749,66 @@ bool isAllChildDataReceived() {
     return true;
 }
 
+// ===== SSL: CA証明書アップロード =====
+
+/**
+ * ISRG Root X1 CA証明書をSIM7080Gファイルシステムに書き込む
+ * 電源オン時に1回だけ実行 (caCertUploaded RTCフラグで管理)
+ */
+bool uploadCACert() {
+    if (caCertUploaded) return true;
+
+    Serial.println("[SSL] Uploading CA cert to modem filesystem...");
+
+    sendATCommand("AT+CFSINIT", 3000);
+
+    // CFSWFILE: カスタマーエリア(3), ファイル名, 上書き(0), バイト数, タイムアウト(ms)
+    String cmd = "AT+CFSWFILE=3,\"ca.pem\",0," + String(CA_CERT_LEN) + ",10000";
+    while (modemSerial.available()) modemSerial.read();
+    modemSerial.println(cmd);
+
+    // "DOWNLOAD" プロンプト待ち (最大5秒)
+    String prompt = "";
+    unsigned long t = millis();
+    while (millis() - t < 5000) {
+        while (modemSerial.available()) prompt += (char)modemSerial.read();
+        if (prompt.indexOf("DOWNLOAD") >= 0 || prompt.indexOf(">") >= 0) break;
+        if (prompt.indexOf("ERROR") >= 0) break;
+        delay(50);
+    }
+    Serial.printf("[SSL] CFSWFILE prompt: '%s'\n", prompt.substring(0, 20).c_str());
+
+    if (prompt.indexOf("DOWNLOAD") < 0 && prompt.indexOf(">") < 0) {
+        Serial.println("[SSL] CFSWFILE prompt not received");
+        sendATCommand("AT+CFSTERM", 2000);
+        return false;
+    }
+
+    // 証明書データ送信 (バイナリ書き込み)
+    modemSerial.write((const uint8_t*)CA_CERT_PEM, CA_CERT_LEN);
+
+    // OK 待ち (最大10秒)
+    String result = "";
+    t = millis();
+    while (millis() - t < 10000) {
+        while (modemSerial.available()) result += (char)modemSerial.read();
+        if (result.indexOf("OK") >= 0 || result.indexOf("ERROR") >= 0) break;
+        delay(100);
+    }
+    Serial.printf("[SSL] CFSWFILE result: '%s'\n", result.c_str());
+
+    sendATCommand("AT+CFSTERM", 2000);
+
+    if (result.indexOf("OK") >= 0) {
+        caCertUploaded = true;
+        Serial.printf("[SSL] CA cert uploaded (%d bytes)\n", CA_CERT_LEN);
+        return true;
+    }
+
+    Serial.println("[SSL] CA cert upload failed");
+    return false;
+}
+
 // ===== v2: サーバー設定取得 =====
 
 /**
@@ -741,16 +816,26 @@ bool isAllChildDataReceived() {
  * レスポンスJSONをパースしてRTCキャッシュに保存
  */
 bool fetchConfigFromServer() {
-    // HTTP GET リクエスト
+    // HTTPS GET リクエスト
     String configPath = String(SERVER_CONFIG_PATH) + DEVICE_ID + "?secret=" + DEVICE_SECRET;
-    String url = String("http://") + SERVER_HOST + configPath;
 
     String r;
-    // 生TCP GETリクエスト (SHCONN はcid=0デフォルトで失敗するため回避)
-    r = sendATCommand("AT+CAOPEN=1,0,\"TCP\",\"" + String(SERVER_HOST) + "\",80", 15000);
-    Serial.printf("[CONFIG] CAOPEN: '%s'\n", r.c_str());
+    // SSL設定
+    sendATCommand("AT+CSSLCFG=\"sslversion\",0,3", 2000);        // TLS 1.2
+    if (caCertUploaded) {
+        sendATCommand("AT+CSSLCFG=\"cacert\",0,\"ca.pem\"", 2000);
+        sendATCommand("AT+CSSLCFG=\"authmode\",0,1", 2000);       // サーバー証明書検証あり
+        sendATCommand("AT+CSSLCFG=\"ignorertctime\",0,1", 2000);  // RTC未同期時の時刻検証をスキップ
+        Serial.println("[CONFIG] SSL: cert verification ON");
+    } else {
+        sendATCommand("AT+CSSLCFG=\"authmode\",0,0", 2000);       // フォールバック: 暗号化のみ
+        Serial.println("[CONFIG] SSL: cert verification OFF (fallback)");
+    }
+    // 生SSL接続 (SHCONN はcid=0デフォルトで失敗するため回避)
+    r = sendATCommand("AT+CAOPEN=1,0,\"SSL\",\"" + String(SERVER_HOST) + "\",443", 20000);
+    Serial.printf("[CONFIG] CAOPEN(SSL): '%s'\n", r.c_str());
     if (r.indexOf("OK") < 0) {
-        Serial.println("[CONFIG] TCP connection failed");
+        Serial.println("[CONFIG] SSL connection failed");
         return false;
     }
     // +CAOPEN: <clientID>,0 からclientIDを取得
@@ -775,27 +860,77 @@ bool fetchConfigFromServer() {
     Serial.printf("[CONFIG] CASEND prompt: '%s'\n", r.c_str());
     modemSerial.print(httpReq);
 
-    // +CADATAIND 検出後すぐにCARECV (buffer clearなし)
-    String cfgBuf = "";
-    String cfgResp = "";
+    // +CADATAIND を待ってからCARECVで生HTTPデータを収集（複数チャンク対応）
+    String httpData = "";
+    int targetBodyLen = -1;
+    int httpHeaderEnd  = -1;
     unsigned long t = millis();
-    while (millis() - t < 12000) {
-        while (modemSerial.available()) cfgBuf += (char)modemSerial.read();
-        if (cfgBuf.indexOf("+CADATAIND:") >= 0) {
-            modemSerial.print("AT+CARECV=1,1460\r\n");
-            unsigned long rt = millis();
-            while (millis() - rt < 5000) {
-                while (modemSerial.available()) cfgResp += (char)modemSerial.read();
-                if (cfgResp.indexOf("ERROR") >= 0 || (cfgResp.length() > 6 && cfgResp.endsWith("\r\nOK\r\n"))) break;
-                delay(10);
-            }
-            Serial.printf("[CONFIG] CARECV: '%s'\n", cfgResp.substring(0, 200).c_str());
-            break;
+
+    // 最初の +CADATAIND を待つ（最大10秒）
+    {
+        String waitBuf = "";
+        while (millis() - t < 10000) {
+            while (modemSerial.available()) waitBuf += (char)modemSerial.read();
+            if (waitBuf.indexOf("+CADATAIND:") >= 0) break;
+            if (waitBuf.indexOf("+CASTATE:") >= 0) break;
+            delay(50);
         }
-        if (cfgBuf.indexOf("+CASTATE:") >= 0) break;
-        delay(50);
+        Serial.printf("[CONFIG] waitBuf: '%s'\n", waitBuf.substring(0, 100).c_str());
     }
-    Serial.printf("[CONFIG] cfgBuf: '%s'\n", cfgBuf.substring(0, 100).c_str());
+
+    // CARECVを繰り返してHTTPデータを収集（最大15秒、最大20回）
+    for (int attempt = 0; attempt < 20 && millis() - t < 15000; attempt++) {
+        modemSerial.print("AT+CARECV=" + String(cfgClientID) + ",1460\r\n");
+        String chunk = "";
+        unsigned long rt = millis();
+        while (millis() - rt < 3000) {
+            while (modemSerial.available()) chunk += (char)modemSerial.read();
+            if (chunk.endsWith("\r\nOK\r\n") || chunk.indexOf("ERROR") >= 0) break;
+            delay(10);
+        }
+
+        // +CARECV: <len>,<data> から生データを抽出
+        int caIdx = chunk.indexOf("+CARECV:");
+        if (caIdx >= 0) {
+            int commaPos = chunk.indexOf(",", caIdx + 8);
+            if (commaPos > 0) {
+                int recvLen = chunk.substring(caIdx + 9, commaPos).toInt();
+                if (recvLen > 0) {
+                    httpData += chunk.substring(commaPos + 1, commaPos + 1 + recvLen);
+                    Serial.printf("[CONFIG] CARECV got %d bytes, total httpData: %d\n", recvLen, httpData.length());
+                } else {
+                    // 0バイト → 少し待ってリトライ
+                    delay(300);
+                    continue;
+                }
+            }
+        } else {
+            delay(200);
+            continue;
+        }
+
+        // Content-Length を取得（まだ未取得の場合）
+        if (targetBodyLen < 0) {
+            int clIdx = httpData.indexOf("Content-Length: ");
+            int hdrEnd = httpData.indexOf("\r\n\r\n");
+            if (clIdx >= 0 && hdrEnd > clIdx) {
+                int clEnd = httpData.indexOf("\r\n", clIdx + 16);
+                targetBodyLen = httpData.substring(clIdx + 16, clEnd).toInt();
+                httpHeaderEnd = hdrEnd;
+                Serial.printf("[CONFIG] Content-Length: %d\n", targetBodyLen);
+            }
+        }
+
+        // ボディが揃ったか確認
+        if (targetBodyLen > 0 && httpHeaderEnd >= 0) {
+            int bodyAvail = (int)httpData.length() - httpHeaderEnd - 4;
+            Serial.printf("[CONFIG] body avail: %d / %d\n", bodyAvail, targetBodyLen);
+            if (bodyAvail >= targetBodyLen) break;
+        }
+    }
+
+    String cfgResp = httpData;
+    Serial.printf("[CONFIG] httpData total: %d bytes\n", httpData.length());
 
     String response = cfgResp;
     Serial.printf("[CONFIG] CARECV (first 200): '%s'\n", response.substring(0, 200).c_str());
@@ -804,18 +939,29 @@ bool fetchConfigFromServer() {
     bool success = false;
     int bodyLen = 0;
 
+    // 古いモデムバッファの残滓を除去してHTTPレスポンス先頭から解析
+    int httpStart = response.indexOf("HTTP/");
+    if (httpStart >= 0) {
+        response = response.substring(httpStart);
+    }
+
     if (response.indexOf("HTTP/") >= 0 && (response.indexOf(" 200") >= 0 || response.indexOf(" 201") >= 0)) {
-        // HTTPヘッダーとボディを分離
+        // HTTPヘッダーとボディを分離（HTTP/以降から\r\n\r\nを探す）
         int bodyStart = response.indexOf("\r\n\r\n");
         if (bodyStart >= 0) {
-            response = response.substring(bodyStart + 4);  // ヘッダーを除去
-        }
-        // +CARECV: 0,<len> プレフィックスを除去
-        int carecvEnd = response.indexOf("\r\n");
-        if (carecvEnd >= 0 && response.startsWith("+CARECV")) {
-            response = response.substring(carecvEnd + 2);
-            int nextEnd = response.indexOf("\r\n\r\n");
-            if (nextEnd >= 0) response = response.substring(nextEnd + 4);
+            // Content-Lengthで正確なボディ長を取得
+            int contentLen = 0;
+            int clIdx = response.indexOf("Content-Length: ");
+            if (clIdx >= 0 && clIdx < bodyStart) {
+                int clEnd = response.indexOf("\r\n", clIdx + 16);
+                if (clEnd > 0) contentLen = response.substring(clIdx + 16, clEnd).toInt();
+            }
+            int bodyOffset = bodyStart + 4;
+            if (contentLen > 0) {
+                response = response.substring(bodyOffset, bodyOffset + contentLen);
+            } else {
+                response = response.substring(bodyOffset);
+            }
         }
         bodyLen = response.length();
         success = bodyLen > 0;
@@ -848,6 +994,7 @@ bool fetchConfigFromServer() {
             // 既存キャッシュクリア
             cachedChildCount = 0;
             pendingChildCount = 0;
+            hasPendingChildren = false;
             for (int i = 0; i < MAX_CHILD_DEVICES; i++) {
                 cachedChildIds[i] = 0;
                 cachedChildLogicalIds[i] = 0;
@@ -1075,51 +1222,8 @@ bool reportPairingResult(const char* childDeviceIdHex, const char* status) {
     payload += "\"secret\":\"" + String(DEVICE_SECRET) + "\"";
     payload += "}";
 
-    sendATCommand("AT+SHDISC", 2000);
-    delay(500);
-
-    String url = String("http://") + SERVER_HOST + pairingPath;
-    sendATCommand("AT+SHCONF=\"URL\",\"" + url + "\"", 3000);
-    sendATCommand("AT+SHCONF=\"BODYLEN\",2048", 2000);
-    sendATCommand("AT+SHCONF=\"HEADERLEN\",350", 2000);
-    sendATCommand("AT+SHCONF=\"CID\",1", 2000);
-    // HTTP: SSL設定不要
-    String response = sendATCommand("AT+SHCONN", 30000);
-    if (response.indexOf("OK") < 0) {
-        return false;
-    }
-
-    response = sendATCommand("AT+SHSTATE?", 3000);
-    if (response.indexOf("+SHSTATE: 1") < 0) {
-        sendATCommand("AT+SHDISC", 2000);
-        return false;
-    }
-
-    sendATCommand("AT+SHCHEAD", 2000);
-    sendATCommand("AT+SHAHEAD=\"Content-Type\",\"application/json\"", 2000);
-
-    sendATCommand("AT+SHBOD=" + String(payload.length()) + ",10000", 3000);
-    delay(100);
-    modemSerial.print(payload);
-    delay(1000);
-
-    response = sendATCommand("AT+SHREQ=\"" + pairingPath + "\",3", 60000);
-
-    bool success = false;
-    if (response.indexOf("+SHREQ:") >= 0) {
-        int idx = response.indexOf(",");
-        if (idx > 0) {
-            int idx2 = response.indexOf(",", idx + 1);
-            if (idx2 > idx) {
-                String statusCode = response.substring(idx + 1, idx2);
-                statusCode.trim();
-                success = (statusCode == "200");
-            }
-        }
-    }
-
-    sendATCommand("AT+SHDISC", 2000);
-    return success;
+    // 生TCP送信 (SHCONN は cid=0 問題で動作しないため回避)
+    return sendRawHTTPTCP("POST", pairingPath, String(SERVER_HOST), payload);
 }
 
 // ===== モデム関連関数 =====
@@ -1467,14 +1571,23 @@ bool syncNTP() {
 }
 
 /**
- * 生TCP (AT+CAOPEN cid=1) でHTTPリクエストを送信
+ * 生SSL (AT+CAOPEN cid=1) でHTTPSリクエストを送信
  * SHCONN がデフォルトでcid=0を使用するため動作しない問題を回避
  */
 bool sendRawHTTPTCP(const String& method, const String& path,
                     const String& host, const String& body) {
-    // TCP接続 (cid=1, clientID=0)
-    String r = sendATCommand("AT+CAOPEN=1,0,\"TCP\",\"" + host + "\",80", 15000);
-    Serial.printf("[TCP] CAOPEN: '%s'\n", r.c_str());
+    // SSL設定
+    sendATCommand("AT+CSSLCFG=\"sslversion\",0,3", 2000);        // TLS 1.2
+    if (caCertUploaded) {
+        sendATCommand("AT+CSSLCFG=\"cacert\",0,\"ca.pem\"", 2000);
+        sendATCommand("AT+CSSLCFG=\"authmode\",0,1", 2000);       // サーバー証明書検証あり
+        sendATCommand("AT+CSSLCFG=\"ignorertctime\",0,1", 2000);  // RTC未同期時の時刻検証をスキップ
+    } else {
+        sendATCommand("AT+CSSLCFG=\"authmode\",0,0", 2000);       // フォールバック: 暗号化のみ
+    }
+    // SSL接続 (cid=1, clientID=0)
+    String r = sendATCommand("AT+CAOPEN=1,0,\"SSL\",\"" + host + "\",443", 20000);
+    Serial.printf("[SSL] CAOPEN: '%s'\n", r.c_str());
     if (r.indexOf("OK") < 0) {
         return false;
     }
@@ -1518,9 +1631,8 @@ bool sendRawHTTPTCP(const String& method, const String& path,
         while (modemSerial.available()) sBuf += (char)modemSerial.read();
 
         if (sBuf.indexOf("+CADATAIND:") >= 0) {
-            // +CADATAIND: <clientID> — clientIDは1 (CAOPEN URC先頭の数値)
             // AT+CARECV=<clientID>,<datalen> datalen上限=1460
-            modemSerial.print("AT+CARECV=1,1460\r\n");
+            modemSerial.print("AT+CARECV=" + String(clientID) + ",1460\r\n");
             unsigned long rt = millis();
             while (millis() - rt < 5000) {
                 while (modemSerial.available()) httpResp += (char)modemSerial.read();
@@ -1565,7 +1677,9 @@ bool sendAllDataToServer() {
     payload += "\"humidity\":" + String(parentData.humidity, 2) + ",";
     payload += "\"pressure\":" + String(parentData.pressure, 1) + ",";
     payload += "\"battery\":" + String(parentData.batteryLevel) + ",";
-    payload += "\"vbus_mv\":" + String(parentData.vbusMv) + ",";
+    // VBUS電圧を送信直前に再取得（ディープスリープ復帰直後は0になるため）
+    int vbusMvNow = (int)PMU.getVbusVoltage();
+    payload += "\"vbus_mv\":" + String(vbusMvNow) + ",";
     payload += "\"signal\":" + String(modemState.signalStrength);
     payload += "},";
 
