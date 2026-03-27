@@ -1,8 +1,18 @@
-function diagnoseGrowth(mean) {
+// 作物別 NDVI 閾値（バックエンド indices.py の NDVI_THRESHOLDS と同期させること）
+const NDVI_THRESHOLDS = {
+  '水稲': { good: 0.65, normal: 0.50, poor: 0.35 },
+  '大豆': { good: 0.60, normal: 0.45, poor: 0.30 },
+  '小麦': { good: 0.55, normal: 0.40, poor: 0.25 },
+  '野菜': { good: 0.50, normal: 0.35, poor: 0.20 },
+}
+const DEFAULT_NDVI_THRESHOLDS = { good: 0.70, normal: 0.55, poor: 0.40 }
+
+function diagnoseGrowth(mean, cropType) {
   if (mean == null) return { icon: '❓', title: '生育状況', message: 'データが取得できませんでした', color: 'gray' }
-  if (mean >= 0.7)  return { icon: '🌾', title: '生育状況', message: '非常に良好です', color: 'green' }
-  if (mean >= 0.55) return { icon: '🌱', title: '生育状況', message: '順調に育っています', color: 'green' }
-  if (mean >= 0.4)  return { icon: '⚠️', title: '生育状況', message: 'やや生育が遅れています', action: '圃場を直接確認することをおすすめします', color: 'yellow' }
+  const t = NDVI_THRESHOLDS[cropType] ?? DEFAULT_NDVI_THRESHOLDS
+  if (mean >= t.good)   return { icon: '🌾', title: '生育状況', message: '非常に良好です', color: 'green' }
+  if (mean >= t.normal) return { icon: '🌱', title: '生育状況', message: '順調に育っています', color: 'green' }
+  if (mean >= t.poor)   return { icon: '⚠️', title: '生育状況', message: 'やや生育が遅れています', action: '圃場を直接確認することをおすすめします', color: 'yellow' }
   return { icon: '🚨', title: '生育状況', message: '生育不良の可能性があります', action: '早急に圃場を確認してください', color: 'red' }
 }
 
@@ -46,11 +56,12 @@ function DiagnosisCard({ d }) {
   )
 }
 
-export default function FarmerSummary({ ndvi }) {
-  const latest = ndvi.scenes[0]
+export default function FarmerSummary({ ndvi, cropType }) {
+  // scenes は datetime 昇順ソート済み — 末尾が最新シーン
+  const latest = ndvi.scenes[ndvi.scenes.length - 1]
   if (!latest) return null
 
-  const growth   = diagnoseGrowth(latest.ndvi?.mean)
+  const growth   = diagnoseGrowth(latest.ndvi?.mean, cropType)
   const nitrogen = diagnoseNitrogen(latest.ndre_mean)
   const water    = diagnoseWater(latest.ndwi_mean)
 
@@ -60,6 +71,9 @@ export default function FarmerSummary({ ndvi }) {
         <p className="text-xs text-gray-400">最終衛星観測日</p>
         <p className="text-xs font-medium text-gray-600">{latest.datetime}（雲量 {latest.cloud_cover?.toFixed(0)}%）</p>
       </div>
+      {cropType && (
+        <p className="text-xs text-gray-400 px-1">作物: {cropType}</p>
+      )}
       <DiagnosisCard d={growth} />
       <DiagnosisCard d={nitrogen} />
       <DiagnosisCard d={water} />

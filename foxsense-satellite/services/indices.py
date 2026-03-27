@@ -80,14 +80,25 @@ def vegetation_ratio(ndvi_arr: np.ndarray | None, threshold: float = 0.3) -> flo
     return float(np.sum(finite > threshold) / len(finite))
 
 
-def ndvi_status(mean: float | None) -> str:
-    """NDVI 平均値から生育状態ラベルを返す。"""
+# 作物別 NDVI 閾値テーブル
+NDVI_THRESHOLDS: dict[str, dict[str, float]] = {
+    "水稲": {"good": 0.65, "normal": 0.50, "poor": 0.35},
+    "大豆": {"good": 0.60, "normal": 0.45, "poor": 0.30},
+    "小麦": {"good": 0.55, "normal": 0.40, "poor": 0.25},
+    "野菜": {"good": 0.50, "normal": 0.35, "poor": 0.20},
+}
+_DEFAULT_NDVI_THRESHOLDS: dict[str, float] = {"good": 0.70, "normal": 0.55, "poor": 0.40}
+
+
+def ndvi_status(mean: float | None, crop_type: str | None = None) -> str:
+    """NDVI 平均値から生育状態ラベルを返す。crop_type を渡すと作物別閾値を使用する。"""
     if mean is None:
         return "データなし"
-    if mean >= 0.7:
+    t = NDVI_THRESHOLDS.get(crop_type, _DEFAULT_NDVI_THRESHOLDS) if crop_type else _DEFAULT_NDVI_THRESHOLDS
+    if mean >= t["good"]:
         return "良好"
-    if mean >= 0.55:
+    if mean >= t["normal"]:
         return "普通"
-    if mean >= 0.4:
+    if mean >= t["poor"]:
         return "やや不良"
     return "不良"

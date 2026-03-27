@@ -50,6 +50,7 @@ export default function SatellitePage() {
   const ndvi = useSatelliteApi()
 
   const areaHa = selectedParcel?.properties?.area_ha ?? selectedArea?.areaHa ?? 1.0
+  const cropType = selectedParcel?.properties?.crop ?? null
 
   const activePolygon =
     selectedParcel?.geometry?.coordinates?.[0] ?? selectedArea?.polygon ?? null
@@ -243,7 +244,7 @@ export default function SatellitePage() {
                 </div>
                 {expertMode
                   ? <NDVIChart data={ndvi.data} />
-                  : <FarmerSummary ndvi={ndvi.data} areaHa={areaHa} />
+                  : <FarmerSummary ndvi={ndvi.data} areaHa={areaHa} cropType={cropType} />
                 }
               </>
             )}
@@ -258,6 +259,7 @@ export default function SatellitePage() {
             endDate={endDate}
             mapRef={mapRef}
             activePolygon={activePolygon}
+            cropType={cropType}
           />
         )}
 
@@ -268,6 +270,7 @@ export default function SatellitePage() {
             startDate={startDate}
             endDate={endDate}
             activePolygon={activePolygon}
+            cropType={cropType}
           />
         )}
 

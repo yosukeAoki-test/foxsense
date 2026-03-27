@@ -1,35 +1,83 @@
 """Open-Meteo 天気データ取得"""
 import logging
+from datetime import date, timedelta
+
 import httpx
 
 logger = logging.getLogger(__name__)
 
-BASE_URL = "https://api.open-meteo.com/v1/forecast"
+FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
+ARCHIVE_URL  = "https://archive-api.open-meteo.com/v1/archive"
+
+_DAILY_VARS = [
+    "temperature_2m_max",
+    "temperature_2m_min",
+    "precipitation_sum",
+    "relative_humidity_2m_max",
+    "relative_humidity_2m_mean",
+]
 
 
 async def fetch(lat: float, lon: float, past_days: int = 14) -> dict | None:
-    """過去 past_days 日の日別気象データを取得する。"""
+    """今日から過去 past_days 日の日別気象データを取得する（現在日付ベース）。"""
     params = {
         "latitude": lat,
         "longitude": lon,
-        "daily": [
-            "temperature_2m_max",
-            "temperature_2m_min",
-            "precipitation_sum",
-            "relative_humidity_2m_max",
-            "relative_humidity_2m_mean",
-        ],
+        "daily": _DAILY_VARS,
         "past_days": past_days,
         "forecast_days": 1,
         "timezone": "Asia/Tokyo",
     }
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.get(BASE_URL, params=params)
+            r = await client.get(FORECAST_URL, params=params)
             r.raise_for_status()
             return r.json()
     except Exception as e:
         logger.warning(f"Open-Meteo fetch failed: {e}")
+        return None
+
+
+async def fetch_for_period(lat: float, lon: float, end_date_str: str, days: int = 14) -> dict | None:
+    """
+    指定した end_date の前後 days 日間の気象データを取得する。
+    end_date が 5 日以上前の場合はアーカイブ API を使用する。
+    """
+    end = date.fromisoformat(end_date_str)
+    start = end - timedelta(days=days - 1)
+    today = date.today()
+    use_archive = (today - end).days >= 5
+
+    if use_archive:
+        # アーカイブ API: start_date / end_date で指定
+        params = {
+            "latitude": lat,
+            "longitude": lon,
+            "daily": _DAILY_VARS,
+            "start_date": str(start),
+            "end_date": str(min(end, today - timedelta(days=1))),
+            "timezone": "Asia/Tokyo",
+        }
+        url = ARCHIVE_URL
+    else:
+        # フォアキャスト API: past_days で指定
+        params = {
+            "latitude": lat,
+            "longitude": lon,
+            "daily": _DAILY_VARS,
+            "past_days": days,
+            "forecast_days": 1,
+            "timezone": "Asia/Tokyo",
+        }
+        url = FORECAST_URL
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.get(url, params=params)
+            r.raise_for_status()
+            return r.json()
+    except Exception as e:
+        logger.warning(f"Open-Meteo fetch_for_period failed (archive={use_archive}): {e}")
         return None
 
 
@@ -58,7 +106,7 @@ async def fetch_spray_forecast(lat: float, lon: float) -> dict | None:
     }
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.get(BASE_URL, params=params)
+            r = await client.get(FORECAST_URL, params=params)
             r.raise_for_status()
             return r.json()
     except Exception as e:

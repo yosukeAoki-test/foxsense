@@ -29,7 +29,7 @@ export default function SprayWeatherPanel({ selectedArea }) {
       post('/weather/spray', { bbox: selectedArea.bbox })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedArea?.bbox?.join(',')])
+  }, [JSON.stringify(selectedArea?.bbox)])
 
   if (!selectedArea) return null
 

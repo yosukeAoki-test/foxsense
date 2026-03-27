@@ -45,9 +45,6 @@ def to_base64_png(arr: np.ndarray, index_name: str,
 
     cmap = cm.get_cmap(cmap_name)
 
-    # 北が上になるように反転
-    arr = np.flipud(arr)
-
     norm = np.clip((arr - vmin) / (vmax - vmin), 0.0, 1.0)
     rgba = (cmap(norm) * 255).astype(np.uint8)
     alpha = np.where(np.isfinite(arr), 220, 0).astype(np.uint8)

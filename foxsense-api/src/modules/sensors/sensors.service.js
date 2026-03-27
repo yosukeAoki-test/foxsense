@@ -241,6 +241,15 @@ export const recordBulkSensorData = async (data) => {
 };
 
 export const getDeviceStats = async (deviceId, deviceType, startDate, endDate, userId) => {
+  // Verify device ownership
+  if (deviceType === 'parent') {
+    const device = await prisma.parentDevice.findFirst({ where: { id: deviceId, userId } });
+    if (!device) throw new AppError('Device not found', 404);
+  } else {
+    const device = await prisma.childDevice.findFirst({ where: { id: deviceId, userId } });
+    if (!device) throw new AppError('Device not found', 404);
+  }
+
   const where = deviceType === 'parent'
     ? { parentId: deviceId }
     : { childId: deviceId };

@@ -21,7 +21,7 @@ export default function NDVIChart({ data }) {
     ndmi: s.ndmi_mean != null ? +s.ndmi_mean.toFixed(3) : null,
   }))
 
-  const latest = data.scenes[0]
+  const latest = data.scenes[data.scenes.length - 1]
 
   return (
     <div className="space-y-3">

@@ -36,7 +36,7 @@ function DiseaseCard({ disease }) {
   )
 }
 
-export default function DiseaseRiskPanel({ selectedArea, startDate, endDate, activePolygon }) {
+export default function DiseaseRiskPanel({ selectedArea, startDate, endDate, activePolygon, cropType }) {
   const { data, loading, error, post } = useSatelliteApi()
 
   if (!selectedArea) return null
@@ -47,6 +47,7 @@ export default function DiseaseRiskPanel({ selectedArea, startDate, endDate, act
     start_date: startDate,
     end_date: endDate,
     cloud_max: 60,
+    crop_type: cropType ?? null,
   })
 
   const overall = data?.overall
@@ -58,17 +59,26 @@ export default function DiseaseRiskPanel({ selectedArea, startDate, endDate, act
         disabled={loading}
         className="w-full bg-orange-600 text-white py-2.5 rounded-lg font-medium text-sm disabled:opacity-50"
       >
-        {loading ? '気象データ取得・解析中...' : '病害リスクを予測する'}
+        {loading ? '気象データ取得・解析中...' : '病害リスクを分析する'}
       </button>
       {error && <p className="text-xs text-red-500 bg-red-50 rounded p-2">{error}</p>}
       {loading && <SatelliteLoader label="気象データ × 衛星NDVI で病害リスクを解析中..." />}
 
       {data && !loading && (
         <div className="space-y-3">
+          {/* 過去データ警告 */}
+          {data.is_historical && (
+            <div className="bg-blue-50 border border-blue-200 rounded-xl px-3 py-2 text-xs text-blue-700">
+              過去データの分析です。気象データも選択期間（{data.analysis_date}前後）の実績値を使用しています。
+            </div>
+          )}
+
           {/* 総合リスク */}
           <div className={`rounded-xl border-2 p-4 ${RISK_STYLE[overall.label]?.card}`}>
             <div className="flex items-center justify-between mb-2">
-              <p className="text-sm font-bold text-gray-700">総合病害リスク</p>
+              <p className="text-sm font-bold text-gray-700">
+                総合病害{data.is_historical ? '発生リスク（過去分析）' : 'リスク予測'}
+              </p>
               <span className={`text-base font-bold px-3 py-1 rounded-full ${RISK_STYLE[overall.label]?.badge}`}>
                 {overall.label}
               </span>
@@ -107,9 +117,15 @@ export default function DiseaseRiskPanel({ selectedArea, startDate, endDate, act
           </div>
 
           {/* 個別病害 */}
-          {Object.values(data.risks).map((d) => (
-            <DiseaseCard key={d.name} disease={d} />
-          ))}
+          {Object.values(data.risks).length > 0 ? (
+            Object.values(data.risks).map((d) => (
+              <DiseaseCard key={d.name} disease={d} />
+            ))
+          ) : (
+            <div className="bg-gray-50 rounded-xl border p-4 text-xs text-gray-500 text-center">
+              この作物種別の個別病害リスク評価は現在対応していません。
+            </div>
+          )}
 
           {/* 直近天気 */}
           {data.weather?.length > 0 && (

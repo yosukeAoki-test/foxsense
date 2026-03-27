@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 
 def read_dem(bbox: list[float]) -> np.ndarray | None:
-    """Copernicus DEM GLO-30 から標高データを読み込む。"""
+    """Copernicus DEM GLO-30 から標高データを読み込む。複数タイルはマージする。"""
     try:
         from services.stac import get_client
         items = get_client().search(
@@ -21,11 +21,32 @@ def read_dem(bbox: list[float]) -> np.ndarray | None:
             logger.warning("No DEM tiles found")
             return None
 
-        # タイルが複数ある場合は最初のもの（bbox が小さければ1枚で十分）
-        item = items[0]
-        href = item.assets["data"].href
-        arr = raster.read_band(href, bbox)
-        return arr
+        if len(items) == 1:
+            href = items[0].assets["data"].href
+            return raster.read_band(href, bbox)
+
+        # 複数タイルを読み込んで NaN 以外の値をマージ
+        arrays = []
+        for item in items:
+            arr = raster.read_band(item.assets["data"].href, bbox)
+            if arr is not None:
+                arrays.append(arr)
+
+        if not arrays:
+            return None
+        if len(arrays) == 1:
+            return arrays[0]
+
+        # 同一 shape にする（最初のタイルを基準）
+        base_shape = arrays[0].shape
+        result = np.full(base_shape, np.nan, dtype=np.float32)
+        for arr in arrays:
+            if arr.shape != base_shape:
+                continue
+            mask = np.isfinite(arr) & ~np.isfinite(result)
+            result[mask] = arr[mask]
+        return result
+
     except Exception as e:
         logger.error(f"DEM read failed: {e}")
         return None

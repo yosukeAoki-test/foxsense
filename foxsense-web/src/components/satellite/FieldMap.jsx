@@ -147,8 +147,10 @@ const FieldMap = forwardRef(function FieldMap({ lat, lon, onAreaSelected, onParc
       overlayLayerRef.current = L.imageOverlay(
         `data:image/png;base64,${base64png}`,
         bounds,
-        { opacity: 0.9, interactive: false }
+        { opacity: 0.85, interactive: false }
       ).addTo(map)
+      // オーバーレイが見えるよう地図をフィット
+      map.fitBounds(bounds, { padding: [20, 20] })
     },
     clearOverlay: () => {
       if (overlayLayerRef.current && mapRef.current) {

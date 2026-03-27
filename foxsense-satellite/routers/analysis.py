@@ -19,6 +19,7 @@ class AnalysisFieldRequest(BaseModel):
     start_date: str
     end_date: str
     cloud_max: float = 30
+    crop_type: str | None = None
 
 
 class ColormapRequest(BaseModel):
@@ -39,7 +40,42 @@ YIELD_COMMENTS = {
 }
 
 
-def _predict_yield(scenes: list) -> dict:
+def _predict_yield(scenes: list, crop_type: str | None = None) -> dict:
+    if crop_type in ("野菜", "その他"):
+        return {"available": False, "reason": "野菜・その他は作物が多様なため収量予測には対応していません。"}
+
+    if crop_type == "大豆":
+        valid = [s for s in scenes if s["ndvi"]["mean"] is not None]
+        if not valid:
+            return {"available": False}
+        peak = max(s["ndvi"]["mean"] for s in valid)
+        kg = max(50, min(300, round(180 + (peak - 0.60) * 300)))
+        rank = "S" if peak >= 0.72 else "A" if peak >= 0.62 else "B" if peak >= 0.52 else "C" if peak >= 0.40 else "D"
+        return {
+            "available": True,
+            "rank": rank,
+            "yield_kg_per_10a": kg,
+            "peak_ndvi": round(peak, 4),
+            "comment": YIELD_COMMENTS[rank],
+        }
+
+    if crop_type == "小麦":
+        harvest = [s for s in scenes if any(f"-0{m}-" in s["datetime"] for m in (4, 5, 6))
+                   and s["ndvi"]["mean"] is not None]
+        if not harvest:
+            return {"available": False}
+        peak = max(s["ndvi"]["mean"] for s in harvest)
+        kg = max(100, min(600, round(350 + (peak - 0.60) * 400)))
+        rank = "S" if peak >= 0.72 else "A" if peak >= 0.62 else "B" if peak >= 0.52 else "C" if peak >= 0.40 else "D"
+        return {
+            "available": True,
+            "rank": rank,
+            "yield_kg_per_10a": kg,
+            "peak_ndvi": round(peak, 4),
+            "comment": YIELD_COMMENTS[rank],
+        }
+
+    # 水稲（デフォルト）: 出穂期前後 NDVI ± 誤差範囲付き
     aug = [s for s in scenes if "-08-" in s["datetime"] or "-07-" in s["datetime"]]
     if not aug:
         return {"available": False}
@@ -50,6 +86,7 @@ def _predict_yield(scenes: list) -> dict:
         "available": True,
         "rank": rank,
         "yield_kg_per_10a": kg,
+        "yield_margin": round(kg * 0.08),
         "peak_ndvi": round(peak, 4),
         "comment": YIELD_COMMENTS[rank],
     }
@@ -57,16 +94,27 @@ def _predict_yield(scenes: list) -> dict:
 
 # ===== 施肥診断（NDRE） =====
 
-def _diagnose_fertilizer(ndre_peak: float | None) -> dict:
+# 作物別 NDRE 閾値テーブル（根拠: 大豆は根粒菌窒素固定があるため低め）
+_NDRE_THRESHOLDS: dict[str, dict[str, float]] = {
+    "水稲": {"excess": 0.45, "optimal": 0.30, "low": 0.15},
+    "大豆": {"excess": 0.35, "optimal": 0.22, "low": 0.10},
+    "小麦": {"excess": 0.40, "optimal": 0.27, "low": 0.12},
+    "野菜": {"excess": 0.38, "optimal": 0.25, "low": 0.12},
+}
+_DEFAULT_NDRE_THRESHOLDS: dict[str, float] = {"excess": 0.45, "optimal": 0.30, "low": 0.15}
+
+
+def _diagnose_fertilizer(ndre_peak: float | None, crop_type: str | None = None) -> dict:
     if ndre_peak is None:
         return {"available": False}
-    if ndre_peak >= 0.45:
+    t = _NDRE_THRESHOLDS.get(crop_type, _DEFAULT_NDRE_THRESHOLDS) if crop_type else _DEFAULT_NDRE_THRESHOLDS
+    if ndre_peak >= t["excess"]:
         status, label = "excess", "窒素過剰"
         rec = "追肥は控えてください。倒伏リスクに注意してください。"
-    elif ndre_peak >= 0.30:
+    elif ndre_peak >= t["optimal"]:
         status, label = "optimal", "適正"
         rec = "現在の施肥量を維持してください。"
-    elif ndre_peak >= 0.15:
+    elif ndre_peak >= t["low"]:
         status, label = "low", "やや不足"
         rec = "追肥を検討してください（目安：窒素 2〜3 kg/10a）。"
     else:
@@ -138,8 +186,8 @@ def analysis_field(req: AnalysisFieldRequest):
     return {
         "scenes": scenes,
         "scene_count": len(scenes),
-        "fertilizer": _diagnose_fertilizer(ndre_peak),
-        "yield_prediction": _predict_yield(scenes),
+        "fertilizer": _diagnose_fertilizer(ndre_peak, req.crop_type),
+        "yield_prediction": _predict_yield(scenes, req.crop_type),
     }
 
 

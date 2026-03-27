@@ -21,7 +21,7 @@ const RANK_COLORS = {
   C: 'text-yellow-600', D: 'text-red-500',
 }
 
-export default function AnalysisPanel({ selectedArea, startDate, endDate, mapRef, activePolygon }) {
+export default function AnalysisPanel({ selectedArea, startDate, endDate, mapRef, activePolygon, cropType }) {
   const analysis  = useSatelliteApi()
   const colormap  = useSatelliteApi()
   const [activeIndex, setActiveIndex] = useState(null)
@@ -36,6 +36,7 @@ export default function AnalysisPanel({ selectedArea, startDate, endDate, mapRef
       start_date: startDate,
       end_date: endDate,
       cloud_max: 60,
+      crop_type: cropType ?? null,
     })
     setOverlayOn(false)
     mapRef.current?.clearOverlay()
@@ -134,7 +135,9 @@ export default function AnalysisPanel({ selectedArea, startDate, endDate, mapRef
         <div className="bg-white rounded-xl border p-4 space-y-3">
           <div className="flex items-center gap-2">
             <span className="text-lg">🌾</span>
-            <p className="text-xs font-medium text-gray-600">収量予測（出穂期NDVI）</p>
+            <p className="text-xs font-medium text-gray-600">
+              {new Date(endDate) < new Date() ? '収量推定（過去実績）' : '収量予測'}（出穂期NDVI）
+            </p>
           </div>
           <div className="flex items-baseline gap-3">
             <span className={`text-4xl font-bold ${RANK_COLORS[y.rank]}`}>{y.rank}</span>
@@ -142,6 +145,9 @@ export default function AnalysisPanel({ selectedArea, startDate, endDate, mapRef
               <p className="text-2xl font-bold text-gray-800">
                 {y.yield_kg_per_10a}
                 <span className="text-sm font-normal text-gray-400 ml-1">kg/10a</span>
+                {y.yield_margin && (
+                  <span className="text-xs font-normal text-gray-400 ml-1">±{y.yield_margin}kg</span>
+                )}
               </p>
               <p className="text-xs text-gray-400">ピークNDVI {y.peak_ndvi?.toFixed(3)}</p>
             </div>
@@ -152,7 +158,7 @@ export default function AnalysisPanel({ selectedArea, startDate, endDate, mapRef
       )}
       {y && !y.available && analysis.data && (
         <div className="bg-gray-50 rounded-xl border p-4 text-xs text-gray-400">
-          収量予測には出穂期（8月）のNDVIデータが必要です。取得できませんでした。
+          {y.reason ?? '収量予測には出穂期（8月）のNDVIデータが必要です。取得できませんでした。'}
         </div>
       )}
 

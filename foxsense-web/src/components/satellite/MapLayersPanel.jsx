@@ -25,22 +25,23 @@ export default function MapLayersPanel({ selectedArea, activePolygon, mapRef }) 
 
   if (!selectedArea) return null
 
-  const fetchLayer = (layerId) => {
+  const fetchLayer = async (layerId) => {
     setActiveLayer(layerId)
-    post('/map/layer', {
+    mapRef.current?.clearOverlay()
+    const result = await post('/map/layer', {
       bbox: selectedArea.bbox,
       layer_type: layerId,
       polygon: activePolygon ?? null,
     })
-  }
-
-  const showOnMap = () => {
-    if (data?.image_base64) {
-      mapRef.current?.setOverlay(data.image_base64, selectedArea.bbox)
+    if (result?.image_base64) {
+      mapRef.current?.setOverlay(result.image_base64, selectedArea.bbox)
     }
   }
 
-  const clearMap = () => mapRef.current?.clearOverlay()
+  const clearMap = () => {
+    mapRef.current?.clearOverlay()
+    setActiveLayer(null)
+  }
 
   return (
     <div className="space-y-4">
@@ -85,21 +86,13 @@ export default function MapLayersPanel({ selectedArea, activePolygon, mapRef }) 
             )}
           </div>
 
-          {/* 地図表示ボタン */}
-          <div className="flex gap-2">
-            <button
-              onClick={showOnMap}
-              className={`flex-1 text-white py-2 rounded-lg text-xs font-medium ${LAYER_COLORS[data.layer_type] ?? 'bg-gray-600'}`}
-            >
-              地図に表示
-            </button>
-            <button
-              onClick={clearMap}
-              className="px-4 py-2 rounded-lg border text-xs text-gray-500"
-            >
-              消去
-            </button>
-          </div>
+          {/* 消去ボタン */}
+          <button
+            onClick={clearMap}
+            className="w-full py-2 rounded-lg border text-xs text-gray-500"
+          >
+            地図から消去
+          </button>
 
           {/* 凡例 */}
           {data.legend && (

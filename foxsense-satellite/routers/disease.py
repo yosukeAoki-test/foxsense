@@ -1,7 +1,7 @@
 """POST /disease/risk — 病害リスク予測"""
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -19,13 +19,34 @@ class DiseaseRequest(BaseModel):
     start_date: str
     end_date: str
     cloud_max: float = 30
+    crop_type: str | None = None
 
 
 # ===== 生育ステージ推定 =====
 
-def _estimate_growth_stage(scenes: list, end_date: str) -> str:
+def _estimate_growth_stage(scenes: list, end_date: str, crop_type: str | None = None) -> str:
     month = int(end_date[5:7])
     latest = scenes[-1]["ndvi"]["mean"] if scenes else 0.0
+
+    if crop_type == "大豆":
+        if month <= 5:  return "播種期"
+        if month == 6: return "出芽期"
+        if month == 7: return "開花期"
+        if month == 8: return "莢肥大期"
+        if month == 9: return "成熟期"
+        return "収穫後"
+
+    if crop_type == "小麦":
+        if month <= 3:  return "越冬期"
+        if month == 4: return "茎立期"
+        if month == 5: return "出穂期"
+        if month == 6: return "登熟期"
+        return "収穫後"
+
+    if crop_type in ("野菜", "その他"):
+        return "生育中"
+
+    # 水稲（デフォルト）
     if month <= 5:
         return "移植・初期生育"
     if month == 6:
@@ -40,12 +61,12 @@ def _estimate_growth_stage(scenes: list, end_date: str) -> str:
 
 
 def _ndvi_decline_rate(scenes: list) -> float:
-    """最新シーンと 14 日前シーンの NDVI 減少率（0 以上が減少）。"""
+    """最新シーンと最古シーンの NDVI 減少率（0 以上が減少）。"""
     if len(scenes) < 2:
         return 0.0
     recent = scenes[-1]["ndvi"]["mean"]
     older  = scenes[0]["ndvi"]["mean"]
-    if older < 0.01:
+    if recent is None or older is None or older < 0.01:
         return 0.0
     return max(0.0, round((older - recent) / older, 4))
 
@@ -136,6 +157,74 @@ def _score_brown_spot(ws: dict, decline: float) -> dict:
     return {"name": "胡麻葉枯病", "score": round(score, 3), "label": label, "advice": advice}
 
 
+def _score_wheat_scab(ws: dict, decline: float, stage: str) -> dict:
+    """赤かび病リスク（小麦）"""
+    t = ws.get("temp_avg_14d") or 20
+    h = ws.get("humidity_avg_14d") or 70
+    p = ws.get("precip_sum_14d") or 20
+    score = 0.0
+    if 15 <= t <= 25:
+        score += 0.30
+    if h >= 80:
+        score += 0.30
+    if p >= 40:
+        score += 0.25
+    if decline > 0.10:
+        score += 0.20
+    if stage == "出穂期":
+        score = min(1.0, score * 1.4)
+    score = min(1.0, score)
+    label = "高" if score >= 0.7 else "中" if score >= 0.4 else "低"
+    advice = (
+        "出穂期の殺菌剤（チオファネートメチル等）散布を強く推奨します。" if score >= 0.7
+        else "出穂前後の降雨に注意し、予防散布を検討してください。" if score >= 0.4
+        else "現時点でリスクは低いです。"
+    )
+    return {"name": "赤かび病", "score": round(score, 3), "label": label, "advice": advice}
+
+
+def _score_wheat_rust(ws: dict, decline: float) -> dict:
+    """小麦さび病リスク（小麦）"""
+    t = ws.get("temp_avg_14d") or 20
+    h = ws.get("humidity_avg_14d") or 70
+    score = 0.0
+    if 10 <= t <= 20:
+        score += 0.35
+    if h >= 75:
+        score += 0.30
+    if decline > 0.10:
+        score += 0.25
+    score = min(1.0, score)
+    label = "高" if score >= 0.7 else "中" if score >= 0.4 else "低"
+    advice = (
+        "殺菌剤（トリフロキシストロビン等）の散布を推奨します。" if score >= 0.7
+        else "葉に橙色・黄色の病斑がないか確認してください。" if score >= 0.4
+        else "現時点でリスクは低いです。"
+    )
+    return {"name": "小麦さび病", "score": round(score, 3), "label": label, "advice": advice}
+
+
+def _score_soybean_purple_stain(ws: dict, decline: float) -> dict:
+    """紫斑病リスク（大豆）"""
+    t = ws.get("temp_avg_14d") or 22
+    h = ws.get("humidity_avg_14d") or 75
+    score = 0.0
+    if 25 <= t <= 30:
+        score += 0.35
+    if h >= 80:
+        score += 0.30
+    if decline > 0.08:
+        score += 0.20
+    score = min(1.0, score)
+    label = "高" if score >= 0.7 else "中" if score >= 0.4 else "低"
+    advice = (
+        "子実の着色被害を防ぐため、莢肥大期の殺菌剤散布を推奨します。" if score >= 0.7
+        else "葉・莢の紫色病斑を定期的に確認してください。" if score >= 0.4
+        else "現時点でリスクは低いです。"
+    )
+    return {"name": "紫斑病", "score": round(score, 3), "label": label, "advice": advice}
+
+
 def _score_soybean_rust(ws: dict, decline: float) -> dict:
     """大豆さび病リスク"""
     t = ws.get("temp_avg_14d") or 22
@@ -180,35 +269,52 @@ async def disease_risk(req: DiseaseRequest):
                     pass
         scenes.sort(key=lambda s: s["datetime"])
 
-    # 天気データ（非同期）
+    # 天気データ: end_date 基準の期間を取得（過去日付はアーカイブ API を使用）
     lat = (req.bbox[1] + req.bbox[3]) / 2
     lon = (req.bbox[0] + req.bbox[2]) / 2
-    wx_raw = await weather.fetch(lat, lon, past_days=14)
+    wx_raw = await weather.fetch_for_period(lat, lon, req.end_date, days=14)
     ws = weather.summarize(wx_raw)
     wx_series = weather.daily_series(wx_raw)
 
     # NDVI 減少率・生育ステージ
     decline = _ndvi_decline_rate(scenes)
-    stage = _estimate_growth_stage(scenes, req.end_date)
+    stage = _estimate_growth_stage(scenes, req.end_date, req.crop_type)
 
-    # 病害スコア
-    risks = {
-        "rice_blast":    _score_rice_blast(ws, decline, stage),
-        "sheath_blight": _score_sheath_blight(ws, decline),
-        "brown_spot":    _score_brown_spot(ws, decline),
-        "soybean_rust":  _score_soybean_rust(ws, decline),
-    }
+    # 作物別病害スコアリング
+    if req.crop_type == "大豆":
+        risks = {
+            "soybean_rust":         _score_soybean_rust(ws, decline),
+            "soybean_purple_stain": _score_soybean_purple_stain(ws, decline),
+        }
+    elif req.crop_type == "小麦":
+        risks = {
+            "wheat_scab": _score_wheat_scab(ws, decline, stage),
+            "wheat_rust": _score_wheat_rust(ws, decline),
+        }
+    elif req.crop_type in ("野菜", "その他"):
+        risks = {}
+    else:
+        # 水稲（デフォルト）
+        risks = {
+            "rice_blast":    _score_rice_blast(ws, decline, stage),
+            "sheath_blight": _score_sheath_blight(ws, decline),
+            "brown_spot":    _score_brown_spot(ws, decline),
+        }
 
-    scores = [r["score"] for r in risks.values()]
+    scores = [r["score"] for r in risks.values()] or [0.0]
     overall_score = max(scores)
     overall_label = "高" if overall_score >= 0.7 else "中" if overall_score >= 0.4 else "低"
+
+    is_historical = (date.today() - date.fromisoformat(req.end_date)).days >= 5
 
     return {
         "overall": {"label": overall_label, "score": round(overall_score, 3)},
         "growth_stage": stage,
         "ndvi_decline_rate": decline,
         "analysis_date": req.end_date,
+        "is_historical": is_historical,
         "weather_summary": ws,
         "risks": risks,
         "weather": wx_series,
+        "crop_type": req.crop_type,
     }
