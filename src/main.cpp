@@ -707,6 +707,9 @@ void parseChildPacketV2(uint8_t* buffer, int length) {
     }
 
     // v1パケット互換（後方互換性）
+    // 注意: collectChildData() のフッター検出が bufferIndex >= 17 を要求するため、
+    //       12バイトのv1パケットはここに到達しない（デッドコード）。
+    //       v1子機が復活する場合は、フッター検出条件を >= 12 に変更すること。
     if (length >= 12 && buffer[1] == TWELITE_CMD_DATA) {
         uint32_t deviceId = ((uint32_t)buffer[2] << 24) |
                             ((uint32_t)buffer[3] << 16) |

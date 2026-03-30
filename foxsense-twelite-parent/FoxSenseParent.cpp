@@ -178,12 +178,18 @@ void loop() {
                 Serial << "Trigger OK! Broadcasting WAKE for 15s" << mwx::crlf;
             } else if (s_rxExpected == 14 &&
                        s_rxBuf[0] == 0xA5 && s_rxBuf[2] == 0x10 && s_rxBuf[13] == 0x5A) {
-                // ペアコマンド
-                for (int i = 0; i < 14; i++) s_pairCmd[i] = s_rxBuf[i];
-                s_hasPairCmd          = true;
-                s_pairBroadcastCount  = 0;
-                s_lastPairBroadcastMs = 0;
-                Serial << "Pair cmd received, broadcasting to children..." << mwx::crlf;
+                // ペアコマンド: チェックサム検証 (XOR bytes[1..11] == s_rxBuf[12])
+                uint8_t expectedCS = 0;
+                for (int i = 1; i < 12; i++) expectedCS ^= s_rxBuf[i];
+                if (s_rxBuf[12] != expectedCS) {
+                    Serial << "Pair cmd checksum error, ignored." << mwx::crlf;
+                } else {
+                    for (int i = 0; i < 14; i++) s_pairCmd[i] = s_rxBuf[i];
+                    s_hasPairCmd          = true;
+                    s_pairBroadcastCount  = 0;
+                    s_lastPairBroadcastMs = 0;
+                    Serial << "Pair cmd received, broadcasting to children..." << mwx::crlf;
+                }
             }
             s_rxIdx      = 0;
             s_rxExpected = 0;
