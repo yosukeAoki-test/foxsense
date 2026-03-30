@@ -17,17 +17,17 @@ const CROP_PRESETS = [
   { label: 'スイカ',     baseTemp: 10, targetGDD: 1050 },
   { label: 'メロン',     baseTemp: 10, targetGDD: 1150 },
   { label: 'トマト',     baseTemp: 10, targetGDD: 1150 },
-  { label: 'ミニトマト', baseTemp: 10, targetGDD: 1050 },
+  { label: 'ミニトマト', baseTemp: 10, targetGDD: 850  },
   { label: 'キュウリ',   baseTemp: 12, targetGDD: 250  },
   { label: 'ナス',       baseTemp: 10, targetGDD: 350  },
   { label: 'ピーマン',   baseTemp: 10, targetGDD: 300  },
   { label: 'カボチャ',   baseTemp: 12, targetGDD: 950  },
   { label: 'キャベツ',   baseTemp:  5, targetGDD: 850  },
   { label: 'ブロッコリー', baseTemp: 5, targetGDD: 950 },
-  { label: 'ハクサイ',   baseTemp: 10, targetGDD: 950  },
+  { label: 'ハクサイ',   baseTemp:  5, targetGDD: 950  },
   { label: 'ダイコン',   baseTemp:  5, targetGDD: 950  },
   { label: 'ニンジン',   baseTemp:  5, targetGDD: 1050 },
-  { label: 'イネ',       baseTemp: 10, targetGDD: 1100 },
+  { label: 'イネ',       baseTemp: 10, targetGDD: 2000 },
 ];
 
 const CropManagement = ({ historyData, latestData, alerts, onClose }) => {
