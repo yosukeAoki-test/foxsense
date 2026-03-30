@@ -95,13 +95,13 @@ function App() {
     try {
       const [latestApiData, parentHistory, alertSettings] = await Promise.all([
         getLatestData(selectedParent.id),
-        getHistoryData(selectedParent.id, '30d', 'parent'),
+        getHistoryData(selectedParent.id, '180d', 'parent'),
         getAlertSettings(selectedParent.id),
       ]);
 
       const activeChildren = selectedParent.activeChildren || [];
       const childHistoriesArr = await Promise.all(
-        activeChildren.map(child => getHistoryData(child.id, '30d', 'child').catch(() => []))
+        activeChildren.map(child => getHistoryData(child.id, '180d', 'child').catch(() => []))
       );
 
       const historyByDevice = { [selectedParent.id]: parentHistory || [] };

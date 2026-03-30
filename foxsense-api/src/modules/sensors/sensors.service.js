@@ -57,6 +57,12 @@ export const getHistoryData = async (deviceId, deviceType, period, userId) => {
     case '30d':
       startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
       break;
+    case '90d':
+      startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+      break;
+    case '180d':
+      startDate = new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000);
+      break;
     default:
       startDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
   }
