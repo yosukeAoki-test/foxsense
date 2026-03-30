@@ -706,38 +706,6 @@ void parseChildPacketV2(uint8_t* buffer, int length) {
         return;
     }
 
-    // v1パケット互換（後方互換性）
-    // 注意: collectChildData() のフッター検出が bufferIndex >= 17 を要求するため、
-    //       12バイトのv1パケットはここに到達しない（デッドコード）。
-    //       v1子機が復活する場合は、フッター検出条件を >= 12 に変更すること。
-    if (length >= 12 && buffer[1] == TWELITE_CMD_DATA) {
-        uint32_t deviceId = ((uint32_t)buffer[2] << 24) |
-                            ((uint32_t)buffer[3] << 16) |
-                            ((uint32_t)buffer[4] << 8) |
-                            (uint32_t)buffer[5];
-
-        int16_t tempRaw = (buffer[6] << 8) | buffer[7];
-        float temperature = tempRaw / 100.0;
-        int16_t humidRaw = (buffer[8] << 8) | buffer[9];
-        float humidity = humidRaw / 100.0;
-        int8_t rssi = (int8_t)buffer[10];
-        uint8_t battery = buffer[11];
-
-        Serial.printf("[TWELITE] v1 Received from 0x%08X: %.2fC, %.2f%%, RSSI:%d, Bat:%d%%\n",
-                      deviceId, temperature, humidity, rssi, battery);
-
-        for (int i = 0; i < MAX_CHILD_DEVICES; i++) {
-            if (childDataList[i].deviceId == deviceId) {
-                childDataList[i].temperature = temperature;
-                childDataList[i].humidity = humidity;
-                childDataList[i].rssi = rssi;
-                childDataList[i].battery = battery;
-                childDataList[i].received = true;
-                childDataList[i].timestamp = millis();
-                break;
-            }
-        }
-    }
 }
 
 /**
