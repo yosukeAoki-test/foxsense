@@ -9,6 +9,7 @@ import {
   createParentDevice, getParentDevices, deleteParentDevice,
   assignChildToParent, unassignChild,
 } from '../api/client';
+import LocationPicker from './LocationPicker';
 
 // ===== QRスキャンフック =====
 const useQrScanner = (onResult) => {
@@ -86,6 +87,7 @@ const AddParentView = ({ onBack, onSuccess }) => {
   const [name, setName] = useState('');
   const [deviceId, setDeviceId] = useState('');
   const [location, setLocation] = useState('');
+  const [locationId, setLocationId] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [inputMode, setInputMode] = useState('form'); // 'form' | 'qr'
@@ -116,7 +118,7 @@ const AddParentView = ({ onBack, onSuccess }) => {
     }
     setLoading(true);
     try {
-      await createParentDevice({ deviceId: deviceId.trim(), name: name.trim(), location: location.trim() });
+      await createParentDevice({ deviceId: deviceId.trim(), name: name.trim(), location: location.trim(), locationId });
       onSuccess();
     } catch (e) {
       setError(e.response?.data?.message || '登録に失敗しました');
@@ -201,7 +203,7 @@ const AddParentView = ({ onBack, onSuccess }) => {
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">設置場所（任意）</label>
+            <label className="block text-xs font-medium text-gray-700 mb-1">設置場所メモ（任意）</label>
             <input
               type="text"
               value={location}
@@ -209,6 +211,12 @@ const AddParentView = ({ onBack, onSuccess }) => {
               placeholder="例: ハウス入口"
               className="w-full px-3 py-2.5 rounded-xl border border-gray-200 focus:border-gray-300 outline-none text-sm"
             />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">
+              地点登録（収穫予想に使用・任意）
+            </label>
+            <LocationPicker value={locationId} onChange={setLocationId} />
           </div>
           <button
             onClick={handleSubmit}

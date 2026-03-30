@@ -20,10 +20,18 @@ export const resetPasswordSchema = z.object({
   password: z.string().min(8, 'Password must be at least 8 characters'),
 });
 
+export const locationSchema = z.object({
+  name: z.string().min(1, 'Name is required').max(100),
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  address: z.string().max(300).optional(),
+});
+
 export const parentDeviceSchema = z.object({
   deviceId: z.string().regex(/^[0-9A-Fa-f]{8}$/, 'Device ID must be 8 hex characters'),
   name: z.string().min(1, 'Name is required').max(100),
   location: z.string().max(200).optional(),
+  locationId: z.string().uuid().optional().nullable(),
   soracomSimId: z.string().optional(),
 });
 

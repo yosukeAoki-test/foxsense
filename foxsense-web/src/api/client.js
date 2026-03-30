@@ -340,5 +340,32 @@ export const printApi = {
   },
 };
 
+// ===== 地点API =====
+
+export const locationsApi = {
+  getAll: async () => {
+    const response = await client.get('/locations');
+    return response.data.data;
+  },
+  create: async (data) => {
+    const response = await client.post('/locations', data);
+    return response.data.data;
+  },
+  update: async (id, data) => {
+    const response = await client.put(`/locations/${id}`, data);
+    return response.data.data;
+  },
+  delete: async (id) => {
+    const response = await client.delete(`/locations/${id}`);
+    return response.data;
+  },
+};
+
+// ===== 親機の地点リンク更新 =====
+export const linkParentDeviceLocation = async (parentId, locationId) => {
+  const response = await client.put(`/devices/parents/${parentId}`, { locationId });
+  return response.data.data;
+};
+
 // client インスタンスをデフォルトエクスポート（AdminPage用）
 export default client;

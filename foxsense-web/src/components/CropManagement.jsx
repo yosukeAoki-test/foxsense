@@ -1,6 +1,7 @@
-import { useState, useMemo } from 'react';
-import { format, addDays } from 'date-fns';
+import { useState, useMemo, useEffect, useRef } from 'react';
+import { format, addDays, differenceInDays } from 'date-fns';
 import { ja } from 'date-fns/locale';
+import { fetchWeatherForHarvest, simulateHarvestDate } from '../utils/weatherForecast';
 import {
   Snowflake,
   Flower2,
@@ -30,8 +31,12 @@ const CROP_PRESETS = [
   { label: 'イネ',       baseTemp: 10, targetGDD: 2000 },
 ];
 
-const CropManagement = ({ historyData, latestData, alerts, onClose }) => {
+const CropManagement = ({ historyData, latestData, alerts, deviceLocation, onClose }) => {
   const [activeTab, setActiveTab] = useState('frost'); // frost, gdd
+  const [weatherData, setWeatherData] = useState(null);
+  const [weatherLoading, setWeatherLoading] = useState(false);
+  const weatherFetchedRef = useRef(null); // 同一地点の重複取得防止
+
   const [pollinationRecords, setPollinationRecords] = useState(() => {
     try {
       const saved = localStorage.getItem('foxsense_pollination');
@@ -47,6 +52,26 @@ const CropManagement = ({ historyData, latestData, alerts, onClose }) => {
     baseTemp: 10,
     note: '',
   });
+
+  // 地点が変わったら気象データをフェッチ
+  useEffect(() => {
+    if (!deviceLocation?.latitude || !deviceLocation?.longitude) {
+      setWeatherData(null);
+      return;
+    }
+    const key = `${deviceLocation.latitude},${deviceLocation.longitude}`;
+    if (weatherFetchedRef.current === key) return; // 同じ地点は再取得しない
+    weatherFetchedRef.current = key;
+    setWeatherLoading(true);
+
+    // 積算の残り目安（全レコードの最大残りGDDから概算）
+    const maxRemainingDays = 120;
+
+    fetchWeatherForHarvest(deviceLocation.latitude, deviceLocation.longitude, maxRemainingDays)
+      .then(data => setWeatherData(data))
+      .catch(() => setWeatherData(null))
+      .finally(() => setWeatherLoading(false));
+  }, [deviceLocation?.latitude, deviceLocation?.longitude]);
 
   // 霜予測（設定値を使用）
   const frostPrediction = useMemo(() => {
@@ -123,10 +148,27 @@ const CropManagement = ({ historyData, latestData, alerts, onClose }) => {
     const daysElapsed = Object.keys(dailyData).length;
     const avgDailyGDD = daysElapsed > 0 ? totalGDD / daysElapsed : 0;
     const remainingGDD = requiredGDD - totalGDD;
-    const estimatedDaysRemaining = avgDailyGDD > 0 ? Math.ceil(remainingGDD / avgDailyGDD) : null;
-    const estimatedHarvestDate = estimatedDaysRemaining && estimatedDaysRemaining > 0
-      ? addDays(new Date(), estimatedDaysRemaining)
-      : null;
+
+    // 収穫予想日: 気象データがあれば予報×季節ベースラインシミュレーション、なければ平均外挿
+    let estimatedHarvestDate = null;
+    let estimatedDaysRemaining = null;
+    let forecastBased = false;
+
+    if (weatherData && totalGDD < requiredGDD) {
+      const simDate = simulateHarvestDate(totalGDD, requiredGDD, baseTemp, weatherData);
+      if (simDate) {
+        estimatedHarvestDate = simDate;
+        estimatedDaysRemaining = differenceInDays(simDate, new Date());
+        forecastBased = true;
+      }
+    }
+
+    if (!forecastBased) {
+      estimatedDaysRemaining = avgDailyGDD > 0 ? Math.ceil(remainingGDD / avgDailyGDD) : null;
+      estimatedHarvestDate = estimatedDaysRemaining && estimatedDaysRemaining > 0
+        ? addDays(new Date(), estimatedDaysRemaining)
+        : null;
+    }
 
     const progress = Math.min(100, (totalGDD / requiredGDD) * 100);
 
@@ -167,6 +209,7 @@ const CropManagement = ({ historyData, latestData, alerts, onClose }) => {
       avgDailyGDD: avgDailyGDD.toFixed(1),
       estimatedDaysRemaining,
       estimatedHarvestDate,
+      forecastBased,
       isReady: totalGDD >= requiredGDD,
       harvestAlerts,
       harvestStage,
@@ -428,14 +471,21 @@ const CropManagement = ({ historyData, latestData, alerts, onClose }) => {
                             <div className="font-medium">{gdd.avgDailyGDD}°C/日</div>
                           </div>
                           <div className="bg-orange-50 rounded-lg p-2 text-center">
-                            <div className="text-xs text-gray-500">収穫予想</div>
+                            <div className="text-xs text-gray-500 flex items-center justify-center gap-1">
+                              収穫予想
+                              {gdd.forecastBased && (
+                                <span className="text-[10px] bg-blue-100 text-blue-600 px-1 rounded">予報</span>
+                              )}
+                            </div>
                             <div className="font-medium text-orange-600">
-                              {gdd.isReady ? (
+                              {weatherLoading ? (
+                                '計算中…'
+                              ) : gdd.isReady ? (
                                 '収穫適期！'
-                              ) : gdd.nextAlert && gdd.daysToNextAlert ? (
-                                `約${gdd.daysToNextAlert}日`
                               ) : gdd.estimatedHarvestDate ? (
                                 format(gdd.estimatedHarvestDate, 'M/d頃', { locale: ja })
+                              ) : gdd.nextAlert && gdd.daysToNextAlert ? (
+                                `約${gdd.daysToNextAlert}日`
                               ) : (
                                 'データ不足'
                               )}

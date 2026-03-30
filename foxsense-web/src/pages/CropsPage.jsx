@@ -9,6 +9,7 @@ export default function CropsPage() {
       historyData={mockData?.history || []}
       latestData={selectedDevice ? mockData?.latest?.[selectedDevice.id] : null}
       alerts={mockData?.alerts}
+      deviceLocation={mockData?.parent?.locationRef || null}
       onClose={() => navigate('/')}
     />
   );

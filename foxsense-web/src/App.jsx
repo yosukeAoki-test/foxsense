@@ -126,6 +126,7 @@ function App() {
         deviceId: selectedParent.deviceId,
         name: selectedParent.name,
         location: selectedParent.location || '',
+        locationRef: selectedParent.locationRef || null,
         soracomSimId: selectedParent.soracomSimId,
         isOnline: !!latestApiData?.parent,
         lastSeen: latestApiData?.parent?.timestamp || null,

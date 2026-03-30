@@ -14,6 +14,7 @@ export const getParentDevices = async (userId) => {
         include: { child: true },
       },
       alertSettings: true,
+      locationRef: true,
       sensorData: {
         orderBy: { timestamp: 'desc' },
         take: 1,
@@ -46,6 +47,7 @@ export const getParentDevice = async (id, userId) => {
         include: { child: true },
       },
       alertSettings: true,
+      locationRef: true,
       sensorData: {
         orderBy: { timestamp: 'desc' },
         take: 1,
@@ -134,10 +136,11 @@ export const createParentDevice = async (userId, data) => {
       deviceId,
       name: data.name,
       location: data.location,
+      locationId: data.locationId ?? null,
       soracomSimId: resolvedSimId,
       alertSettings: { create: {} },
     },
-    include: { alertSettings: true },
+    include: { alertSettings: true, locationRef: true },
   });
 
   // SIMが紐付いていればSORAACOM上の名前をデバイスIDに設定
@@ -154,9 +157,13 @@ export const updateParentDevice = async (id, userId, data) => {
   const device = await prisma.parentDevice.findFirst({ where: { id, userId } });
   if (!device) throw new AppError('Parent device not found', 404);
 
+  const updateData = { name: data.name, location: data.location };
+  if ('locationId' in data) updateData.locationId = data.locationId ?? null;
+
   const updated = await prisma.parentDevice.update({
     where: { id },
-    data: { name: data.name, location: data.location },
+    data: updateData,
+    include: { locationRef: true },
   });
 
   // 名前変更時もSORAACOM上の名前はデバイスIDで固定

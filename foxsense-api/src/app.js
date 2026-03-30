@@ -21,6 +21,7 @@ import foxcoinsRoutes from './modules/foxcoins/foxcoins.routes.js';
 import adminRoutes from './modules/admin/admin.routes.js';
 import printRoutes from './modules/print/print.routes.js';
 import fieldsRoutes from './modules/fields/fields.routes.js';
+import locationsRoutes from './modules/locations/locations.routes.js';
 
 const app = express();
 
@@ -91,6 +92,7 @@ app.use('/api/foxcoins', foxcoinsRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/print', printRoutes);
 app.use('/api/fields', fieldsRoutes);
+app.use('/api/locations', locationsRoutes);
 
 // 404 handler
 app.use((req, res) => {
