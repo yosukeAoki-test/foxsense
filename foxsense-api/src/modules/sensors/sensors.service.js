@@ -6,7 +6,7 @@ export const getLatestData = async (parentId, userId) => {
     where: { id: parentId, userId },
     include: {
       assignments: {
-        where: { pairingStatus: 'PAIRED' },
+        where: { pairingStatus: 'PAIRED', unassignedAt: null },
         include: { child: true },
       },
     },
@@ -161,7 +161,9 @@ export const recordSensorData = async (data) => {
       deviceType: parentDevice ? 'PARENT' : 'CHILD',
       temperature: data.temperature,
       humidity: data.humidity,
+      pressure: (typeof data.pressure === 'number' && data.pressure > 0) ? data.pressure : null,
       battery: data.battery ?? null,
+      voltage: (typeof data.voltage === 'number' && data.voltage > 0) ? data.voltage : null,
       rssi: data.rssi ?? null,
     },
   });

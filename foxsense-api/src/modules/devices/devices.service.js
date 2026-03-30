@@ -180,13 +180,13 @@ export const deleteParentDevice = async (id, userId) => {
   const device = await prisma.parentDevice.findFirst({ where: { id, userId } });
   if (!device) throw new AppError('Parent device not found', 404);
 
-  await prisma.parentDevice.delete({ where: { id } });
-
-  // 在庫を「削除済み」に更新
-  await prisma.deviceInventory.updateMany({
-    where: { deviceId: device.deviceId },
-    data: { claimed: false, deletedAt: new Date() },
-  });
+  await prisma.$transaction([
+    prisma.parentDevice.delete({ where: { id } }),
+    prisma.deviceInventory.updateMany({
+      where: { deviceId: device.deviceId },
+      data: { claimed: false, deletedAt: new Date() },
+    }),
+  ]);
 };
 
 // ===== Child Devices (ユーザー所有) =====
@@ -274,13 +274,13 @@ export const deleteChildDevice = async (id, userId) => {
   const child = await prisma.childDevice.findFirst({ where: { id, userId } });
   if (!child) throw new AppError('Child device not found', 404);
 
-  await prisma.childDevice.delete({ where: { id } });
-
-  // 在庫を「削除済み」に更新
-  await prisma.deviceInventory.updateMany({
-    where: { deviceId: child.deviceId },
-    data: { claimed: false, deletedAt: new Date() },
-  });
+  await prisma.$transaction([
+    prisma.childDevice.delete({ where: { id } }),
+    prisma.deviceInventory.updateMany({
+      where: { deviceId: child.deviceId },
+      data: { claimed: false, deletedAt: new Date() },
+    }),
+  ]);
 };
 
 // ===== Assignments (紐付け管理) =====
