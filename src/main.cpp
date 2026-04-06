@@ -1978,6 +1978,7 @@ AcCommandPending fetchPendingAcCommand() {
     else if (modeStr.startsWith("HEAT")) result.mode = AcMode::HEAT;
     else if (modeStr.startsWith("DRY"))  result.mode = AcMode::DRY;
     else if (modeStr.startsWith("FAN"))  result.mode = AcMode::FAN;
+    else if (modeStr.startsWith("OFF"))  result.mode = AcMode::OFF;
     else return result;
 
     // tempC

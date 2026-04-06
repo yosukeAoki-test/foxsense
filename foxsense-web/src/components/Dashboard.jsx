@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { format } from 'date-fns';
 import { ja } from 'date-fns/locale';
-import { MapPin, Battery, Signal, Clock, Radio, Trash2, Wind, Thermometer, Send, Pencil, Check, X } from 'lucide-react';
+import { MapPin, Battery, Signal, Clock, Radio, Trash2, Wind, Thermometer, Send, Pencil, Check, X, PowerOff } from 'lucide-react';
 import GaugeCard from './GaugeCard';
 import HistoryChart from './HistoryChart';
 import { updateParentDevice, updateChildDevice } from '../api/client';
@@ -42,7 +42,7 @@ const AcPanel = ({ deviceId }) => {
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState(null);
 
-  const send = async () => {
+  const sendCommand = async (m, t) => {
     setSending(true);
     setResult(null);
     try {
@@ -50,7 +50,7 @@ const AcPanel = ({ deviceId }) => {
       const res = await fetch(`/api/devices/parents/${deviceId}/ac`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ mode, tempC: mode === 'FAN' ? 25 : temp }),
+        body: JSON.stringify({ mode: m, tempC: (m === 'FAN' || m === 'OFF') ? 25 : t }),
       });
       const data = await res.json();
       setResult(data.success ? '送信しました' : data.message);
@@ -101,12 +101,20 @@ const AcPanel = ({ deviceId }) => {
       )}
       <div className="flex items-center gap-3">
         <button
-          onClick={send}
+          onClick={() => sendCommand(mode, temp)}
           disabled={sending}
           className="flex items-center gap-1.5 px-4 py-2 bg-blue-500 hover:bg-blue-600 disabled:opacity-50 text-white text-sm font-medium rounded-xl transition-colors"
         >
           <Send className="w-3.5 h-3.5" />
           {sending ? '送信中...' : '送信'}
+        </button>
+        <button
+          onClick={() => sendCommand('OFF', 25)}
+          disabled={sending}
+          className="flex items-center gap-1.5 px-4 py-2 bg-red-500 hover:bg-red-600 disabled:opacity-50 text-white text-sm font-medium rounded-xl transition-colors"
+        >
+          <PowerOff className="w-3.5 h-3.5" />
+          停止
         </button>
         {result && <span className="text-xs text-gray-500">{result}</span>}
       </div>

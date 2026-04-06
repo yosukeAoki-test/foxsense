@@ -124,11 +124,17 @@ def serial_mode(port):
         sys.exit(1)
 
     print(f"接続中: {port} @ 9600bps")
-    with serial.Serial(port, 9600, timeout=30) as ser:
+    with serial.Serial(port, 9600, timeout=1) as ser:
         buf = ""
         print("リモコンのボタンを押してください... (Ctrl+C で終了)\n")
         while True:
-            line = ser.readline().decode('utf-8', errors='ignore').strip()
+            try:
+                raw = ser.readline()
+            except serial.SerialException:
+                continue
+            if not raw:
+                continue
+            line = raw.decode('utf-8', errors='ignore').strip()
             if not line:
                 continue
             print(f"  {line}")

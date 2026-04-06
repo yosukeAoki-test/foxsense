@@ -34,6 +34,7 @@ enum class AcMode : uint8_t {
     HEAT = 1,   // 暖房
     DRY  = 2,   // 除湿
     FAN  = 3,   // 送風
+    OFF  = 4,   // 停止 (実機キャプチャ: byte[10]=0x00, checksum=0x0239固定)
 };
 
 // ─── IRコントローラ ────────────────────────────────────────
@@ -66,12 +67,25 @@ private:
         const uint8_t hdr[] = {0x23,0xCB,0x26,0x01,0x00,0x8F,0x2C,0x9B,0x04,0x00,0x80};
         memcpy(p, hdr, 11);
 
+        // OFFは固定パケット (実機キャプチャ確認済み)
+        if (mode == AcMode::OFF) {
+            p[10] = 0x00;                    // byte[10]: 0x80→0x00 が電源OFFフラグ
+            p[11] = 0x60;                    // COOL (最後に使ったモードを記憶)
+            p[12] = 0x25;                    // 温度固定 (トグルなし)
+            p[13] = 0x18;
+            p[20] = 0x08;
+            p[21] = 0x00;
+            p[22] = 0x39; p[23] = 0x02;     // checksum = 0x0239 固定
+            return;
+        }
+
         // Byte 11: モード
         switch (mode) {
             case AcMode::COOL: p[11] = 0x60; break;
             case AcMode::HEAT: p[11] = 0x20; break;
             case AcMode::DRY:  p[11] = 0x40; break;
             case AcMode::FAN:  p[11] = 0xE0; break;
+            default: break;
         }
 
         // Byte 12: 温度 + トグルビット(bit6)
@@ -95,6 +109,7 @@ private:
             case AcMode::HEAT: p[13] = 0x00; break;
             case AcMode::DRY:  p[13] = 0x08; break;
             case AcMode::FAN:  p[13] = 0xC0; break;
+            default: break;
         }
 
         // Byte 14-19: 固定
@@ -107,6 +122,7 @@ private:
             case AcMode::HEAT: p[20] = 0x08; break;
             case AcMode::DRY:  p[20] = 0x08; break;
             case AcMode::FAN:  p[20] = 0x00; break;
+            default: break;
         }
 
         // Byte 21: 固定

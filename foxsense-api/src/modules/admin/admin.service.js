@@ -318,15 +318,15 @@ export const setAcEnabled = async (deviceId, enabled) => {
 };
 
 export const createAcCommand = async (deviceId, mode, tempC) => {
-  const VALID_MODES = ['COOL', 'HEAT', 'DRY', 'FAN'];
+  const VALID_MODES = ['COOL', 'HEAT', 'DRY', 'FAN', 'OFF'];
   if (!VALID_MODES.includes(mode)) throw new AppError('Invalid mode. Use COOL/HEAT/DRY/FAN', 400);
-  if (mode !== 'FAN' && (tempC < 16 || tempC > 31)) throw new AppError('tempC must be 16~31', 400);
+  if (mode !== 'FAN' && mode !== 'OFF' && (tempC < 16 || tempC > 31)) throw new AppError('tempC must be 16~31', 400);
 
   const device = await prisma.parentDevice.findUnique({ where: { deviceId } });
   if (!device) throw new AppError('Device not found', 404);
   if (!device.acEnabled) throw new AppError('AC control not enabled for this device', 403);
 
   return prisma.acCommand.create({
-    data: { parentId: device.id, mode, tempC: mode === 'FAN' ? 25.0 : tempC },
+    data: { parentId: device.id, mode, tempC: (mode === 'FAN' || mode === 'OFF') ? 25.0 : tempC },
   });
 };
