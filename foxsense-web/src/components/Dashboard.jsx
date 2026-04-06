@@ -4,7 +4,7 @@ import { ja } from 'date-fns/locale';
 import { MapPin, Battery, Signal, Clock, Radio, Trash2, Wind, Thermometer, Send, Pencil, Check, X, PowerOff } from 'lucide-react';
 import GaugeCard from './GaugeCard';
 import HistoryChart from './HistoryChart';
-import { updateParentDevice, updateChildDevice } from '../api/client';
+import client, { updateParentDevice, updateChildDevice } from '../api/client';
 
 // CSQ (AT+CSQ 値 0-31) → バーレベル(0-4) + 色
 const csqToLevel = (csq) => {
@@ -46,16 +46,13 @@ const AcPanel = ({ deviceId }) => {
     setSending(true);
     setResult(null);
     try {
-      const token = localStorage.getItem('foxsense_access_token');
-      const res = await fetch(`/api/devices/parents/${deviceId}/ac`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ mode: m, tempC: (m === 'FAN' || m === 'OFF') ? 25 : t }),
+      const res = await client.post(`/devices/parents/${deviceId}/ac`, {
+        mode: m,
+        tempC: (m === 'FAN' || m === 'OFF') ? 25 : t,
       });
-      const data = await res.json();
-      setResult(data.success ? '送信しました' : data.message);
-    } catch {
-      setResult('エラーが発生しました');
+      setResult(res.data.success ? '送信しました' : res.data.message);
+    } catch (e) {
+      setResult(e.response?.data?.message || 'エラーが発生しました');
     } finally {
       setSending(false);
     }
