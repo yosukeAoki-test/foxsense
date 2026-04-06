@@ -70,6 +70,19 @@ foxsense-twelite-child/build/
 foxsense-twelite-parent/build/objs_BLUE/
 foxsense-twelite-parent/build/_mwx_version.c
 foxsense-twelite-parent/build/foxsense-twelite-parent_BLUE_L1305_V1-0-0.bin
+foxsense-twelite-parent/build/CMakeCache.txt
+foxsense-twelite-parent/build/CMakeFiles/
+foxsense-twelite-parent/build/cmake_install.cmake
+foxsense-twelite-parent/build/*.elf
+foxsense-twelite-parent/build/*.map
+
+# clangd / LSP
+.cache/
+compile_commands.json
+
+# Python
+__pycache__/
+*.pyc
 
 # その他
 agri-iot2.zip
