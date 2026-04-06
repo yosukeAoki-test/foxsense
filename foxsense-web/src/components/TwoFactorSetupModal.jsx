@@ -80,7 +80,14 @@ const TwoFactorSetupModal = ({ onClose }) => {
             <div className="space-y-4">
               <div className="space-y-3">
                 {[
-                  { icon: '📱', title: '認証アプリをインストール', desc: 'Google Authenticator または Authy をスマートフォンにインストールします' },
+                  { icon: '📱', title: '認証アプリをインストール', desc: (
+                    <>
+                      <a href="https://apps.apple.com/app/google-authenticator/id388497605" target="_blank" rel="noopener noreferrer" className="text-green-600 underline">Google Authenticator</a>
+                      {' または '}
+                      <a href="https://authy.com/download/" target="_blank" rel="noopener noreferrer" className="text-green-600 underline">Authy</a>
+                      {' をスマートフォンにインストールします'}
+                    </>
+                  ) },
                   { icon: '📷', title: 'QRコードをスキャン', desc: '次の画面に表示されるQRコードをアプリでスキャンします' },
                   { icon: '🔢', title: '6桁コードで確認', desc: 'アプリに表示される6桁のコードを入力して設定完了です' },
                 ].map((step, i) => (

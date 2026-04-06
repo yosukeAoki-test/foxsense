@@ -103,3 +103,28 @@ export const reportPairingResult = asyncHandler(async (req, res) => {
   const result = await devicesService.reportPairingResult(deviceId, childDeviceId, status, secret);
   res.json({ success: true, data: result });
 });
+
+// AC Command (プロトタイプモード用)
+export const getPendingAcCommand = asyncHandler(async (req, res) => {
+  const { deviceId } = req.params;
+  const { secret } = req.query;
+  if (!secret) return res.status(400).json({ success: false, message: 'secret is required' });
+
+  const result = await devicesService.getPendingAcCommand(deviceId, secret);
+  res.json(result);
+});
+
+export const createAcCommand = asyncHandler(async (req, res) => {
+  const { mode, tempC } = req.body;
+  const cmd = await devicesService.createAcCommandForUser(req.params.id, req.user.id, mode, tempC);
+  res.status(201).json({ success: true, data: cmd });
+});
+
+export const ackAcCommand = asyncHandler(async (req, res) => {
+  const { deviceId } = req.params;
+  const { id, secret, status } = req.body;
+  if (!id || !secret) return res.status(400).json({ success: false, message: 'id and secret are required' });
+
+  await devicesService.ackAcCommand(deviceId, id, secret);
+  res.json({ success: true });
+});

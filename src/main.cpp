@@ -31,6 +31,7 @@
 #include "XPowersLib.h"
 #include "config.h"
 #include "ca_cert.h"
+#include "ir_control.h"
 
 // ディープスリープ間隔
 #define MEASUREMENT_INTERVAL_MIN 10  // 本番10分間隔
@@ -87,6 +88,15 @@ Adafruit_BME280 bme;
 XPowersPMU PMU;
 HardwareSerial modemSerial(1);   // SIM7080G
 HardwareSerial tweliteSerial(2); // TWELITE
+IrController irCtrl;             // IR送信コントローラ (ACプロトタイプモード用)
+
+// ACコマンド構造体
+struct AcCommandPending {
+    bool found;
+    int id;
+    AcMode mode;
+    float tempC;
+};
 
 // モデム状態
 struct ModemState {
@@ -130,6 +140,7 @@ void parseChildPacketV2(uint8_t* buffer, int length);
 bool isAllChildDataReceived();
 
 // v2新規関数
+bool sendRawHTTPTCP(const String& method, const String& path, const String& host, const String& body);
 uint8_t computeChecksum(uint8_t* buffer, int length);
 bool uploadCACert();
 bool fetchConfigFromServer();
@@ -138,6 +149,10 @@ bool waitForPairingResponse(uint32_t targetChildId);
 bool reportPairingResult(const char* childDeviceIdHex, const char* status);
 void executePairingMode();
 uint32_t computeParentIdHashLocal(const char* deviceId);
+
+// ACプロトタイプモード用関数
+AcCommandPending fetchPendingAcCommand();
+bool ackAcCommand(int cmdId);
 
 /**
  * parentIdHashをローカルで計算（SHA-256の先頭4バイト相当）
@@ -451,6 +466,53 @@ void setup() {
         consecutiveFailures++;
     }
 
+#if AC_PROTOTYPE_MODE
+    // ===== ACプロトタイプモード: 常時起動ポーリングループ =====
+    irCtrl.begin();
+    Serial.println("\n[AC] Prototype mode: entering command polling loop");
+    unsigned long lastDataSendMs = millis();
+    int acDataSendFailures = 0;
+
+    while (true) {
+        AcCommandPending cmd = fetchPendingAcCommand();
+        if (cmd.found) {
+            Serial.printf("[AC] Executing: mode=%d tempC=%.1f\n", (int)cmd.mode, cmd.tempC);
+            irCtrl.send(cmd.mode, cmd.tempC);
+            ackAcCommand(cmd.id);
+        }
+
+        // 定期センサーデータ送信
+        if (millis() - lastDataSendMs >= (unsigned long)AC_DATA_SEND_INTERVAL_MIN * 60 * 1000) {
+            Serial.println("\n[AC] Periodic data send...");
+            readParentSensors();
+            if (sendAllDataToServer()) {
+                Serial.println("[AC] Periodic data sent OK");
+                acDataSendFailures = 0;
+            } else {
+                acDataSendFailures++;
+                Serial.printf("[AC] Periodic data send failed (%d/%d)\n",
+                              acDataSendFailures, AC_RECONNECT_FAIL_THRESHOLD);
+
+                if (acDataSendFailures >= AC_RECONNECT_FAIL_THRESHOLD) {
+                    Serial.println("[AC] Reconnecting modem...");
+                    modemState.isInitialized = false;
+                    modemState.isConnected = false;
+                    caCertUploaded = false;
+                    if (initModem()) {
+                        uploadCACert();
+                        acDataSendFailures = 0;
+                        Serial.println("[AC] Modem reconnected OK");
+                    } else {
+                        Serial.println("[AC] Modem reconnect failed, will retry");
+                    }
+                }
+            }
+            lastDataSendMs = millis();
+        }
+
+        delay(AC_POLL_INTERVAL_SEC * 1000);
+    }
+#else
     // モデムはOFFにしない: DC3がディープスリープ中も保持され
     // 次回起動時に既にCat-M1登録済み状態を維持できるため
     // powerOffModem() は呼ばない
@@ -459,6 +521,7 @@ void setup() {
     uint64_t sleepDuration = calculateSleepDuration();
     Serial.printf("\n[SLEEP] Going to deep sleep for %llu seconds...\n", sleepDuration);
     goToDeepSleep(sleepDuration);
+#endif
 }
 
 void loop() {
@@ -791,20 +854,10 @@ bool fetchConfigFromServer() {
     String configPath = String(SERVER_CONFIG_PATH) + DEVICE_ID + "?secret=" + DEVICE_SECRET;
 
     String r;
-    // SSL設定
-    sendATCommand("AT+CSSLCFG=\"sslversion\",0,3", 2000);        // TLS 1.2
-    if (caCertUploaded) {
-        sendATCommand("AT+CSSLCFG=\"cacert\",0,\"ca.pem\"", 2000);
-        sendATCommand("AT+CSSLCFG=\"authmode\",0,1", 2000);       // サーバー証明書検証あり
-        sendATCommand("AT+CSSLCFG=\"ignorertctime\",0,1", 2000);  // RTC未同期時の時刻検証をスキップ
-        Serial.println("[CONFIG] SSL: cert verification ON");
-    } else {
-        sendATCommand("AT+CSSLCFG=\"authmode\",0,0", 2000);       // フォールバック: 暗号化のみ
-        Serial.println("[CONFIG] SSL: cert verification OFF (fallback)");
-    }
-    // 生SSL接続 (SHCONN はcid=0デフォルトで失敗するため回避)
-    r = sendATCommand("AT+CAOPEN=1,0,\"SSL\",\"" + String(SERVER_HOST) + "\",443", 20000);
-    Serial.printf("[CONFIG] CAOPEN(SSL): '%s'\n", r.c_str());
+    // TCP接続 (HTTP port 80)
+    sendATCommand("AT+CACLOSE=0", 1000);  // 念のため既存接続をクローズ
+    r = sendATCommand("AT+CAOPEN=0,0,\"TCP\",\"" + String(SERVER_HOST) + "\",80", 20000);
+    Serial.printf("[CONFIG] CAOPEN(TCP): '%s'\n", r.c_str());
     if (r.indexOf("OK") < 0) {
         Serial.println("[CONFIG] SSL connection failed");
         return false;
@@ -1542,23 +1595,14 @@ bool syncNTP() {
 }
 
 /**
- * 生SSL (AT+CAOPEN cid=1) でHTTPSリクエストを送信
- * SHCONN がデフォルトでcid=0を使用するため動作しない問題を回避
+ * 生TCP (AT+CAOPEN) でHTTPリクエストを送信
  */
 bool sendRawHTTPTCP(const String& method, const String& path,
                     const String& host, const String& body) {
-    // SSL設定
-    sendATCommand("AT+CSSLCFG=\"sslversion\",0,3", 2000);        // TLS 1.2
-    if (caCertUploaded) {
-        sendATCommand("AT+CSSLCFG=\"cacert\",0,\"ca.pem\"", 2000);
-        sendATCommand("AT+CSSLCFG=\"authmode\",0,1", 2000);       // サーバー証明書検証あり
-        sendATCommand("AT+CSSLCFG=\"ignorertctime\",0,1", 2000);  // RTC未同期時の時刻検証をスキップ
-    } else {
-        sendATCommand("AT+CSSLCFG=\"authmode\",0,0", 2000);       // フォールバック: 暗号化のみ
-    }
-    // SSL接続 (cid=1, clientID=0)
-    String r = sendATCommand("AT+CAOPEN=1,0,\"SSL\",\"" + host + "\",443", 20000);
-    Serial.printf("[SSL] CAOPEN: '%s'\n", r.c_str());
+    // TCP接続 (HTTP port 80)
+    sendATCommand("AT+CACLOSE=0", 1000);  // 念のため既存接続をクローズ
+    String r = sendATCommand("AT+CAOPEN=0,0,\"TCP\",\"" + host + "\",80", 20000);
+    Serial.printf("[TCP] CAOPEN: '%s'\n", r.c_str());
     if (r.indexOf("OK") < 0) {
         return false;
     }
@@ -1851,4 +1895,110 @@ uint64_t calculateSleepDuration() {
     }
 
     return (uint64_t)secondsToSleep;
+}
+
+/**
+ * サーバーから未実行のACコマンドを1件取得
+ * GET /api/devices/:deviceId/ac-command?secret=xxx
+ * 成功時: {"id":1,"mode":"COOL","tempC":25.0}
+ * 未実行なし: {"pending":false}
+ */
+AcCommandPending fetchPendingAcCommand() {
+    AcCommandPending result = {false, 0, AcMode::COOL, 25.0f};
+
+    String path = "/api/devices/" + String(DEVICE_ID) + "/ac-command?secret=" + String(DEVICE_SECRET);
+
+    // TCP接続 (HTTP port 80)
+    sendATCommand("AT+CACLOSE=0", 1000);
+    String r = sendATCommand("AT+CAOPEN=0,0,\"TCP\",\"" + String(SERVER_HOST) + "\",80", 20000);
+    if (r.indexOf("OK") < 0) {
+        Serial.println("[AC] CAOPEN failed");
+        return result;
+    }
+    int clientID = 0;
+    {
+        int idx = r.indexOf("+CAOPEN: ");
+        if (idx >= 0) {
+            int ns = idx + 9;
+            int cm = r.indexOf(",", ns);
+            if (cm > ns) clientID = r.substring(ns, cm).toInt();
+        }
+    }
+    delay(200);
+
+    String httpReq = "GET " + path + " HTTP/1.1\r\n";
+    httpReq += "Host: " + String(SERVER_HOST) + "\r\n";
+    httpReq += "Connection: keep-alive\r\n\r\n";
+
+    r = sendATCommand("AT+CASEND=" + String(clientID) + "," + String(httpReq.length()), 5000);
+    modemSerial.print(httpReq);
+
+    // +CADATAIND を待ってからCARECVで受信
+    String sBuf = "";
+    String httpResp = "";
+    unsigned long t = millis();
+    while (millis() - t < 10000) {
+        while (modemSerial.available()) sBuf += (char)modemSerial.read();
+        if (sBuf.indexOf("+CADATAIND:") >= 0) {
+            modemSerial.print("AT+CARECV=" + String(clientID) + ",1460\r\n");
+            unsigned long rt = millis();
+            while (millis() - rt < 5000) {
+                while (modemSerial.available()) httpResp += (char)modemSerial.read();
+                if (httpResp.endsWith("\r\nOK\r\n") || httpResp.indexOf("ERROR") >= 0) break;
+                delay(10);
+            }
+            break;
+        }
+        if (sBuf.indexOf("+CASTATE:") >= 0) break;
+        delay(50);
+    }
+    sendATCommand("AT+CACLOSE=" + String(clientID), 3000);
+
+    // HTTP 200以外は無視
+    if (httpResp.indexOf(" 200") < 0) return result;
+
+    // JSONボディ抽出 (ヘッダー後の部分)
+    int bodyStart = httpResp.indexOf("\r\n\r\n");
+    if (bodyStart < 0) return result;
+    String body = httpResp.substring(bodyStart + 4);
+
+    // {"pending":false} チェック
+    if (body.indexOf("\"pending\":false") >= 0) return result;
+
+    // id
+    int idIdx = body.indexOf("\"id\":");
+    if (idIdx < 0) return result;
+    result.id = body.substring(idIdx + 5).toInt();
+
+    // mode
+    int modeIdx = body.indexOf("\"mode\":\"");
+    if (modeIdx < 0) return result;
+    String modeStr = body.substring(modeIdx + 8, modeIdx + 12);
+    if      (modeStr.startsWith("COOL")) result.mode = AcMode::COOL;
+    else if (modeStr.startsWith("HEAT")) result.mode = AcMode::HEAT;
+    else if (modeStr.startsWith("DRY"))  result.mode = AcMode::DRY;
+    else if (modeStr.startsWith("FAN"))  result.mode = AcMode::FAN;
+    else return result;
+
+    // tempC
+    int tempIdx = body.indexOf("\"tempC\":");
+    if (tempIdx >= 0) {
+        result.tempC = body.substring(tempIdx + 8).toFloat();
+    }
+
+    result.found = true;
+    return result;
+}
+
+/**
+ * ACコマンド実行完了をサーバーに通知
+ * POST /api/devices/:deviceId/ac-ack
+ * Body: {"id":<cmdId>,"secret":"...","status":"done"}
+ */
+bool ackAcCommand(int cmdId) {
+    String path = "/api/devices/" + String(DEVICE_ID) + "/ac-ack";
+    String body = "{\"id\":" + String(cmdId) + ",\"secret\":\"" + String(DEVICE_SECRET) + "\",\"status\":\"done\"}";
+    bool ok = sendRawHTTPTCP("POST", path, String(SERVER_HOST), body);
+    Serial.printf("[AC] ACK cmd %d: %s\n", cmdId, ok ? "OK" : "FAIL");
+    return ok;
 }

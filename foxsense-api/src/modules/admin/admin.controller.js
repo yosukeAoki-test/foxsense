@@ -103,3 +103,23 @@ export const changePassword = asyncHandler(async (req, res) => {
   await adminService.changePassword(req.user.id, currentPassword, newPassword);
   res.json({ success: true, message: 'パスワードを変更しました' });
 });
+
+// AC Control (管理者専用)
+export const setAcEnabled = asyncHandler(async (req, res) => {
+  const { deviceId } = req.params;
+  const { enabled } = req.body;
+  if (typeof enabled !== 'boolean') {
+    return res.status(400).json({ success: false, message: 'enabled (boolean) is required' });
+  }
+  const result = await adminService.setAcEnabled(deviceId, enabled);
+  res.json({ success: true, data: result });
+});
+
+export const createAcCommand = asyncHandler(async (req, res) => {
+  const { deviceId } = req.params;
+  const { mode, tempC } = req.body;
+  if (!mode) return res.status(400).json({ success: false, message: 'mode is required' });
+
+  const result = await adminService.createAcCommand(deviceId, mode, tempC ?? 25.0);
+  res.status(201).json({ success: true, data: result });
+});

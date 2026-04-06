@@ -4,7 +4,7 @@ import {
   Users, Radio, BarChart3, Package, ArrowLeft, Trash2,
   ShieldCheck, ShieldOff, Coins, Loader2, AlertCircle,
   ChevronDown, Plus, Minus, RefreshCw, Cpu, Edit2, Check, X, KeyRound, Link,
-  Tag, Printer, RotateCcw, Database,
+  Tag, Printer, RotateCcw, Database, Wind, Thermometer, Send, Search,
 } from 'lucide-react';
 import QRCode from 'react-qr-code';
 import client, { adminInventoryApi, printApi } from '../api/client';
@@ -86,6 +86,7 @@ const UsersTab = () => {
   const [coinAmount, setCoinAmount] = useState(0);
   const [coinNote, setCoinNote] = useState('');
   const [processing, setProcessing] = useState(false);
+  const [search, setSearch] = useState('');
 
   const load = () => {
     setLoading(true);
@@ -127,11 +128,23 @@ const UsersTab = () => {
   const simStatusColor = { ACTIVE: 'green', SUSPENDED: 'yellow', INACTIVE: 'gray' };
   const simStatusLabel = { ACTIVE: '通信中', SUSPENDED: '停止中', INACTIVE: '未設定' };
 
+  const filteredUsers = users.filter(u => {
+    const q = search.toLowerCase();
+    return !q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q);
+  });
+
   if (loading) return <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>;
 
   return (
     <div>
       {error && <div className="flex items-center gap-2 p-3 bg-red-50 rounded-lg text-red-600 text-sm mb-4"><AlertCircle className="w-4 h-4" />{error}</div>}
+
+      <div className="relative mb-3">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+        <input type="text" value={search} onChange={e => setSearch(e.target.value)}
+          placeholder="名前・メールで検索"
+          className="w-full pl-9 pr-3 py-2 border rounded-xl text-sm outline-none focus:border-blue-400 bg-white" />
+      </div>
 
       <div className="bg-white rounded-xl border overflow-hidden">
         <table className="w-full text-sm">
@@ -143,7 +156,7 @@ const UsersTab = () => {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {users.map(u => {
+            {filteredUsers.map(u => {
               const sc = simStatusColor[u.simStatus] || 'gray';
               return (
                 <tr key={u.id} className="hover:bg-gray-50">
@@ -761,7 +774,7 @@ ${labels.map(l => `  <div class="label">
                 <div key={l.deviceId} className="relative bg-white border border-gray-200 rounded p-2 flex flex-col gap-1.5 group hover:border-blue-300 transition-colors">
                   <div className="flex items-center gap-2">
                     <div id={`qr-${l.deviceId}`}>
-                      <QRCode value={l.deviceId} size={tapeSize.qr} level="M" />
+                      <QRCode value={l.deviceId} size={tapeSize.qr} level="Q" />
                     </div>
                     <div className="min-w-0">
                       <p className="text-xs font-bold text-gray-700">FoxSense</p>
@@ -934,6 +947,242 @@ ${labels.map(l => `  <div class="label">
                 })}
               </tbody>
             </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ===== ラベル再発行タブ =====
+const LabelReissueTab = () => {
+  const [inventory, setInventory] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [search, setSearch] = useState('');
+  const [filterType, setFilterType] = useState('ALL');
+  const [selected, setSelected] = useState(new Set());
+  const [tapeSize, setTapeSize] = useState(TAPE_SIZES[0]);
+  const [error, setError] = useState('');
+  const [bridgeStatus, setBridgeStatus] = useState(null);
+  const [bridgePrinting, setBridgePrinting] = useState(false);
+  const [bridgeProgress, setBridgeProgress] = useState('');
+
+  const checkBridge = useCallback(async () => {
+    try {
+      const { alive } = await printApi.getBridgeStatus();
+      setBridgeStatus(alive ? 'ok' : 'error');
+    } catch {
+      setBridgeStatus('error');
+    }
+  }, []);
+
+  useEffect(() => {
+    setLoading(true);
+    adminInventoryApi.list().then(setInventory).catch(() => {}).finally(() => setLoading(false));
+    checkBridge();
+  }, [checkBridge]);
+
+  const filtered = inventory.filter(item => {
+    if (item.deletedAt) return false;
+    const q = search.toLowerCase();
+    if (q && !item.deviceId.toLowerCase().includes(q) &&
+        !(item.deviceName || '').toLowerCase().includes(q) &&
+        !(item.userName || '').toLowerCase().includes(q)) return false;
+    if (filterType !== 'ALL' && item.type !== filterType) return false;
+    return true;
+  });
+
+  const toggleSelect = (deviceId) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(deviceId)) next.delete(deviceId); else next.add(deviceId);
+      return next;
+    });
+  };
+
+  const toggleAll = () => {
+    const allSelected = filtered.every(i => selected.has(i.deviceId));
+    setSelected(prev => {
+      const next = new Set(prev);
+      filtered.forEach(i => allSelected ? next.delete(i.deviceId) : next.add(i.deviceId));
+      return next;
+    });
+  };
+
+  const selectedItems = inventory.filter(i => selected.has(i.deviceId));
+
+  const handlePrint = () => {
+    if (selectedItems.length === 0) return;
+    const tape = tapeSize;
+    const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: white; }
+  .page { display: flex; flex-wrap: wrap; gap: 2mm; padding: 2mm; }
+  .label { width: ${tape.width}; height: ${tape.height}; border: 0.3mm solid #ccc; display: flex; align-items: center; gap: 1mm; padding: 1mm; overflow: hidden; page-break-inside: avoid; }
+  .label svg { flex-shrink: 0; }
+  .label-text { display: flex; flex-direction: column; gap: 0.5mm; min-width: 0; }
+  .label-brand { font-family: sans-serif; font-weight: bold; font-size: ${tape.fontSize}; color: #1a1a1a; white-space: nowrap; }
+  .label-type { font-family: sans-serif; font-size: ${tape.fontSize}; color: #555; white-space: nowrap; }
+  .label-id { font-family: monospace; font-size: ${tape.idFontSize}; color: #333; word-break: break-all; letter-spacing: 0.3px; }
+  @media print { body { margin: 0; } }
+</style></head><body><div class="page">
+${selectedItems.map(l => `  <div class="label">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${tape.qr} ${tape.qr}" width="${tape.qr}" height="${tape.qr}">
+      ${document.getElementById(`reissue-qr-${l.deviceId}`)?.innerHTML || ''}
+    </svg>
+    <div class="label-text">
+      <span class="label-brand">FoxSense</span>
+      <span class="label-type">${l.type === 'PARENT' ? '親機' : '子機'}</span>
+      <span class="label-id">${l.deviceId}</span>
+    </div>
+  </div>`).join('\n')}
+</div></body></html>`;
+    const win = window.open('', '_blank');
+    win.document.write(html);
+    win.document.close();
+    win.onload = () => { win.print(); };
+  };
+
+  const handleBridgePrint = async () => {
+    if (selectedItems.length === 0) return;
+    setBridgePrinting(true);
+    setError('');
+    for (let i = 0; i < selectedItems.length; i++) {
+      const l = selectedItems[i];
+      setBridgeProgress(`印刷中 ${i + 1} / ${selectedItems.length}`);
+      try {
+        const job = await printApi.createJob(`QR:${l.deviceId}:${l.imsi || ''}`, tapeSize.mm);
+        let done = false;
+        for (let attempt = 0; attempt < 30 && !done; attempt++) {
+          await new Promise(r => setTimeout(r, 1000));
+          const j = await printApi.getJobById(job.id);
+          if (j.status === 'done') { done = true; }
+          else if (j.status === 'failed') { throw new Error(j.error || '印刷失敗'); }
+        }
+        if (!done) throw new Error('タイムアウト（30秒）');
+        if (i < selectedItems.length - 1) await new Promise(r => setTimeout(r, 500));
+      } catch (e) {
+        setError(`${l.deviceId} の印刷に失敗: ${e.message}`);
+        break;
+      }
+    }
+    setBridgePrinting(false);
+    setBridgeProgress('');
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* 印刷用QRコード（非表示） */}
+      <div style={{ position: 'absolute', left: '-9999px' }}>
+        {selectedItems.map(l => (
+          <div key={l.deviceId} id={`reissue-qr-${l.deviceId}`}>
+            <QRCode value={l.deviceId} size={tapeSize.qr} level="Q" />
+          </div>
+        ))}
+      </div>
+
+      {error && (
+        <div className="flex items-center gap-2 p-3 bg-red-50 rounded-lg text-red-600 text-sm">
+          <AlertCircle className="w-4 h-4 flex-shrink-0" />{error}
+        </div>
+      )}
+
+      <div className="bg-white rounded-xl border p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+            <RotateCcw className="w-4 h-4 text-blue-600" />ラベル再発行
+          </h3>
+          <button onClick={checkBridge} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded-lg border hover:bg-gray-50 transition-colors text-gray-500">
+            <span className={`w-2 h-2 rounded-full ${bridgeStatus === 'ok' ? 'bg-green-500' : bridgeStatus === 'error' ? 'bg-red-400' : 'bg-gray-300'}`} />
+            {bridgeStatus === 'ok' ? 'テプラ接続中' : bridgeStatus === 'error' ? 'ブリッジ未起動' : '確認中...'}
+          </button>
+        </div>
+
+        {selected.size > 0 && (
+          <div className="flex flex-wrap items-center gap-2 mb-4 p-3 bg-gray-50 rounded-xl">
+            <div className="flex rounded-lg border overflow-hidden">
+              {TAPE_SIZES.map(t => (
+                <button key={t.label} onClick={() => setTapeSize(t)}
+                  className={`px-3 py-1.5 text-xs font-medium transition-colors ${tapeSize.label === t.label ? 'bg-gray-800 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>
+                  {t.label}
+                </button>
+              ))}
+            </div>
+            <button onClick={handlePrint}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl border border-gray-300 text-gray-700 text-sm font-medium hover:bg-gray-50 transition-colors">
+              <Printer className="w-3.5 h-3.5" />ブラウザ印刷（{selected.size}件）
+            </button>
+            <button onClick={handleBridgePrint} disabled={bridgePrinting || bridgeStatus !== 'ok'}
+              title={bridgeStatus !== 'ok' ? 'ブリッジサーバーを起動してください' : ''}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-orange-500 text-white text-sm font-medium hover:bg-orange-600 disabled:opacity-50 transition-colors">
+              {bridgePrinting
+                ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />{bridgeProgress}</>
+                : <><Printer className="w-3.5 h-3.5" />テプラで印刷（{selected.size}件）</>
+              }
+            </button>
+          </div>
+        )}
+
+        {/* 検索・フィルター */}
+        <div className="flex gap-2 mb-3">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input type="text" value={search} onChange={e => setSearch(e.target.value)}
+              placeholder="デバイスID・デバイス名・オーナーで検索"
+              className="w-full pl-9 pr-3 py-2 border rounded-xl text-sm outline-none focus:border-blue-400" />
+          </div>
+          <div className="flex rounded-lg border overflow-hidden">
+            {[['ALL', '全て'], ['PARENT', '親機'], ['CHILD', '子機']].map(([val, label]) => (
+              <button key={val} onClick={() => setFilterType(val)}
+                className={`px-3 py-2 text-xs font-medium transition-colors ${filterType === val ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* 一覧 */}
+        {loading ? (
+          <div className="text-center py-8 text-gray-400 text-sm">読み込み中...</div>
+        ) : filtered.length === 0 ? (
+          <div className="text-center py-8 text-gray-400 text-sm">該当するデバイスがありません</div>
+        ) : (
+          <div className="border rounded-xl overflow-hidden">
+            <div className="flex items-center gap-3 px-4 py-2 bg-gray-50 border-b">
+              <input type="checkbox"
+                checked={filtered.length > 0 && filtered.every(i => selected.has(i.deviceId))}
+                onChange={toggleAll}
+                className="w-4 h-4 accent-blue-600" />
+              <span className="text-xs text-gray-500">
+                {filtered.length}件中 {filtered.filter(i => selected.has(i.deviceId)).length}件を選択
+              </span>
+            </div>
+            <div className="max-h-96 overflow-y-auto divide-y">
+              {filtered.map(item => (
+                <label key={item.deviceId} className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 cursor-pointer">
+                  <input type="checkbox" checked={selected.has(item.deviceId)}
+                    onChange={() => toggleSelect(item.deviceId)}
+                    className="w-4 h-4 accent-blue-600 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-mono text-sm text-gray-800">{item.deviceId}</span>
+                      <span className={`text-xs px-1.5 py-0.5 rounded-full ${item.type === 'PARENT' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}>
+                        {item.type === 'PARENT' ? '親機' : '子機'}
+                      </span>
+                      {!item.claimed && <span className="text-xs px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">未登録</span>}
+                    </div>
+                    {(item.deviceName || item.userName) && (
+                      <div className="text-xs text-gray-400 mt-0.5">
+                        {item.deviceName && <span>{item.deviceName}</span>}
+                        {item.deviceName && item.userName && <span className="mx-1">·</span>}
+                        {item.userName && <span>{item.userName}</span>}
+                      </div>
+                    )}
+                  </div>
+                </label>
+              ))}
+            </div>
           </div>
         )}
       </div>
@@ -1173,58 +1422,290 @@ const PrintTab = () => {
   );
 };
 
+// ===== エアコンコントロールタブ =====
+const AC_MODES = [
+  { value: 'COOL', label: '冷房', color: 'blue' },
+  { value: 'HEAT', label: '暖房', color: 'orange' },
+  { value: 'DRY',  label: '除湿', color: 'teal' },
+  { value: 'FAN',  label: '送風', color: 'gray' },
+];
+
+const AcControlTab = () => {
+  const [devices, setDevices] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [mode, setMode] = useState('COOL');
+  const [tempC, setTempC] = useState(25.0);
+  const [sending, setSending] = useState(null); // deviceId of in-flight request
+  const [result, setResult] = useState(null);   // { deviceId, ok, message }
+  const [toggling, setToggling] = useState(null);
+
+  const reload = () => {
+    setLoading(true);
+    api.get('/admin/devices').then(setDevices).finally(() => setLoading(false));
+  };
+  useEffect(reload, []);
+
+  const acDevices = devices ? devices.parents.filter(p => p.acEnabled) : [];
+  const nonAcDevices = devices ? devices.parents.filter(p => !p.acEnabled) : [];
+
+  const toggleAcEnabled = async (deviceId, enabled) => {
+    setToggling(deviceId);
+    try {
+      await api.put(`/admin/devices/${deviceId}/ac-enabled`, { enabled });
+      reload();
+    } catch (e) {
+      alert('更新に失敗しました');
+    } finally {
+      setToggling(null);
+    }
+  };
+
+  const sendCommand = async (deviceId) => {
+    setSending(deviceId);
+    setResult(null);
+    try {
+      await api.post(`/admin/devices/${deviceId}/ac`, { mode, tempC });
+      setResult({ deviceId, ok: true, message: 'コマンドを送信しました' });
+    } catch (e) {
+      setResult({ deviceId, ok: false, message: e.response?.data?.message || '送信失敗' });
+    } finally {
+      setSending(null);
+    }
+  };
+
+  if (loading) return <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>;
+
+  return (
+    <div className="space-y-6">
+      {/* コマンド設定パネル */}
+      <div className="bg-white rounded-xl border p-4 space-y-4">
+        <h3 className="font-semibold text-gray-800 flex items-center gap-2">
+          <Wind className="w-4 h-4 text-blue-600" />
+          ACコマンド設定
+        </h3>
+
+        <div className="flex flex-wrap gap-2">
+          {AC_MODES.map(m => (
+            <button key={m.value} onClick={() => setMode(m.value)}
+              className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                mode === m.value
+                  ? 'bg-gray-900 text-white border-gray-900'
+                  : 'bg-white text-gray-600 border-gray-300 hover:border-gray-400'
+              }`}>
+              {m.label}
+            </button>
+          ))}
+        </div>
+
+        {mode !== 'FAN' && (
+          <div className="flex items-center gap-3">
+            <Thermometer className="w-4 h-4 text-gray-500 flex-shrink-0" />
+            <span className="text-sm text-gray-600 w-12">{tempC.toFixed(1)}°C</span>
+            <input
+              type="range" min="16" max="31" step="0.5"
+              value={tempC} onChange={e => setTempC(parseFloat(e.target.value))}
+              className="flex-1"
+            />
+            <div className="flex gap-1">
+              <button onClick={() => setTempC(v => Math.max(16, parseFloat((v - 0.5).toFixed(1))))}
+                className="w-7 h-7 rounded-lg border flex items-center justify-center hover:bg-gray-100 text-sm font-bold">−</button>
+              <button onClick={() => setTempC(v => Math.min(31, parseFloat((v + 0.5).toFixed(1))))}
+                className="w-7 h-7 rounded-lg border flex items-center justify-center hover:bg-gray-100 text-sm font-bold">+</button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ACコントロール有効デバイス */}
+      <div className="bg-white rounded-xl border overflow-hidden">
+        <div className="px-4 py-3 border-b bg-gray-50 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Wind className="w-4 h-4 text-blue-600" />
+            <h3 className="font-semibold text-gray-800 text-sm">ACコントロール有効デバイス ({acDevices.length}台)</h3>
+          </div>
+        </div>
+        {acDevices.length === 0 ? (
+          <div className="px-4 py-6 text-center text-sm text-gray-400">
+            ACコントロールが有効なデバイスがありません
+          </div>
+        ) : (
+          <div className="divide-y">
+            {acDevices.map(p => (
+              <div key={p.id} className="px-4 py-3 flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="font-medium text-gray-900">{p.name}</div>
+                  <div className="text-xs text-gray-400 font-mono">{p.deviceId}</div>
+                  <div className="text-xs text-gray-500">{p.owner.name}</div>
+                  {result?.deviceId === p.deviceId && (
+                    <div className={`text-xs mt-1 ${result.ok ? 'text-green-600' : 'text-red-500'}`}>
+                      {result.message}
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <button onClick={() => toggleAcEnabled(p.deviceId, false)}
+                    disabled={toggling === p.deviceId}
+                    className="text-xs px-2 py-1 rounded-lg border border-gray-300 text-gray-500 hover:bg-gray-100 disabled:opacity-50">
+                    {toggling === p.deviceId ? <Loader2 className="w-3 h-3 animate-spin" /> : '無効化'}
+                  </button>
+                  <button onClick={() => sendCommand(p.deviceId)}
+                    disabled={sending === p.deviceId}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700 disabled:opacity-50">
+                    {sending === p.deviceId
+                      ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      : <Send className="w-3.5 h-3.5" />}
+                    送信
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* AC未有効デバイス */}
+      {nonAcDevices.length > 0 && (
+        <div className="bg-white rounded-xl border overflow-hidden">
+          <div className="px-4 py-3 border-b bg-gray-50 flex items-center gap-2">
+            <Radio className="w-4 h-4 text-gray-400" />
+            <h3 className="font-semibold text-gray-800 text-sm">その他のデバイス ({nonAcDevices.length}台)</h3>
+          </div>
+          <div className="divide-y">
+            {nonAcDevices.map(p => (
+              <div key={p.id} className="px-4 py-3 flex items-center justify-between">
+                <div>
+                  <div className="font-medium text-gray-900">{p.name}</div>
+                  <div className="text-xs text-gray-400 font-mono">{p.deviceId}</div>
+                  <div className="text-xs text-gray-500">{p.owner.name}</div>
+                </div>
+                <button onClick={() => toggleAcEnabled(p.deviceId, true)}
+                  disabled={toggling === p.deviceId}
+                  className="text-xs px-2 py-1 rounded-lg border border-blue-300 text-blue-600 hover:bg-blue-50 disabled:opacity-50">
+                  {toggling === p.deviceId ? <Loader2 className="w-3 h-3 animate-spin" /> : 'AC有効化'}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 // ===== メイン管理ページ =====
+const NAV_GROUPS = [
+  {
+    label: '概要',
+    items: [
+      { id: 'stats', label: '統計', icon: BarChart3 },
+    ],
+  },
+  {
+    label: 'ユーザー管理',
+    items: [
+      { id: 'users', label: 'ユーザー', icon: Users },
+    ],
+  },
+  {
+    label: 'デバイス管理',
+    items: [
+      { id: 'devices', label: 'デバイス一覧', icon: Radio },
+      { id: 'ac', label: 'エアコン', icon: Wind },
+    ],
+  },
+  {
+    label: 'ラベル',
+    items: [
+      { id: 'labels', label: 'ラベル発行', icon: Tag },
+      { id: 'reissue', label: 'ラベル再発行', icon: RotateCcw },
+    ],
+  },
+  {
+    label: 'システム',
+    items: [
+      { id: 'packages', label: 'パッケージ', icon: Package },
+      { id: 'print', label: '印刷キュー', icon: Printer },
+      { id: 'password', label: 'パスワード変更', icon: KeyRound },
+    ],
+  },
+];
+
+const ALL_TABS = NAV_GROUPS.flatMap(g => g.items);
+
 const AdminPage = () => {
   const [tab, setTab] = useState('stats');
   const navigate = useNavigate();
 
-  const tabs = [
-    { id: 'stats', label: '統計', icon: BarChart3 },
-    { id: 'users', label: 'ユーザー', icon: Users },
-    { id: 'devices', label: 'デバイス', icon: Radio },
-    { id: 'labels', label: 'ラベル発行', icon: Tag },
-    { id: 'packages', label: 'パッケージ', icon: Package },
-    { id: 'password', label: 'パスワード', icon: KeyRound },
-    { id: 'print', label: '印刷', icon: Printer },
-  ];
+  const currentLabel = ALL_TABS.find(t => t.id === tab)?.label ?? '';
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <button onClick={() => navigate('/')} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors">
-            <ArrowLeft className="w-5 h-5" />
-          </button>
-          <div>
-            <h1 className="text-lg font-bold text-gray-900">管理画面</h1>
-            <p className="text-xs text-gray-500">FoxSense Admin Dashboard</p>
-          </div>
+      <header className="bg-white border-b px-4 sm:px-6 py-4 flex items-center gap-3">
+        <button onClick={() => navigate('/')} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors">
+          <ArrowLeft className="w-5 h-5" />
+        </button>
+        <div className="flex-1 min-w-0">
+          <h1 className="text-lg font-bold text-gray-900">管理画面</h1>
+          <p className="text-xs text-gray-500 hidden sm:block">FoxSense Admin Dashboard</p>
         </div>
+        {/* モバイル: 現在のページ名 */}
+        <span className="sm:hidden text-sm font-medium text-gray-600">{currentLabel}</span>
       </header>
 
-      <div className="max-w-5xl mx-auto px-4 py-6">
-        {/* タブ */}
-        <div className="flex gap-1 mb-6 bg-white rounded-xl border p-1">
-          {tabs.map(t => {
-            const Icon = t.icon;
-            return (
-              <button key={t.id} onClick={() => setTab(t.id)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors flex-1 justify-center ${
-                  tab === t.id ? 'bg-gray-900 text-white' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
-                }`}>
-                <Icon className="w-4 h-4" />{t.label}
-              </button>
-            );
-          })}
-        </div>
+      {/* モバイル: 横スクロールタブ */}
+      <div className="sm:hidden flex gap-1 overflow-x-auto px-3 py-2 bg-white border-b">
+        {ALL_TABS.map(t => {
+          const Icon = t.icon;
+          return (
+            <button key={t.id} onClick={() => setTab(t.id)}
+              className={`flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-lg flex-shrink-0 transition-colors ${
+                tab === t.id ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-100'
+              }`}>
+              <Icon className="w-4 h-4" />
+              <span className="text-[10px] whitespace-nowrap">{t.label}</span>
+            </button>
+          );
+        })}
+      </div>
 
-        {tab === 'stats' && <StatsTab />}
-        {tab === 'users' && <UsersTab />}
-        {tab === 'devices' && <DevicesTab />}
-        {tab === 'labels' && <LabelsTab />}
-        {tab === 'packages' && <PackagesTab />}
-        {tab === 'password' && <PasswordTab />}
-        {tab === 'print' && <PrintTab />}
+      <div className="max-w-6xl mx-auto px-4 py-6 flex gap-6 items-start">
+        {/* サイドバー (デスクトップ) */}
+        <aside className="hidden sm:block w-44 flex-shrink-0">
+          <nav className="bg-white rounded-xl border p-2 sticky top-6 space-y-3">
+            {NAV_GROUPS.map(group => (
+              <div key={group.label}>
+                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider px-2 py-1">{group.label}</p>
+                {group.items.map(t => {
+                  const Icon = t.icon;
+                  return (
+                    <button key={t.id} onClick={() => setTab(t.id)}
+                      className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${
+                        tab === t.id
+                          ? 'bg-gray-900 text-white font-medium'
+                          : 'text-gray-600 hover:bg-gray-100'
+                      }`}>
+                      <Icon className="w-4 h-4 flex-shrink-0" />
+                      <span className="truncate">{t.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
+          </nav>
+        </aside>
+
+        {/* コンテンツ */}
+        <main className="flex-1 min-w-0">
+          {tab === 'stats' && <StatsTab />}
+          {tab === 'users' && <UsersTab />}
+          {tab === 'devices' && <DevicesTab />}
+          {tab === 'ac' && <AcControlTab />}
+          {tab === 'labels' && <LabelsTab />}
+          {tab === 'reissue' && <LabelReissueTab />}
+          {tab === 'packages' && <PackagesTab />}
+          {tab === 'password' && <PasswordTab />}
+          {tab === 'print' && <PrintTab />}
+        </main>
       </div>
     </div>
   );

@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { format } from 'date-fns';
 import { ja } from 'date-fns/locale';
-import { MapPin, Battery, Signal, Clock, Radio, Trash2 } from 'lucide-react';
+import { MapPin, Battery, Signal, Clock, Radio, Trash2, Wind, Thermometer, Send, Pencil, Check, X } from 'lucide-react';
 import GaugeCard from './GaugeCard';
 import HistoryChart from './HistoryChart';
+import { updateParentDevice, updateChildDevice } from '../api/client';
 
 // CSQ (AT+CSQ 値 0-31) → バーレベル(0-4) + 色
 const csqToLevel = (csq) => {
@@ -28,8 +29,123 @@ const SignalBars = ({ csq }) => {
   );
 };
 
-const Dashboard = ({ device, latestData, historyData, alerts, isParent, onDelete }) => {
+const AC_MODES = [
+  { value: 'COOL', label: '冷房' },
+  { value: 'HEAT', label: '暖房' },
+  { value: 'DRY',  label: '除湿' },
+  { value: 'FAN',  label: '送風' },
+];
+
+const AcPanel = ({ deviceId }) => {
+  const [mode, setMode] = useState('COOL');
+  const [temp, setTemp] = useState(26);
+  const [sending, setSending] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const send = async () => {
+    setSending(true);
+    setResult(null);
+    try {
+      const token = localStorage.getItem('foxsense_access_token');
+      const res = await fetch(`/api/devices/parents/${deviceId}/ac`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ mode, tempC: mode === 'FAN' ? 25 : temp }),
+      });
+      const data = await res.json();
+      setResult(data.success ? '送信しました' : data.message);
+    } catch {
+      setResult('エラーが発生しました');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="card p-4 sm:p-6">
+      <div className="flex items-center gap-2 mb-4">
+        <Wind className="w-4 h-4 text-blue-500" />
+        <h3 className="text-sm font-semibold text-gray-700">エアコン操作</h3>
+      </div>
+      <div className="flex flex-wrap gap-2 mb-4">
+        {AC_MODES.map(m => (
+          <button
+            key={m.value}
+            onClick={() => setMode(m.value)}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+              mode === m.value ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            {m.label}
+          </button>
+        ))}
+      </div>
+      {mode !== 'FAN' && (
+        <div className="mb-4">
+          <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center gap-1 text-gray-500">
+              <Thermometer className="w-3.5 h-3.5" />
+              <span className="text-xs">温度</span>
+            </div>
+            <span className="text-lg font-bold text-blue-600">{temp}°C</span>
+          </div>
+          <input
+            type="range" min={16} max={31} step={0.5}
+            value={temp} onChange={e => setTemp(parseFloat(e.target.value))}
+            className="w-full accent-blue-500"
+          />
+          <div className="flex justify-between text-xs text-gray-400 mt-0.5">
+            <span>16°C</span><span>31°C</span>
+          </div>
+        </div>
+      )}
+      <div className="flex items-center gap-3">
+        <button
+          onClick={send}
+          disabled={sending}
+          className="flex items-center gap-1.5 px-4 py-2 bg-blue-500 hover:bg-blue-600 disabled:opacity-50 text-white text-sm font-medium rounded-xl transition-colors"
+        >
+          <Send className="w-3.5 h-3.5" />
+          {sending ? '送信中...' : '送信'}
+        </button>
+        {result && <span className="text-xs text-gray-500">{result}</span>}
+      </div>
+    </div>
+  );
+};
+
+const Dashboard = ({ device, latestData, historyData, alerts, isParent, onDelete, onUpdate }) => {
   const [showConfirm, setShowConfirm] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editLocation, setEditLocation] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const startEdit = () => {
+    setEditName(device.name);
+    setEditLocation(device.location || '');
+    setIsEditing(true);
+  };
+
+  const cancelEdit = () => setIsEditing(false);
+
+  const saveEdit = async () => {
+    if (!editName.trim()) return;
+    setSaving(true);
+    try {
+      if (isParent) {
+        await updateParentDevice(device.id, { name: editName.trim(), location: editLocation.trim() });
+      } else {
+        await updateChildDevice(device.id, { name: editName.trim(), location: editLocation.trim() });
+      }
+      setIsEditing(false);
+      onUpdate?.({ name: editName.trim(), location: editLocation.trim() });
+    } catch {
+      alert('保存に失敗しました');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const lastUpdate = latestData?.timestamp
     ? format(new Date(latestData.timestamp), 'M月d日 HH:mm', { locale: ja })
@@ -52,26 +168,68 @@ const Dashboard = ({ device, latestData, historyData, alerts, isParent, onDelete
       {/* デバイス情報ヘッダー */}
       <div className="card p-4 sm:p-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-lg sm:text-xl font-bold text-gray-800">{device.name}</h2>
-              {isParent ? (
-                <span className="px-2 py-0.5 bg-blue-100 text-blue-600 text-xs rounded-md font-medium">
-                  親機
-                </span>
-              ) : (
-                <span className="px-2 py-0.5 bg-leaf-100 text-leaf-600 text-xs rounded-md font-medium">
-                  子機
-                </span>
-              )}
-            </div>
-            <div className="flex items-center gap-2 mt-1 text-gray-500">
-              <MapPin className="w-3 h-3 sm:w-4 sm:h-4" />
-              <span className="text-xs sm:text-sm">{device.location || '場所未設定'}</span>
-            </div>
-            {!isParent && device.id && (
-              <div className="mt-1 text-xs text-gray-400 font-mono">
-                ID: {device.id}
+          <div className="flex-1 min-w-0">
+            {isEditing ? (
+              <div className="space-y-2">
+                <input
+                  type="text"
+                  value={editName}
+                  onChange={e => setEditName(e.target.value)}
+                  placeholder="デバイス名"
+                  className="w-full text-base font-bold border border-gray-300 rounded-lg px-2 py-1 focus:outline-none focus:border-blue-400"
+                />
+                <div className="flex items-center gap-1.5">
+                  <MapPin className="w-3 h-3 text-gray-400 shrink-0" />
+                  <input
+                    type="text"
+                    value={editLocation}
+                    onChange={e => setEditLocation(e.target.value)}
+                    placeholder="場所（任意）"
+                    className="w-full text-sm border border-gray-300 rounded-lg px-2 py-1 focus:outline-none focus:border-blue-400"
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={saveEdit}
+                    disabled={saving || !editName.trim()}
+                    className="flex items-center gap-1 px-3 py-1 bg-blue-500 hover:bg-blue-600 disabled:opacity-50 text-white text-xs font-medium rounded-lg transition-colors"
+                  >
+                    <Check className="w-3 h-3" />
+                    {saving ? '保存中...' : '保存'}
+                  </button>
+                  <button
+                    onClick={cancelEdit}
+                    className="flex items-center gap-1 px-3 py-1 bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-medium rounded-lg transition-colors"
+                  >
+                    <X className="w-3 h-3" />
+                    キャンセル
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-lg sm:text-xl font-bold text-gray-800">{device.name}</h2>
+                  {isParent ? (
+                    <span className="px-2 py-0.5 bg-blue-100 text-blue-600 text-xs rounded-md font-medium">親機</span>
+                  ) : (
+                    <span className="px-2 py-0.5 bg-leaf-100 text-leaf-600 text-xs rounded-md font-medium">子機</span>
+                  )}
+                  <button
+                    onClick={startEdit}
+                    className="p-1 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
+                    title="編集"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                <div className="flex items-center gap-2 mt-1 text-gray-500">
+                  <MapPin className="w-3 h-3 sm:w-4 sm:h-4" />
+                  <span className="text-xs sm:text-sm">{device.location || '場所未設定'}</span>
+                </div>
+                {!isParent && device.id && (
+                  <div className="mt-1 text-xs text-gray-400 font-mono">ID: {device.id}</div>
+                )}
               </div>
             )}
           </div>
@@ -180,6 +338,9 @@ const Dashboard = ({ device, latestData, historyData, alerts, isParent, onDelete
           </div>
         </div>
       )}
+
+      {/* ACコントロール */}
+      {isParent && device.acEnabled && <AcPanel deviceId={device.id} />}
 
       {/* 履歴チャート */}
       <HistoryChart data={historyData} alerts={alerts} deviceName={device.name} />

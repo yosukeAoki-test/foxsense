@@ -44,6 +44,7 @@
 #define TWELITE_RX_PIN 44                  // IO44 = P1 "RXD"
 #define TWELITE_BAUD_RATE 115200           // TWELITE通信速度
 // TWELITE_RST_PIN は未使用（IO45/IO46 を BME280 に割り当てるため省略）
+#define IR_TX_PIN 47                       // IR LED 出力ピン (GPIO47)
 
 // 子機管理設定
 #define MAX_CHILD_DEVICES 8                // 最大子機数
@@ -95,5 +96,13 @@
 // SIM7080GはCat-M1/NB-IoTのみ対応（2G/3G/4G非対応）
 // SIMカードは電源投入前に挿入必要
 #define MODEM_NETWORK_MODE 38              // 38=LTE only, 51=GSM+LTE
+
+// ===== ACプロトタイプモード設定 =====
+// true=常時USB電源起動・ACコマンドポーリング (試作機専用)
+// false=通常ディープスリープモード
+#define AC_PROTOTYPE_MODE true
+#define AC_POLL_INTERVAL_SEC 5             // ACコマンドポーリング間隔 (秒)
+#define AC_DATA_SEND_INTERVAL_MIN 10       // センサーデータ送信間隔 (分)
+#define AC_RECONNECT_FAIL_THRESHOLD 3      // データ送信連続失敗でモデム再接続するしきい値
 
 #endif // CONFIG_H

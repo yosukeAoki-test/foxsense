@@ -415,3 +415,62 @@ export const updateAlertSettings = async (parentId, userId, data) => {
     create: { parentId, ...data },
   });
 };
+
+// ===== AC Command (プロトタイプモード用) =====
+
+export const getPendingAcCommand = async (deviceId, secret) => {
+  const device = await prisma.parentDevice.findUnique({ where: { deviceId } });
+  if (!device) throw new AppError('Device not found', 404);
+  if (device.deviceSecret !== secret) throw new AppError('Invalid device secret', 401);
+
+  const cmd = await prisma.acCommand.findFirst({
+    where: { parentId: device.id, status: 'PENDING' },
+    orderBy: { createdAt: 'asc' },
+  });
+
+  if (!cmd) return { pending: false };
+  return { pending: true, id: cmd.id, mode: cmd.mode, tempC: cmd.tempC };
+};
+
+export const ackAcCommand = async (deviceId, cmdId, secret) => {
+  const device = await prisma.parentDevice.findUnique({ where: { deviceId } });
+  if (!device) throw new AppError('Device not found', 404);
+  if (device.deviceSecret !== secret) throw new AppError('Invalid device secret', 401);
+
+  const cmd = await prisma.acCommand.findFirst({
+    where: { id: cmdId, parentId: device.id },
+  });
+  if (!cmd) throw new AppError('AC command not found', 404);
+
+  return prisma.acCommand.update({
+    where: { id: cmdId },
+    data: { status: 'DONE', executedAt: new Date() },
+  });
+};
+
+export const createAcCommand = async (deviceId, mode, tempC) => {
+  const VALID_MODES = ['COOL', 'HEAT', 'DRY', 'FAN'];
+  if (!VALID_MODES.includes(mode)) throw new AppError('Invalid mode', 400);
+  if (mode !== 'FAN' && (tempC < 16 || tempC > 31)) throw new AppError('tempC must be 16~31', 400);
+
+  const device = await prisma.parentDevice.findUnique({ where: { deviceId } });
+  if (!device) throw new AppError('Device not found', 404);
+
+  return prisma.acCommand.create({
+    data: { parentId: device.id, mode, tempC: mode === 'FAN' ? 25.0 : tempC },
+  });
+};
+
+export const createAcCommandForUser = async (parentId, userId, mode, tempC) => {
+  const VALID_MODES = ['COOL', 'HEAT', 'DRY', 'FAN'];
+  if (!VALID_MODES.includes(mode)) throw new AppError('Invalid mode', 400);
+  if (mode !== 'FAN' && (tempC < 16 || tempC > 31)) throw new AppError('tempC must be 16~31', 400);
+
+  const device = await prisma.parentDevice.findFirst({ where: { id: parentId, userId } });
+  if (!device) throw new AppError('Device not found', 404);
+  if (!device.acEnabled) throw new AppError('AC control not enabled for this device', 403);
+
+  return prisma.acCommand.create({
+    data: { parentId: device.id, mode, tempC: mode === 'FAN' ? 25.0 : tempC },
+  });
+};

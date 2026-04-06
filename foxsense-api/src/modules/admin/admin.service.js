@@ -85,6 +85,7 @@ export const getAllDevices = async () => {
       name: p.name,
       location: p.location,
       owner: p.user,
+      acEnabled: p.acEnabled,
       activeChildCount: p.assignments.length,
       activeChildren: p.assignments.map(a => ({
         id: a.child.id,
@@ -302,4 +303,30 @@ export const changePassword = async (userId, currentPassword, newPassword) => {
 
   const newHash = await bcrypt.hash(newPassword, 12);
   await prisma.user.update({ where: { id: userId }, data: { passwordHash: newHash } });
+};
+
+// AC Control
+export const setAcEnabled = async (deviceId, enabled) => {
+  const device = await prisma.parentDevice.findUnique({ where: { deviceId } });
+  if (!device) throw new AppError('Device not found', 404);
+
+  return prisma.parentDevice.update({
+    where: { deviceId },
+    data: { acEnabled: enabled },
+    select: { id: true, deviceId: true, name: true, acEnabled: true },
+  });
+};
+
+export const createAcCommand = async (deviceId, mode, tempC) => {
+  const VALID_MODES = ['COOL', 'HEAT', 'DRY', 'FAN'];
+  if (!VALID_MODES.includes(mode)) throw new AppError('Invalid mode. Use COOL/HEAT/DRY/FAN', 400);
+  if (mode !== 'FAN' && (tempC < 16 || tempC > 31)) throw new AppError('tempC must be 16~31', 400);
+
+  const device = await prisma.parentDevice.findUnique({ where: { deviceId } });
+  if (!device) throw new AppError('Device not found', 404);
+  if (!device.acEnabled) throw new AppError('AC control not enabled for this device', 403);
+
+  return prisma.acCommand.create({
+    data: { parentId: device.id, mode, tempC: mode === 'FAN' ? 25.0 : tempC },
+  });
 };

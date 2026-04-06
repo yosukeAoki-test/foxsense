@@ -10,6 +10,7 @@ export default function DashboardPage() {
     selectedDevice,
     setSelectedDevice,
     handleDeleteChild,
+    handleUpdateDevice,
   } = useOutletContext();
   const navigate = useNavigate();
 
@@ -61,6 +62,7 @@ export default function DashboardPage() {
             alerts={mockData.alerts}
             isParent={selectedDevice.id === mockData.parent.id}
             onDelete={handleDeleteChild}
+            onUpdate={handleUpdateDevice}
           />
         )}
       </div>

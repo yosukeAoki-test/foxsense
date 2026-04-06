@@ -14,6 +14,8 @@ router.post('/users/:userId/coins', adminController.adjustUserCoins);
 
 // Devices
 router.get('/devices', adminController.getAllDevices);
+router.put('/devices/:deviceId/ac-enabled', adminController.setAcEnabled);
+router.post('/devices/:deviceId/ac', adminController.createAcCommand);
 
 // Stats
 router.get('/stats', adminController.getStats);

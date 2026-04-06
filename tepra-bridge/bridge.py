@@ -70,19 +70,26 @@ def generate_label_image(device_id: str, tape_mm: int = 18) -> Image.Image:
     """
     tape_h = TAPE_DOTS.get(tape_mm, 128)
     margin = 4
+    available_qr = tape_h - margin * 2
+    BORDER = 4  # QR規格準拠: 最小4モジュールのクワイエットゾーン
 
-    # QR コード
-    qr = qrcode.QRCode(
-        version=None,
-        error_correction=qrcode.constants.ERROR_CORRECT_M,
-        box_size=2,
-        border=1,
-    )
+    # box_size=1で仮生成してモジュール数を取得
+    qr_tmp = qrcode.QRCode(version=None,
+                            error_correction=qrcode.constants.ERROR_CORRECT_Q,
+                            box_size=1, border=BORDER)
+    qr_tmp.add_data(device_id)
+    qr_tmp.make(fit=True)
+    total_modules = qr_tmp.modules_count + BORDER * 2
+    box_size = max(1, available_qr // total_modules)
+
+    # 本番生成（整数倍・リサイズなし）
+    qr = qrcode.QRCode(version=None,
+                        error_correction=qrcode.constants.ERROR_CORRECT_Q,
+                        box_size=box_size, border=BORDER)
     qr.add_data(device_id)
     qr.make(fit=True)
     qr_img = qr.make_image(fill_color="black", back_color="white").convert("L")
-    qr_size = tape_h - margin * 2
-    qr_img = qr_img.resize((qr_size, qr_size), Image.NEAREST)
+    qr_size = qr_img.size[0]
 
     # テキスト
     font_size = max(8, tape_h // 3)
@@ -95,10 +102,11 @@ def generate_label_image(device_id: str, tape_mm: int = 18) -> Image.Image:
     text_w = bbox[2] - bbox[0] + 8
     text_h = bbox[3] - bbox[1]
 
-    # ラベル画像を合成
+    # ラベル画像を合成（QRを縦中央揃え）
     total_w = margin + qr_size + margin + text_w + margin
     label = Image.new("L", (total_w, tape_h), 255)
-    label.paste(qr_img, (margin, margin))
+    qr_y = (tape_h - qr_size) // 2
+    label.paste(qr_img, (margin, qr_y))
 
     draw = ImageDraw.Draw(label)
     text_x = margin + qr_size + margin

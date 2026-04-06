@@ -128,6 +128,7 @@ function App() {
         location: selectedParent.location || '',
         locationRef: selectedParent.locationRef || null,
         soracomSimId: selectedParent.soracomSimId,
+        acEnabled: selectedParent.acEnabled ?? false,
         isOnline: !!latestApiData?.parent,
         lastSeen: latestApiData?.parent?.timestamp || null,
         battery: latestApiData?.parent?.battery ?? null,
@@ -318,6 +319,28 @@ function App() {
       console.error('子機削除失敗:', err);
     }
   }, []);
+
+  // デバイス情報更新後のリフレッシュ
+  const handleUpdateDevice = useCallback((updatedData) => {
+    if (updatedData) {
+      const updateDevice = d => d.id === selectedDevice?.id ? { ...d, ...updatedData } : d;
+      setSelectedDevice(prev => prev ? { ...prev, ...updatedData } : prev);
+      setMockData(prev => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          parent: updateDevice(prev.parent),
+          children: prev.children.map(updateDevice),
+          devices: prev.devices?.map(updateDevice),
+        };
+      });
+      setSelectedParent(prev => prev?.id === selectedDevice?.id ? { ...prev, ...updatedData } : prev);
+      setParentDevices(prev => prev.map(d => d.id === selectedDevice?.id ? { ...d, ...updatedData } : d));
+    } else {
+      loadData();
+      loadParentDevices();
+    }
+  }, [selectedDevice?.id]);
 
   // データ更新
   const handleRefresh = async () => {
@@ -545,6 +568,7 @@ function App() {
         selectedDevice,
         setSelectedDevice,
         handleDeleteChild,
+        handleUpdateDevice,
         handleSaveAlerts,
         handleDeviceRefresh,
       }} />

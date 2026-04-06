@@ -9,6 +9,10 @@ const router = Router();
 router.get('/config/:deviceId', devicesController.getDeviceConfig);
 router.post('/config/:deviceId/pairing-result', devicesController.reportPairingResult);
 
+// AC Command (ファームウェア認証: secret使用、JWT不要)
+router.get('/:deviceId/ac-command', devicesController.getPendingAcCommand);
+router.post('/:deviceId/ac-ack', devicesController.ackAcCommand);
+
 // 認証必須
 router.use(authenticate);
 
@@ -24,6 +28,9 @@ router.get('/children', devicesController.getAllChildDevices);
 router.post('/children', validate(childDeviceSchema), devicesController.createChildDevice);
 router.put('/children/:id', devicesController.updateChildDevice);
 router.delete('/children/:id', devicesController.deleteChildDevice);
+
+// AC Control (ユーザー向け)
+router.post('/parents/:id/ac', devicesController.createAcCommand);
 
 // Assignments (紐付け管理)
 router.post('/parents/:parentId/assign', devicesController.assignChild);

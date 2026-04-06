@@ -81,6 +81,7 @@ model ParentDevice {
   locationId    String?
   soracomSimId  String?            @unique
   simStatus     String             @default("INACTIVE")
+  acEnabled     Boolean            @default(false)
   createdAt     DateTime           @default(now())
   updatedAt     DateTime           @updatedAt
   alertSettings AlertSettings?
@@ -88,9 +89,23 @@ model ParentDevice {
   locationRef   Location?          @relation(fields: [locationId], references: [id])
   user          User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   sensorData    SensorData[]
+  acCommands    AcCommand[]
 
   @@index([userId])
   @@index([locationId])
+}
+
+model AcCommand {
+  id          Int          @id @default(autoincrement())
+  parentId    String
+  mode        String       // COOL / HEAT / DRY / FAN
+  tempC       Float
+  status      String       @default("PENDING") // PENDING / DONE / FAILED
+  createdAt   DateTime     @default(now())
+  executedAt  DateTime?
+  parent      ParentDevice @relation(fields: [parentId], references: [id], onDelete: Cascade)
+
+  @@index([parentId, status])
 }
 
 model ChildDevice {
