@@ -1547,6 +1547,12 @@ bool connectNetwork() {
                     Serial.printf("[MODEM] CGACT=1,1: '%s'\n", cgact.c_str());
                     String cgactQ = sendATCommand("AT+CGACT?", 3000);
                     Serial.printf("[MODEM] CGACT?: '%s'\n", cgactQ.c_str());
+#if !AC_PROTOTYPE_MODE
+                    // PSM有効化: ディープスリープ中にSIM7080Gを低消費電力状態へ移行
+                    // T3412=20分 (00110100: 1min単位×20), T3324=0秒 (すぐPSMへ)
+                    String psmResp = sendATCommand("AT+CPSMS=1,,,\"00110100\",\"00000000\"", 3000);
+                    Serial.printf("[MODEM] PSM: '%s'\n", psmResp.c_str());
+#endif
                     return true;
                 }
             }
