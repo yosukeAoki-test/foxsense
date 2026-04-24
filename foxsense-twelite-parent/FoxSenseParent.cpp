@@ -1,7 +1,7 @@
 /**
  * FoxSenseParent - TWELITE DIP MWX親機アプリ v1.1
  *
- * 接続: VCC / GND / RXD(pin7) / TXD(pin8) のみ使用
+ * 接続: VCC(pin28) / GND(pin1) / RXD(pin3) / TXD(pin10) / DIO0(pin23) のみ使用
  *
  * 動作フロー:
  *   1. ESP32から起床トリガー [0xA5][0x01][0x01][0x5A] を受信
@@ -30,6 +30,11 @@ const uint32_t WAKE_BROADCAST_DURATION_MS = 15000;
 const uint32_t WAKE_BROADCAST_INTERVAL_MS = 400;
 const uint32_t PAIR_BROADCAST_INTERVAL_MS = 300;
 const int      PAIR_BROADCAST_MAX         = 8;   // 最大ブロードキャスト回数
+
+// ===== スリープ設定 =====
+// DIO0 (pin23) = ESP32の TWELITE_WAKE_PIN に配線
+// HIGH になったら起床してUARTコマンドを待つ
+static const uint8_t WAKE_DIO = 0;  // DIO0
 
 // ===== シリアル受信バッファ =====
 static uint8_t s_rxBuf[16];
@@ -205,6 +210,14 @@ void loop() {
         if (now - s_broadcastStartMs >= WAKE_BROADCAST_DURATION_MS) {
             s_broadcasting = false;
             Serial << "Wake broadcast done." << mwx::crlf;
+            // ブロードキャスト完了 → DIO0がLOWになるまで待ってスリープ
+            // ESP32側がLOWに戻したことを確認してからスリープ
+            uint32_t waitStart = millis();
+            while (digitalRead(PIN_DIGITAL::DIO0) == HIGH) {
+                if (millis() - waitStart > 3000) break;  // 3秒でタイムアウト
+            }
+            the_twelite.sleep(0, false, false,
+                uint32_t(1UL << uint8_t(PIN_DIGITAL::DIO0)));
         } else if (now - s_lastBroadcastMs >= WAKE_BROADCAST_INTERVAL_MS) {
             sendWakeBroadcast();
             s_lastBroadcastMs = now;

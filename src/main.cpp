@@ -178,13 +178,13 @@ uint32_t computeParentIdHashLocal(const char* deviceId) {
  *  - 失敗時はI2C再初期化リトライ（最大1回）
  */
 bool readParentSensors() {
-    const int NUM_SAMPLES = 5;
+    const int NUM_SAMPLES = 3;
     float temps[NUM_SAMPLES], humids[NUM_SAMPLES], presses[NUM_SAMPLES];
     int validCount = 0;
 
     // ウォームアップ（最初の1回は捨てる）
     bme.readTemperature();
-    delay(100);
+    delay(50);
 
     for (int i = 0; i < NUM_SAMPLES; i++) {
         float t = bme.readTemperature();
@@ -207,7 +207,7 @@ bool readParentSensors() {
             presses[j+1] = p;
             validCount++;
         }
-        if (i < NUM_SAMPLES - 1) delay(200);
+        if (i < NUM_SAMPLES - 1) delay(50);
     }
 
     if (validCount == 0) {
@@ -256,7 +256,7 @@ uint8_t computeChecksum(uint8_t* buffer, int length) {
 void setup() {
     // シリアル初期化
     Serial.begin(115200);
-    delay(1000);
+    delay(50);
 
     bootCount++;
 
@@ -322,7 +322,7 @@ void setup() {
 
     // モデムシリアル初期化
     modemSerial.begin(MODEM_BAUD_RATE, SERIAL_8N1, MODEM_RX_PIN, MODEM_TX_PIN);
-    delay(500);
+    delay(100);
 
     // モデム初期化
     Serial.println("\n[MODEM] Initializing...");
@@ -452,6 +452,9 @@ void setup() {
     Serial.println("\n[TWELITE] Collecting data from children (v2)...");
     bool allReceived = collectChildData();
 
+    // ブロードキャスト完了 → TWELITE_WAKE_PIN をLOWに戻して親機TWELITEをスリープさせる
+    digitalWrite(TWELITE_WAKE_PIN, LOW);
+
     if (activeChildCount > 0 && !allReceived) {
         Serial.println("[WARN] Not all children responded");
     }
@@ -466,62 +469,22 @@ void setup() {
         consecutiveFailures++;
     }
 
-#if AC_PROTOTYPE_MODE
-    // ===== ACプロトタイプモード: 常時起動ポーリングループ =====
+    // ACコマンドをチェックして実行（最大10分遅延）
     irCtrl.begin();
-    Serial.println("\n[AC] Prototype mode: entering command polling loop");
-    unsigned long lastDataSendMs = millis();
-    int acDataSendFailures = 0;
-
-    while (true) {
-        AcCommandPending cmd = fetchPendingAcCommand();
-        if (cmd.found) {
-            Serial.printf("[AC] Executing: mode=%d tempC=%.1f\n", (int)cmd.mode, cmd.tempC);
-            irCtrl.send(cmd.mode, cmd.tempC);
-            ackAcCommand(cmd.id);
-        }
-
-        // 定期センサーデータ送信
-        if (millis() - lastDataSendMs >= (unsigned long)AC_DATA_SEND_INTERVAL_MIN * 60 * 1000) {
-            Serial.println("\n[AC] Periodic data send...");
-            readParentSensors();
-            if (sendAllDataToServer()) {
-                Serial.println("[AC] Periodic data sent OK");
-                acDataSendFailures = 0;
-            } else {
-                acDataSendFailures++;
-                Serial.printf("[AC] Periodic data send failed (%d/%d)\n",
-                              acDataSendFailures, AC_RECONNECT_FAIL_THRESHOLD);
-
-                if (acDataSendFailures >= AC_RECONNECT_FAIL_THRESHOLD) {
-                    Serial.println("[AC] Reconnecting modem...");
-                    modemState.isInitialized = false;
-                    modemState.isConnected = false;
-                    caCertUploaded = false;
-                    if (initModem()) {
-                        uploadCACert();
-                        acDataSendFailures = 0;
-                        Serial.println("[AC] Modem reconnected OK");
-                    } else {
-                        Serial.println("[AC] Modem reconnect failed, will retry");
-                    }
-                }
-            }
-            lastDataSendMs = millis();
-        }
-
-        delay(AC_POLL_INTERVAL_SEC * 1000);
+    AcCommandPending acCmd = fetchPendingAcCommand();
+    if (acCmd.found) {
+        Serial.printf("[AC] Executing: mode=%d tempC=%.1f\n", (int)acCmd.mode, acCmd.tempC);
+        irCtrl.send(acCmd.mode, acCmd.tempC);
+        ackAcCommand(acCmd.id);
     }
-#else
+
     // モデムはOFFにしない: DC3がディープスリープ中も保持され
     // 次回起動時に既にCat-M1登録済み状態を維持できるため
-    // powerOffModem() は呼ばない
 
     // 次の定時までのスリープ時間を計算
     uint64_t sleepDuration = calculateSleepDuration();
     Serial.printf("\n[SLEEP] Going to deep sleep for %llu seconds...\n", sleepDuration);
     goToDeepSleep(sleepDuration);
-#endif
 }
 
 void loop() {
@@ -537,6 +500,10 @@ void initTwelite() {
     tweliteSerial.setRxBufferSize(1024);
     tweliteSerial.begin(TWELITE_BAUD_RATE, SERIAL_8N1, TWELITE_RX_PIN, TWELITE_TX_PIN);
     delay(100);
+
+    // 親機TWELITE スリープ解除ピン (TWELITE DIO0 に配線)
+    pinMode(TWELITE_WAKE_PIN, OUTPUT);
+    digitalWrite(TWELITE_WAKE_PIN, LOW);
 
     // TWELITEリセット（オプション）
     #ifdef TWELITE_RST_PIN
@@ -556,6 +523,10 @@ void initTwelite() {
  * 親機TWELITEが15秒間起床パケットを送信 → 子機が50ms窓で確実に受信
  */
 void sendMWXWakeTrigger() {
+    // DIO0 をHIGHにして親機TWELITEをスリープから起こす
+    digitalWrite(TWELITE_WAKE_PIN, HIGH);
+    delay(10);  // TWELITE起床待ち (JN5169 wakeup ~1ms + margin)
+
     uint8_t cmd[4] = {0xA5, 0x01, 0x01, 0x5A};
     tweliteSerial.write(cmd, 4);
     Serial.println("[TWELITE] MWX wake trigger sent (15s broadcast)");
@@ -563,6 +534,8 @@ void sendMWXWakeTrigger() {
     // 親機の初期応答をバッファから読み捨て（バッファオーバーフロー防止）
     delay(500);
     while (tweliteSerial.available()) tweliteSerial.read();
+    // ブロードキャスト終了後にLOWに戻す（親機TWELITEがスリープに入れるよう）
+    // 15秒後に下げる: collectChildData完了のタイミングでLOWにする
 }
 
 /**
@@ -1776,6 +1749,7 @@ String sendATCommand(const String& cmd, unsigned long timeout) {
 void goToDeepSleep(uint64_t sleepTimeSec) {
     Serial.flush();
     gpio_hold_en((gpio_num_t)MODEM_PWRKEY_PIN);
+    gpio_hold_en((gpio_num_t)TWELITE_WAKE_PIN);  // LOW保持: 親機TWELITEをスリープ中も眠らせる
     gpio_deep_sleep_hold_en();
     esp_sleep_enable_timer_wakeup(sleepTimeSec * 1000000ULL);
     Serial.println("[SLEEP] Entering deep sleep...");

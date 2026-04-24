@@ -43,7 +43,7 @@
 #define TWELITE_TX_PIN 43                  // IO43 = P1 "TXD"
 #define TWELITE_RX_PIN 44                  // IO44 = P1 "RXD"
 #define TWELITE_BAUD_RATE 115200           // TWELITE通信速度
-// TWELITE_RST_PIN は未使用（IO45/IO46 を BME280 に割り当てるため省略）
+#define TWELITE_WAKE_PIN 2                 // 親機TWELITE DIPスリープ解除 → TWELITE DIO0(pin9)に配線
 #define IR_TX_PIN 47                       // IR LED 出力ピン (GPIO47)
 
 // 子機管理設定
@@ -97,12 +97,8 @@
 // SIMカードは電源投入前に挿入必要
 #define MODEM_NETWORK_MODE 38              // 38=LTE only, 51=GSM+LTE
 
-// ===== ACプロトタイプモード設定 =====
-// true=常時USB電源起動・ACコマンドポーリング (試作機専用)
-// false=通常ディープスリープモード
-#define AC_PROTOTYPE_MODE true
-#define AC_POLL_INTERVAL_SEC 5             // ACコマンドポーリング間隔 (秒)
-#define AC_DATA_SEND_INTERVAL_MIN 10       // センサーデータ送信間隔 (分)
-#define AC_RECONNECT_FAIL_THRESHOLD 3      // データ送信連続失敗でモデム再接続するしきい値
+// ===== ACコマンド設定 =====
+// ACコマンドは10分サイクルの通常起床時にチェック・実行される（最大10分遅延）
+#define AC_PROTOTYPE_MODE false            // 廃止: 常時起動ポーリングモード（省電力化のため無効）
 
 #endif // CONFIG_H

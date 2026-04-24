@@ -1,18 +1,18 @@
 /**
- * FoxSenseChild - TWELITE DIP MWX子機アプリ v1.1
+ * FoxSenseChild - TWELITE DIP MWX子機アプリ v1.2
  *
  * 配線:
- *   TWELITE DIP          BME280
+ *   TWELITE DIP          AHT21B
  *   VCC  (pin 28) ────── VCC
  *   GND  (pin  1) ────── GND
- *   DIO5 (pin 19) ────── SDA   ← I2C SDA (MWX Wire固定)
- *   DIO6 (pin  2) ────── SCL   ← I2C SCL (MWX Wire固定)
- *                        SDO ── GND  (I2C addr: 0x76)
+ *   DIO15 (pin 19) ────── SDA   ← I2C SDA (MWX Wire固定)
+ *   DIO14 (pin  2) ────── SCL   ← I2C SCL (MWX Wire固定)
+ *                        (I2C addr: 0x38 固定)
  *
  * 動作フロー:
- *   1. 100ms スリープ → 起床 → 200ms 受信待機
- *   2. 親機から "FSWK" 受信 → BME280 測定開始
- *   3. 変換完了 (15ms) → "FSDT" パケットを親機へ送信
+ *   1. スリープ → 起床 → 200ms 受信待機
+ *   2. 親機から "FSWK" 受信 → AHT21B 測定開始
+ *   3. 変換完了 (80ms) → "FSDT" パケットを親機へ送信
  *   4. 送信完了 → スリープに戻る
  *
  *   ペアリング:
@@ -22,7 +22,7 @@
  *
  * 送信ペイロード (データ):
  *   "FSDT" (4B) | tempX100 (uint16) | humidX100 (uint16)
- *   | presX10 (uint16) | vccMv (uint16)  計12バイト
+ *   | presX10 (uint16=0) | vccMv (uint16)  計12バイト
  */
 
 #include <TWELITE>
@@ -36,21 +36,14 @@ const uint8_t  LID_CHILD = 0xFE;
 
 // ===== タイミング設定 =====
 const uint32_t LISTEN_WINDOW_MS  = 200;
-const uint32_t SLEEP_DURATION_MS = 100;
-const uint32_t BME280_CONV_MS    = 15;
+const uint32_t SLEEP_DURATION_MS = 14800;  // 親機の15秒ブロードキャスト窓に合わせた最大値
+const uint32_t AHT21B_CONV_MS   = 80;
 const uint32_t TX_TIMEOUT_MS     = 300;
 
-// ===== BME280 =====
-const uint8_t BME280_ADDR = 0x76;
+// ===== AHT21B =====
+const uint8_t AHT21B_ADDR = 0x38;
 
-struct {
-    uint16_t T1; int16_t T2, T3;
-    uint16_t P1; int16_t P2, P3, P4, P5, P6, P7, P8, P9;
-    uint8_t  H1; int16_t H2; uint8_t H3;
-    int16_t  H4, H5; int8_t H6;
-    int32_t  t_fine;
-    bool     calibrated;
-} s_bme;
+static bool s_aht_initialized = false;
 
 // ===== 状態機械 =====
 enum class STATE : uint8_t {
@@ -59,7 +52,7 @@ enum class STATE : uint8_t {
     SENSOR_WAIT,
     TX,
     TX_WAIT,
-    PAIR_ACK_TX,   // ペアリングACK送信
+    PAIR_ACK_TX,
     GO_SLEEP,
 };
 SM_SIMPLE<STATE> step;
@@ -76,119 +69,43 @@ static uint16_t s_vccMv           = 3300;
 static bool     s_pair_requested  = false;
 static uint32_t s_pair_hash       = 0;
 
-// ===== BME280 I2C ヘルパー =====
-static bool bme_read_regs(uint8_t reg, uint8_t* buf, int len) {
-    if (auto&& wrt = Wire.get_writer(BME280_ADDR)) {
-        wrt << reg;
-    } else { return false; }
-    if (auto&& rdr = Wire.get_reader(BME280_ADDR, len)) {
-        for (int i = 0; i < len; i++) rdr >> buf[i];
-        return true;
-    }
-    return false;
-}
-
-static bool bme_write_reg(uint8_t reg, uint8_t val) {
-    if (auto&& wrt = Wire.get_writer(BME280_ADDR)) {
-        wrt << reg << val;
-        return true;
-    }
-    return false;
-}
-
-// ===== BME280 初期化 =====
-static bool bme_init() {
-    uint8_t id = 0;
-    if (!bme_read_regs(0xD0, &id, 1) || id != 0x60) {
-        Serial << format("BME280 ID=0x%02X (expected 0x60)", id) << mwx::crlf;
+// ===== AHT21B 初期化 =====
+static bool aht_init() {
+    if (auto&& wrt = Wire.get_writer(AHT21B_ADDR)) {
+        wrt << (uint8_t)0xBE << (uint8_t)0x08 << (uint8_t)0x00;
+    } else {
+        Serial << "AHT21B init failed!" << mwx::crlf;
         return false;
     }
-    uint8_t c[24];
-    if (!bme_read_regs(0x88, c, 24)) return false;
-    s_bme.T1 = (uint16_t)((c[1]<<8)|c[0]);
-    s_bme.T2 = (int16_t)((c[3]<<8)|c[2]);
-    s_bme.T3 = (int16_t)((c[5]<<8)|c[4]);
-    s_bme.P1 = (uint16_t)((c[7]<<8)|c[6]);
-    s_bme.P2 = (int16_t)((c[9]<<8)|c[8]);
-    s_bme.P3 = (int16_t)((c[11]<<8)|c[10]);
-    s_bme.P4 = (int16_t)((c[13]<<8)|c[12]);
-    s_bme.P5 = (int16_t)((c[15]<<8)|c[14]);
-    s_bme.P6 = (int16_t)((c[17]<<8)|c[16]);
-    s_bme.P7 = (int16_t)((c[19]<<8)|c[18]);
-    s_bme.P8 = (int16_t)((c[21]<<8)|c[20]);
-    s_bme.P9 = (int16_t)((c[23]<<8)|c[22]);
-    bme_read_regs(0xA1, &s_bme.H1, 1);
-    uint8_t h[7];
-    bme_read_regs(0xE1, h, 7);
-    s_bme.H2 = (int16_t)((h[1]<<8)|h[0]);
-    s_bme.H3 = h[2];
-    s_bme.H4 = (int16_t)(((int16_t)h[3]<<4)|(h[4]&0x0F));
-    s_bme.H5 = (int16_t)(((int16_t)h[5]<<4)|(h[4]>>4));
-    s_bme.H6 = (int8_t)h[6];
-    bme_write_reg(0xF2, 0x01);
-    bme_write_reg(0xF5, 0x00);
-    s_bme.calibrated = true;
+    delay(10);
+    s_aht_initialized = true;
     return true;
 }
 
-// ===== BME280 Forced Mode 起動 =====
-static void bme_trigger() {
-    bme_write_reg(0xF4, 0x25);
+// ===== AHT21B 測定トリガー =====
+static void aht_trigger() {
+    if (auto&& wrt = Wire.get_writer(AHT21B_ADDR)) {
+        wrt << (uint8_t)0xAC << (uint8_t)0x33 << (uint8_t)0x00;
+    }
 }
 
-// ===== BME280 データ読み出し =====
-static bool bme_read_data() {
-    uint8_t status = 0;
-    bme_read_regs(0xF3, &status, 1);
-    if (status & 0x08) return false;
+// ===== AHT21B データ読み出し =====
+static bool aht_read_data() {
+    uint8_t d[6] = {};
+    if (auto&& rdr = Wire.get_reader(AHT21B_ADDR, 6)) {
+        for (int i = 0; i < 6; i++) rdr >> d[i];
+    } else { return false; }
 
-    uint8_t d[8];
-    if (!bme_read_regs(0xF7, d, 8)) return false;
+    if (d[0] & 0x80) return false;  // busy
 
-    int32_t adc_P = ((int32_t)d[0]<<12)|((int32_t)d[1]<<4)|(d[2]>>4);
-    int32_t adc_T = ((int32_t)d[3]<<12)|((int32_t)d[4]<<4)|(d[5]>>4);
-    int32_t adc_H = ((int32_t)d[6]<<8)|(int32_t)d[7];
+    uint32_t raw_H = ((uint32_t)d[1] << 12) | ((uint32_t)d[2] << 4) | (d[3] >> 4);
+    uint32_t raw_T = ((uint32_t)(d[3] & 0x0F) << 16) | ((uint32_t)d[4] << 8) | d[5];
 
-    int32_t v1 = (((adc_T>>3) - ((int32_t)s_bme.T1<<1)) * s_bme.T2) >> 11;
-    int32_t v2 = (((((adc_T>>4) - (int32_t)s_bme.T1) *
-                    ((adc_T>>4) - (int32_t)s_bme.T1)) >> 12) * s_bme.T3) >> 14;
-    s_bme.t_fine = v1 + v2;
-    int32_t T = (s_bme.t_fine * 5 + 128) >> 8;
-    s_tempX100 = (uint16_t)(int16_t)T;
-
-    int32_t hv = s_bme.t_fine - 76800;
-    hv = (((((adc_H<<14) - ((int32_t)s_bme.H4<<20) - ((int32_t)s_bme.H5 * hv))
-            + 16384) >> 15) *
-          (((((((hv * (int32_t)s_bme.H6) >> 10) *
-               (((hv * (int32_t)s_bme.H3) >> 11) + 32768)) >> 10)
-             + 2097152) * s_bme.H2 + 8192) >> 14));
-    hv -= (((((hv>>15) * (hv>>15)) >> 7) * (int32_t)s_bme.H1) >> 4);
-    if (hv < 0) hv = 0;
-    if (hv > 419430400) hv = 419430400;
-    s_humidX100 = (uint16_t)(int16_t)((hv >> 12) * 100 / 1024);
-
-    int32_t pv1 = ((int32_t)s_bme.t_fine >> 1) - 64000;
-    int32_t pv2 = (((pv1>>2) * (pv1>>2)) >> 11) * (int32_t)s_bme.P6;
-    pv2 = pv2 + ((pv1 * (int32_t)s_bme.P5) << 1);
-    pv2 = (pv2>>2) + ((int32_t)s_bme.P4 << 16);
-    pv1 = (((s_bme.P3 * (((pv1>>2)*(pv1>>2))>>13))>>3)
-           + (((int32_t)s_bme.P2 * pv1) >> 1)) >> 18;
-    pv1 = ((32768 + pv1) * (int32_t)s_bme.P1) >> 15;
-
-    uint32_t p = 0;
-    if (pv1 != 0) {
-        p = (uint32_t)(1048576 - adc_P);
-        p = ((p - (uint32_t)(pv2 >> 12)) * 3125);
-        if (p < 0x80000000UL) {
-            p = (p << 1) / (uint32_t)pv1;
-        } else {
-            p = (p / (uint32_t)pv1) * 2;
-        }
-        pv1 = ((int32_t)s_bme.P9 * (int32_t)(((p>>3)*(p>>3))>>13)) >> 12;
-        pv2 = ((int32_t)(p>>2) * (int32_t)s_bme.P8) >> 13;
-        p = (uint32_t)((int32_t)p + ((pv1 + pv2 + (int32_t)s_bme.P7) >> 4));
-    }
-    s_presX10 = (uint16_t)(p / 10);
+    // RH×100 = raw_H * 10000 / 1048576 = raw_H * 625 / 65536
+    s_humidX100 = (uint16_t)((uint32_t)raw_H * 625 / 65536);
+    // T×100 = raw_T * 20000 / 1048576 - 5000 = raw_T * 625 / 32768 - 5000
+    s_tempX100  = (uint16_t)(int16_t)((int32_t)((uint32_t)raw_T * 625 / 32768) - 5000);
+    s_presX10   = 0;
 
     return true;
 }
@@ -196,7 +113,7 @@ static bool bme_read_data() {
 // ===== setup =====
 void setup() {
     step.setup();
-    s_bme.calibrated = false;
+    s_aht_initialized = false;
 
     the_twelite
         << TWENET::appid(APP_ID)
@@ -210,7 +127,7 @@ void setup() {
     Analogue.begin(pack_bits(PIN_ANALOGUE::VCC));
     the_twelite.begin();
 
-    Serial << "--- FoxSenseChild v1.1 ---" << mwx::crlf
+    Serial << "--- FoxSenseChild v1.2 (AHT21B) ---" << mwx::crlf
            << "AppID=0x67F56A23 Ch=" << int(CHANNEL) << mwx::crlf
            << format("HWADDR:%08X", the_twelite.get_hw_serial()) << mwx::crlf
            << "Listening for FSWK/PAIR..." << mwx::crlf;
@@ -248,7 +165,6 @@ void loop() {
                 }
             }
             if (s_pair_requested) {
-                // ペアリングACK送信を優先
                 step.next(STATE::PAIR_ACK_TX);
             } else if (s_triggered) {
                 step.next(STATE::SENSOR_START);
@@ -262,15 +178,14 @@ void loop() {
             if (Analogue.available()) {
                 s_vccMv = Analogue.read(PIN_ANALOGUE::VCC);
             }
-            if (!s_bme.calibrated) {
-                if (!bme_init()) {
-                    Serial << "BME280 init failed!" << mwx::crlf;
+            if (!s_aht_initialized) {
+                if (!aht_init()) {
                     step.next(STATE::GO_SLEEP);
                     break;
                 }
             }
-            bme_trigger();
-            step.set_timeout(BME280_CONV_MS);
+            aht_trigger();
+            step.set_timeout(AHT21B_CONV_MS);
             step.next(STATE::SENSOR_WAIT);
         }
         break;
@@ -278,11 +193,11 @@ void loop() {
         // --------------------------------------------------
         case STATE::SENSOR_WAIT:
             if (step.is_timeout()) {
-                if (!bme_read_data()) {
+                if (!aht_read_data()) {
                     step.set_timeout(5);
                 } else {
-                    Serial << format("T=%d H=%d P=%d VCC=%d",
-                                     s_tempX100, s_humidX100, s_presX10, s_vccMv)
+                    Serial << format("T=%d H=%d VCC=%d",
+                                     s_tempX100, s_humidX100, s_vccMv)
                            << mwx::crlf;
                     step.next(STATE::TX);
                 }
@@ -339,11 +254,10 @@ void loop() {
                              s_pair_hash, myId) << mwx::crlf;
 
             if (auto&& pkt = the_twelite.network.use<NWK_SIMPLE>().prepare_tx_packet()) {
-                pkt << tx_addr(0x00)   // 親機宛
+                pkt << tx_addr(0x00)
                     << tx_retry(0x2)
                     << tx_packet_delay(0, 20, 5);
 
-                // ペイロード: [0xA5][0x11][HASH_4][MY_ID_4][STATUS=0x01]
                 pack_bytes(pkt.get_payload(),
                     (uint8_t)0xA5, (uint8_t)0x11,
                     (uint8_t)((s_pair_hash >> 24) & 0xFF),
@@ -354,7 +268,7 @@ void loop() {
                     (uint8_t)((myId >> 16) & 0xFF),
                     (uint8_t)((myId >>  8) & 0xFF),
                     (uint8_t)( myId         & 0xFF),
-                    (uint8_t)0x01   // STATUS: success
+                    (uint8_t)0x01
                 );
 
                 MWX_APIRET ret = pkt.transmit();
@@ -390,7 +304,6 @@ void loop() {
 void on_rx_packet(packet_rx& rx, bool_t& handled) {
     auto&& payload = rx.get_payload();
 
-    // ペアリングコマンド: [0xA5][0x10][HASH_4][CHILD_ID_4][LOGICAL_ID] = 11バイト
     if (payload.size() >= 11 && payload[0] == 0xA5 && payload[1] == 0x10) {
         uint32_t myId = the_twelite.get_hw_serial();
         uint32_t targetId = ((uint32_t)payload[6]  << 24) |
@@ -410,7 +323,6 @@ void on_rx_packet(packet_rx& rx, bool_t& handled) {
         return;
     }
 
-    // 起床信号 "FSWK"
     if (payload.size() >= 4 &&
         payload[0]=='F' && payload[1]=='S' &&
         payload[2]=='W' && payload[3]=='K') {
