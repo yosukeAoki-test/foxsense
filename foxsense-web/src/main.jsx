@@ -17,6 +17,7 @@ import SatellitePage from './pages/SatellitePage.jsx'
 import TokushohoPage from './pages/TokushohoPage.jsx'
 import FoxCoinSuccessPage from './pages/FoxCoinSuccessPage.jsx'
 import ReceiptPage from './pages/ReceiptPage.jsx'
+import LineCallbackPage from './pages/LineCallbackPage.jsx'
 
 // 認証が必要なルートを保護するコンポーネント
 const ProtectedRoute = ({ children }) => {
@@ -104,6 +105,7 @@ createRoot(document.getElementById('root')).render(
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/tokushoho" element={<TokushohoPage />} />
           <Route path="/receipt/:purchaseId" element={<ReceiptPage />} />
+          <Route path="/auth/line/callback" element={<LineCallbackPage />} />
 
           {/* 認証が必要なルート */}
           <Route

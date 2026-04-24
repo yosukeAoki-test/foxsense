@@ -125,6 +125,19 @@ export const authApi = {
     const response = await client.post('/auth/2fa/disable', { code });
     return response.data;
   },
+
+  getLineUrl: async () => {
+    const response = await client.get('/auth/line/url', { params: { origin: window.location.origin } });
+    return response.data.data;
+  },
+
+  lineCallback: async (code, redirectUri) => {
+    const response = await client.post('/auth/line/callback', { code, redirectUri });
+    if (response.data.data?.accessToken) {
+      localStorage.setItem('foxsense_access_token', response.data.data.accessToken);
+    }
+    return response.data;
+  },
 };
 
 // ===== 親機API =====
@@ -275,8 +288,8 @@ export const foxCoinApi = {
     const response = await client.get('/foxcoins/history');
     return response.data.data;
   },
-  createCheckout: async (packageId) => {
-    const response = await client.post('/foxcoins/checkout', { packageId });
+  createCheckout: async (packageId, totpCode) => {
+    const response = await client.post('/foxcoins/checkout', { packageId, totpCode });
     return response.data.data;
   },
   getPurchases: async () => {

@@ -59,6 +59,11 @@ const config = {
 
   bridgeSecret: process.env.BRIDGE_SECRET || 'dev-bridge-secret',
 
+  line: {
+    channelId: process.env.LINE_CHANNEL_ID || '',
+    channelSecret: process.env.LINE_CHANNEL_SECRET || '',
+  },
+
   email: {
     host: process.env.SMTP_HOST,
     port: parseInt(process.env.SMTP_PORT || '587'),

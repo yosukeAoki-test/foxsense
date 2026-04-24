@@ -44,13 +44,19 @@ export const AuthProvider = ({ children }) => {
   // ログイン
   const login = useCallback(async (email, password) => {
     const response = await authApi.login(email, password);
-    if (response.data.requiresTwoFactor) {
-      return response.data; // { requiresTwoFactor: true, tempToken }
-    }
     const userData = response.data.user;
     setUser(userData);
     localStorage.setItem('foxsense_user', JSON.stringify(userData));
     return response.data;
+  }, []);
+
+  // LINE ログイン
+  const lineLogin = useCallback(async (code, redirectUri) => {
+    const response = await authApi.lineCallback(code, redirectUri);
+    const userData = response.data.user;
+    setUser(userData);
+    localStorage.setItem('foxsense_user', JSON.stringify(userData));
+    return userData;
   }, []);
 
   // 2FA検証後のログイン完了
@@ -104,6 +110,7 @@ export const AuthProvider = ({ children }) => {
       isAuthenticated,
       register,
       login,
+      lineLogin,
       completeLogin,
       updateTwoFactorEnabled,
       logout,

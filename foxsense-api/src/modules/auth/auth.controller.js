@@ -28,13 +28,6 @@ export const login = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
   const result = await authService.login({ email, password });
 
-  if (result.requiresTwoFactor) {
-    return res.json({
-      success: true,
-      data: { requiresTwoFactor: true, tempToken: result.tempToken },
-    });
-  }
-
   res.cookie('refreshToken', result.refreshToken, COOKIE_OPTIONS);
 
   res.json({
@@ -104,6 +97,20 @@ export const enable2fa = asyncHandler(async (req, res) => {
 export const disable2fa = asyncHandler(async (req, res) => {
   await authService.disableTwoFactor(req.user.id, req.body.code);
   res.json({ success: true, message: '2FAを無効にしました' });
+});
+
+export const getLineUrl = asyncHandler(async (req, res) => {
+  const redirectUri = `${req.query.origin || ''}/auth/line/callback`;
+  const url = authService.getLineAuthUrl(redirectUri);
+  res.json({ success: true, data: { url } });
+});
+
+export const lineCallback = asyncHandler(async (req, res) => {
+  const { code, redirectUri } = req.body;
+  if (!code) return res.status(400).json({ success: false, message: 'code is required' });
+  const result = await authService.lineCallback(code, redirectUri);
+  res.cookie('refreshToken', result.refreshToken, COOKIE_OPTIONS);
+  res.json({ success: true, data: { user: result.user, accessToken: result.accessToken } });
 });
 
 export const forgotPassword = asyncHandler(async (req, res) => {

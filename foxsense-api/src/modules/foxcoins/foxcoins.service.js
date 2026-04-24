@@ -1,4 +1,5 @@
 import Stripe from 'stripe';
+import { verifySync as otpVerifySync } from 'otplib';
 import prisma from '../../config/db.js';
 import config from '../../config/index.js';
 import { AppError } from '../../middleware/errorHandler.js';
@@ -167,14 +168,18 @@ export const grantCoins = async (userId, coins, packageId, price, note, stripeSe
 };
 
 // Stripe Checkout セッション作成（FoxCoin 購入）
-export const createCheckoutSession = async (userId, packageId) => {
+export const createCheckoutSession = async (userId, packageId, totpCode) => {
   const pkg = await prisma.foxCoinPackage.findUnique({ where: { id: packageId } });
   if (!pkg || !pkg.isActive) throw new AppError('パッケージが見つかりません', 404);
 
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) throw new AppError('User not found', 404);
 
-  if (!user.twoFactorEnabled) throw new AppError('2段階認証を設定してから購入できます', 403);
+  if (!user.twoFactorEnabled || !user.twoFactorSecret) {
+    throw new AppError('2段階認証を設定してから購入できます', 403);
+  }
+  const { valid } = otpVerifySync({ token: totpCode ?? '', secret: user.twoFactorSecret });
+  if (!valid) throw new AppError('認証コードが正しくありません', 401);
 
   // Stripe 未設定時はエラー
   if (!isStripeEnabled || !stripe) throw new AppError('決済が設定されていません', 503);

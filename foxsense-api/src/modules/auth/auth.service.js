@@ -78,6 +78,10 @@ export const login = async ({ email, password }) => {
     throw new AppError(`ログイン試行回数が上限を超えました。${remainMin}分後に再試行してください。`, 401);
   }
 
+  if (!user.passwordHash) {
+    throw new AppError('このアカウントはLINEでログインしてください', 400);
+  }
+
   const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
   if (!isPasswordValid) {
     const attempts = user.loginAttempts + 1;
@@ -103,16 +107,6 @@ export const login = async ({ email, password }) => {
     });
   }
 
-  // 2FA有効な場合 → 一時トークンを返してTOTP入力を要求
-  if (user.twoFactorEnabled) {
-    const tempToken = jwt.sign(
-      { userId: user.id, purpose: '2fa' },
-      config.jwt.secret,
-      { expiresIn: '5m' }
-    );
-    return { requiresTwoFactor: true, tempToken };
-  }
-
   const { accessToken, refreshToken } = generateTokens(user.id);
 
   const expiresAt = new Date();
@@ -122,7 +116,7 @@ export const login = async ({ email, password }) => {
   });
 
   return {
-    user: { id: user.id, email: user.email, name: user.name, role: user.role, twoFactorEnabled: false },
+    user: { id: user.id, email: user.email, name: user.name, role: user.role, twoFactorEnabled: user.twoFactorEnabled },
     accessToken,
     refreshToken,
   };
@@ -308,6 +302,77 @@ export const resetPassword = async (token, newPassword) => {
     // 全リフレッシュトークンを無効化（セキュリティ）
     prisma.refreshToken.deleteMany({ where: { userId: record.userId } }),
   ]);
+};
+
+export const getLineAuthUrl = (redirectUri) => {
+  const params = new URLSearchParams({
+    response_type: 'code',
+    client_id: config.line.channelId,
+    redirect_uri: redirectUri,
+    state: crypto.randomBytes(16).toString('hex'),
+    scope: 'profile openid email',
+  });
+  return `https://access.line.me/oauth2/v2.1/authorize?${params}`;
+};
+
+export const lineCallback = async (code, redirectUri) => {
+  const tokenRes = await fetch('https://api.line.me/oauth2/v2.1/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'authorization_code',
+      code,
+      redirect_uri: redirectUri,
+      client_id: config.line.channelId,
+      client_secret: config.line.channelSecret,
+    }),
+  });
+  const tokenData = await tokenRes.json();
+  if (!tokenData.access_token) throw new AppError('LINE認証に失敗しました', 400);
+
+  const profileRes = await fetch('https://api.line.me/v2/profile', {
+    headers: { Authorization: `Bearer ${tokenData.access_token}` },
+  });
+  const profile = await profileRes.json();
+  if (!profile.userId) throw new AppError('LINEプロフィールの取得に失敗しました', 400);
+
+  let user = await prisma.user.findUnique({ where: { lineId: profile.userId } });
+  if (!user) {
+    const emailCandidate = `line_${profile.userId}@foxsense.app`;
+    const existing = await prisma.user.findUnique({ where: { email: emailCandidate } });
+    if (existing) {
+      user = await prisma.user.update({
+        where: { id: existing.id },
+        data: { lineId: profile.userId, lineAvatar: profile.pictureUrl ?? null },
+      });
+    } else {
+      user = await prisma.user.create({
+        data: {
+          lineId: profile.userId,
+          lineAvatar: profile.pictureUrl ?? null,
+          name: profile.displayName,
+          email: emailCandidate,
+          passwordHash: null,
+        },
+      });
+    }
+  } else if (user.lineAvatar !== (profile.pictureUrl ?? null)) {
+    user = await prisma.user.update({
+      where: { id: user.id },
+      data: { lineAvatar: profile.pictureUrl ?? null },
+    });
+  }
+
+  const { accessToken, refreshToken } = generateTokens(user.id);
+  const expiresAt = new Date();
+  expiresAt.setDate(expiresAt.getDate() + 7);
+  await prisma.refreshToken.create({ data: { token: refreshToken, userId: user.id, expiresAt } });
+
+  return {
+    user: { id: user.id, email: user.email, name: user.name, role: user.role, twoFactorEnabled: user.twoFactorEnabled, lineAvatar: user.lineAvatar },
+    accessToken,
+    refreshToken,
+  };
 };
 
 export const getCurrentUser = async (userId) => {

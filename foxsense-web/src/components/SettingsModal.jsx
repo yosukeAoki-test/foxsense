@@ -68,7 +68,7 @@ const SettingsModal = ({ alerts, parentDevice, onClose, onSaveAlerts }) => {
           )}
 
           {activeTab === 'subscription' && (
-            <SubscriptionTab />
+            <SubscriptionTab onOpen2fa={() => { onClose(); }} />
           )}
         </div>
       </div>

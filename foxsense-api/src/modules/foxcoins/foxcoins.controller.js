@@ -22,9 +22,10 @@ export const getPurchases = asyncHandler(async (req, res) => {
 });
 
 export const createCheckout = asyncHandler(async (req, res) => {
-  const { packageId } = req.body;
+  const { packageId, totpCode } = req.body;
   if (!packageId) return res.status(400).json({ success: false, message: 'packageId is required' });
-  const data = await foxcoinsService.createCheckoutSession(req.user.id, packageId);
+  if (!totpCode) return res.status(400).json({ success: false, message: '認証コードを入力してください' });
+  const data = await foxcoinsService.createCheckoutSession(req.user.id, packageId, totpCode);
   res.json({ success: true, data });
 });
 

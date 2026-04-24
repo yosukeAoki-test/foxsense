@@ -10,8 +10,10 @@ datasource db {
 model User {
   id                   String                @id @default(uuid())
   email                String                @unique
-  passwordHash         String
+  passwordHash         String?
   name                 String
+  lineId               String?               @unique
+  lineAvatar           String?
   role                 String                @default("USER")
   loginAttempts        Int                   @default(0)
   lockedUntil          DateTime?
