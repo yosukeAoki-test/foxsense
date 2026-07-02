@@ -1,0 +1,59 @@
+name: Deploy foxsense-web
+
+# main への push で foxsense-web をビルドし、VPS(nginx公開ディレクトリ)へ rsync 反映する。
+# 手動実行(workflow_dispatch)も可。
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'foxsense-web/**'
+      - '.github/workflows/deploy-web.yml'
+  workflow_dispatch:
+
+# デプロイの多重実行を防止（後発を待たせ、走行中はキャンセル）
+concurrency:
+  group: deploy-web
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: foxsense-web
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: foxsense-web/package-lock.json
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+        env:
+          VITE_API_URL: https://foxsense.smart-agri-vision.net/api
+
+      # sav/kuma_rader の既存デプロイCIと同じ作法（secret名 VPS_SSH_KEY / ssh-keyscan / id_ed25519）
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H 210.131.217.236 >> ~/.ssh/known_hosts
+
+      - name: Deploy to VPS (rsync)
+        # foxsenseの /var/www/foxsense/public は fox 書き込み可（手動手順が直接rsync実績あり）。
+        # sav の /var/www/sav (www-data所有→/tmp+sudo方式) とは権限が異なるため直接rsyncでよい。
+        # Linux runner なので rsync --chmod が有効 → nginx が読める 755/644 で転送（macOSの権限600問題を回避）。
+        # ※ 古いアセットも掃除したい場合は末尾に --delete を追加（firmware/ は public/ の外なので影響なし）。
+        run: |
+          rsync -rz --chmod=D755,F644 \
+            -e "ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no" \
+            dist/ fox@210.131.217.236:/var/www/foxsense/public/
