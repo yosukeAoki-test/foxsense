@@ -193,6 +193,11 @@ export const recordBulkSensorData = async (data) => {
 
   const results = { parent: null, children: [] };
 
+  // ペイロードの timestamp(ISO8601) を採用（蓄積バッチ送信で各ラウンドの実測時刻を保持）。
+  // 無効/未指定なら DB 既定(now()) にフォールバック。
+  const ts = data.timestamp ? new Date(data.timestamp) : null;
+  const tsValid = ts && !isNaN(ts.getTime());
+
   // 親機センサーデータを記録
   if (data.parent) {
     const p = data.parent;
@@ -212,6 +217,7 @@ export const recordBulkSensorData = async (data) => {
         battery: (typeof p.battery === 'number' && p.battery > 0) ? p.battery : null,
         voltage: (typeof p.vbus_mv === 'number' && p.vbus_mv > 0) ? p.vbus_mv : null,
         rssi: p.signal ?? null,
+        ...(tsValid ? { timestamp: ts } : {}),
       },
     });
     results.parent = parentRecord.id;
@@ -239,6 +245,7 @@ export const recordBulkSensorData = async (data) => {
           battery: c.battery ?? null,
           voltage: (typeof c.voltage === 'number' && c.voltage > 0) ? c.voltage : null,
           rssi: c.rssi ?? null,
+          ...(tsValid ? { timestamp: ts } : {}),
         },
       });
       results.children.push({ deviceId: c.device_id, id: childRecord.id });
