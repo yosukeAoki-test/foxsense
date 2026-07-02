@@ -1,9 +1,10 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
-import { format, addDays } from 'date-fns';
+import { format } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import { getParentDevices, deleteChildDevice, foxCoinApi, getLatestData, getHistoryData, getAlertSettings, updateAlertSettings } from './api/client';
 import { useAuth } from './contexts/AuthContext';
+import { computeDailyStats, accumulateGDD, predictHarvest } from './utils/gdd';
 import { Settings, RefreshCw, Plus, Sprout, Snowflake, AlertTriangle, X, Flower2, LogOut, User, Radio, ChevronDown, Coins, ShieldCheck, Loader2, Satellite, Home, LayoutDashboard } from 'lucide-react';
 import OnboardingBanner from './components/OnboardingBanner';
 import TwoFactorSetupModal from './components/TwoFactorSetupModal';
@@ -207,53 +208,37 @@ function App() {
     } catch { pollinationRecords = []; }
     const alerts = [];
 
+    // 共通エンジン(gdd.js)で日別統計を一度だけ算出（(max+min)/2 に統一）
+    const dailyStats = computeDailyStats(mockData.history);
+
     pollinationRecords.forEach(record => {
       const baseTemp = Number(record.baseTemp) || 10;
       const requiredGDD = Number(record.targetGDD) || 1000;
+      const upperTemp = Number(record.upperTemp) || 0;
 
-      const pollinationDate = new Date(record.date);
-      const dataAfterPollination = mockData.history.filter(d => new Date(d.timestamp) >= pollinationDate);
-      if (dataAfterPollination.length === 0) return;
-
-      let totalGDD = 0;
-      const dailyData = {};
-      dataAfterPollination.forEach(d => {
-        const dateKey = format(new Date(d.timestamp), 'yyyy-MM-dd');
-        if (!dailyData[dateKey]) dailyData[dateKey] = [];
-        dailyData[dateKey].push(d.temperature);
+      const { totalGDD, avgDailyGDD, observedDays } = accumulateGDD({
+        dailyStats, fromDate: new Date(record.date), baseTemp, upperTemp,
       });
-
-      Object.values(dailyData).forEach(temps => {
-        const avgTemp = temps.reduce((a, b) => a + b, 0) / temps.length;
-        totalGDD += Math.max(0, avgTemp - baseTemp);
-      });
-
-      const daysElapsed = Object.keys(dailyData).length;
-      const avgDailyGDD = daysElapsed > 0 ? totalGDD / daysElapsed : 0;
-      const remainingGDD = requiredGDD - totalGDD;
-      const estimatedDaysRemaining = avgDailyGDD > 0 ? Math.ceil(remainingGDD / avgDailyGDD) : null;
+      if (observedDays === 0) return; // 授粉日以降のデータ無し
       const label = record.note || '積算温度記録';
 
-      if (estimatedDaysRemaining !== null && estimatedDaysRemaining <= 3 && estimatedDaysRemaining > 0) {
-        const estimatedDate = addDays(new Date(), estimatedDaysRemaining);
+      if (totalGDD >= requiredGDD) {
         alerts.push({
-          id: record.id,
-          cropName: label,
-          note: record.note,
-          daysRemaining: estimatedDaysRemaining,
-          estimatedDate: format(estimatedDate, 'M月d日', { locale: ja }),
-          totalGDD: totalGDD.toFixed(0),
-          requiredGDD,
+          id: record.id, cropName: label, note: record.note,
+          daysRemaining: 0, isReady: true,
+          totalGDD: totalGDD.toFixed(0), requiredGDD,
         });
-      } else if (totalGDD >= requiredGDD) {
+        return;
+      }
+
+      // 予測は単一エンジン（App側は気象データ非保持のため平均外挿）
+      const pred = predictHarvest({ currentGDD: totalGDD, targetGDD: requiredGDD, baseTemp, upperTemp, avgDailyGDD });
+      if (pred.days !== null && pred.days <= 3 && pred.days > 0) {
         alerts.push({
-          id: record.id,
-          cropName: label,
-          note: record.note,
-          daysRemaining: 0,
-          isReady: true,
-          totalGDD: totalGDD.toFixed(0),
-          requiredGDD,
+          id: record.id, cropName: label, note: record.note,
+          daysRemaining: pred.days,
+          estimatedDate: format(pred.date, 'M月d日', { locale: ja }),
+          totalGDD: totalGDD.toFixed(0), requiredGDD,
         });
       }
     });
@@ -394,7 +379,7 @@ function App() {
             {parentDevices.length > 1 && (
               <div className="relative">
                 <button onClick={() => setShowParentMenu(prev => !prev)}
-                  className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-medium transition-colors border border-blue-200 max-w-[130px] sm:max-w-[160px]">
+                  className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg bg-leaf-50 hover:bg-leaf-100 text-leaf-700 text-xs font-medium transition-colors border border-leaf-200 max-w-[130px] sm:max-w-[160px]">
                   <Radio className="w-3.5 h-3.5 flex-shrink-0" />
                   <span className="truncate">{selectedParent?.name || '親機選択'}</span>
                   <ChevronDown className="w-3 h-3 flex-shrink-0" />
@@ -422,7 +407,7 @@ function App() {
 
             {/* デバイス管理（PCのみ） */}
             <Link to="/devices"
-              className="hidden lg:flex items-center gap-1.5 p-2 sm:p-2.5 rounded-lg bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white shadow-md shadow-orange-500/30 transition-all text-xs font-medium">
+              className="hidden lg:flex items-center gap-1.5 p-2 sm:p-2.5 rounded-lg bg-leaf-600 hover:bg-leaf-700 text-white shadow-sm transition-all text-xs font-medium">
               <Plus className="w-4 h-4" />
               <span>デバイス管理</span>
             </Link>

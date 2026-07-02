@@ -55,7 +55,31 @@ export async function fetchForecast(latitude, longitude) {
   return data.daily.time.map((date, i) => ({
     date,
     avg: (data.daily.temperature_2m_max[i] + data.daily.temperature_2m_min[i]) / 2,
+    max: data.daily.temperature_2m_max[i],
+    min: data.daily.temperature_2m_min[i],
   }));
+}
+
+/**
+ * 指定期間の過去実測 日別平均気温を取得（センサ欠測日の穴埋め用）
+ * ※ アーカイブは数日のタイムラグあり。直近数日は欠ける場合がある。
+ * @returns {Object} { 'YYYY-MM-DD': avgTemp }
+ */
+export async function fetchPastDaily(latitude, longitude, startDate, endDate) {
+  const url = `${ARCHIVE_API}?latitude=${latitude}&longitude=${longitude}` +
+    `&start_date=${toDateStr(startDate)}&end_date=${toDateStr(endDate)}` +
+    `&daily=temperature_2m_max,temperature_2m_min&timezone=Asia%2FTokyo`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Archive API error: ${res.status}`);
+  const data = await res.json();
+  const out = {};
+  const daily = data.daily || {};
+  (daily.time || []).forEach((date, i) => {
+    const mx = daily.temperature_2m_max[i];
+    const mn = daily.temperature_2m_min[i];
+    if (typeof mx === 'number' && typeof mn === 'number') out[date] = (mx + mn) / 2;
+  });
+  return out;
 }
 
 /**
@@ -138,17 +162,18 @@ export async function fetchWeatherForHarvest(latitude, longitude, estimatedDaysT
  * @param {Object} weatherData     - fetchWeatherForHarvest の返り値
  * @returns {Date | null}          - 予想収穫日（nullなら計算不能）
  */
-export function simulateHarvestDate(currentGDD, targetGDD, baseTemp, weatherData) {
+export function simulateHarvestDate(currentGDD, targetGDD, baseTemp, weatherData, upperTemp = 0) {
   if (currentGDD >= targetGDD) return null; // すでに到達済み
 
   const { forecast, seasonal, forecastDays } = weatherData;
+  const cap = (t) => (upperTemp && upperTemp > baseTemp ? Math.min(t, upperTemp) : t);
   let gdd = currentGDD;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
   // フェーズ1: 予報気温（今日〜14日後）
   for (let i = 0; i < forecast.length; i++) {
-    const dayGDD = Math.max(0, forecast[i].avg - baseTemp);
+    const dayGDD = Math.max(0, cap(forecast[i].avg) - baseTemp);
     gdd += dayGDD;
     if (gdd >= targetGDD) {
       const harvestDate = new Date(today);
@@ -166,14 +191,14 @@ export function simulateHarvestDate(currentGDD, targetGDD, baseTemp, weatherData
       const recentTemps = Object.values(seasonal).slice(-14);
       if (recentTemps.length === 0) return null;
       const fallbackTemp = recentTemps.reduce((a, b) => a + b, 0) / recentTemps.length;
-      const dayGDD = Math.max(0, fallbackTemp - baseTemp);
+      const dayGDD = Math.max(0, cap(fallbackTemp) - baseTemp);
       if (dayGDD <= 0) return null; // 気温が低すぎて永久に到達しない
       const daysNeeded = Math.ceil((targetGDD - gdd) / dayGDD);
       const harvestDate = new Date(today);
       harvestDate.setDate(today.getDate() + forecastDays + offset + daysNeeded);
       return harvestDate;
     }
-    const dayGDD = Math.max(0, temp - baseTemp);
+    const dayGDD = Math.max(0, cap(temp) - baseTemp);
     gdd += dayGDD;
     if (gdd >= targetGDD) {
       const harvestDate = new Date(today);
@@ -183,4 +208,30 @@ export function simulateHarvestDate(currentGDD, targetGDD, baseTemp, weatherData
   }
 
   return null; // 1年以内に到達しない
+}
+
+/**
+ * 予報の最低気温から霜リスクを判定（直近3日の夜間最低気温を使用）
+ * ※ 従来のセンサ直近2時間の線形外挿より、予報ベースの方が遥かに確度が高い。
+ *
+ * @param {Array} forecast  fetchForecast() の返り値（min を含む）
+ * @param {{warning:number, critical:number}} thresholds
+ * @returns {{ riskLevel, message, minTonight, minAhead, dateAhead } | null}
+ */
+export function predictFrost(forecast, { warning = 3, critical = 0 } = {}) {
+  if (!Array.isArray(forecast) || forecast.length === 0) return null;
+  const ahead = forecast.slice(0, 3).filter(d => typeof d.min === 'number');
+  if (ahead.length === 0) return null;
+
+  const minTonight = ahead[0].min;
+  let worst = ahead[0];
+  for (const d of ahead) if (d.min < worst.min) worst = d;
+
+  let riskLevel = 'low';
+  let message = '当面、霜の心配はありません';
+  if (worst.min <= critical) { riskLevel = 'critical'; message = '霜が発生する可能性が非常に高いです！'; }
+  else if (worst.min <= warning) { riskLevel = 'high'; message = '霜に注意が必要です'; }
+  else if (worst.min <= warning + 2) { riskLevel = 'medium'; message = '夜間の冷え込みに注意'; }
+
+  return { riskLevel, message, minTonight, minAhead: worst.min, dateAhead: worst.date };
 }

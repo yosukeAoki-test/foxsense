@@ -1,7 +1,8 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { format, addDays, differenceInDays } from 'date-fns';
+import { format } from 'date-fns';
 import { ja } from 'date-fns/locale';
-import { fetchWeatherForHarvest, simulateHarvestDate } from '../utils/weatherForecast';
+import { fetchWeatherForHarvest, fetchPastDaily, predictFrost } from '../utils/weatherForecast';
+import { computeDailyStats, accumulateGDD, predictHarvest } from '../utils/gdd';
 import {
   Snowflake,
   Flower2,
@@ -14,27 +15,30 @@ import {
   Check,
 } from 'lucide-react';
 
+// upperTemp: 上限温度カットオフ（これを超える分は成長に寄与しないとして頭打ち）
+// 果菜類は概ね30℃、涼しい季節の葉根菜は25℃前後を目安（品種・地域で要調整）
 const CROP_PRESETS = [
-  { label: 'スイカ',     baseTemp: 10, targetGDD: 1050 },
-  { label: 'メロン',     baseTemp: 10, targetGDD: 1150 },
-  { label: 'トマト',     baseTemp: 10, targetGDD: 1150 },
-  { label: 'ミニトマト', baseTemp: 10, targetGDD: 850  },
-  { label: 'キュウリ',   baseTemp: 12, targetGDD: 250  },
-  { label: 'ナス',       baseTemp: 10, targetGDD: 350  },
-  { label: 'ピーマン',   baseTemp: 10, targetGDD: 300  },
-  { label: 'カボチャ',   baseTemp: 12, targetGDD: 950  },
-  { label: 'キャベツ',   baseTemp:  5, targetGDD: 850  },
-  { label: 'ブロッコリー', baseTemp: 5, targetGDD: 950 },
-  { label: 'ハクサイ',   baseTemp:  5, targetGDD: 950  },
-  { label: 'ダイコン',   baseTemp:  5, targetGDD: 950  },
-  { label: 'ニンジン',   baseTemp:  5, targetGDD: 1050 },
-  { label: 'イネ',       baseTemp: 10, targetGDD: 2000 },
+  { label: 'スイカ',     baseTemp: 10, targetGDD: 1050, upperTemp: 30 },
+  { label: 'メロン',     baseTemp: 10, targetGDD: 1150, upperTemp: 30 },
+  { label: 'トマト',     baseTemp: 10, targetGDD: 1150, upperTemp: 30 },
+  { label: 'ミニトマト', baseTemp: 10, targetGDD: 850,  upperTemp: 30 },
+  { label: 'キュウリ',   baseTemp: 12, targetGDD: 250,  upperTemp: 30 },
+  { label: 'ナス',       baseTemp: 10, targetGDD: 350,  upperTemp: 30 },
+  { label: 'ピーマン',   baseTemp: 10, targetGDD: 300,  upperTemp: 30 },
+  { label: 'カボチャ',   baseTemp: 12, targetGDD: 950,  upperTemp: 30 },
+  { label: 'キャベツ',   baseTemp:  5, targetGDD: 850,  upperTemp: 25 },
+  { label: 'ブロッコリー', baseTemp: 5, targetGDD: 950, upperTemp: 25 },
+  { label: 'ハクサイ',   baseTemp:  5, targetGDD: 950,  upperTemp: 25 },
+  { label: 'ダイコン',   baseTemp:  5, targetGDD: 950,  upperTemp: 25 },
+  { label: 'ニンジン',   baseTemp:  5, targetGDD: 1050, upperTemp: 25 },
+  { label: 'イネ',       baseTemp: 10, targetGDD: 2000, upperTemp: 0  },
 ];
 
 const CropManagement = ({ historyData, latestData, alerts, deviceLocation, onClose }) => {
   const [activeTab, setActiveTab] = useState('frost'); // frost, gdd
   const [weatherData, setWeatherData] = useState(null);
   const [weatherLoading, setWeatherLoading] = useState(false);
+  const [pastDaily, setPastDaily] = useState(null); // 欠測穴埋め用の過去実測 日別平均気温
   const weatherFetchedRef = useRef(null); // 同一地点の重複取得防止
 
   const [pollinationRecords, setPollinationRecords] = useState(() => {
@@ -50,6 +54,7 @@ const CropManagement = ({ historyData, latestData, alerts, deviceLocation, onClo
     date: format(new Date(), 'yyyy-MM-dd'),
     targetGDD: 1000,
     baseTemp: 10,
+    upperTemp: 0,
     note: '',
   });
 
@@ -57,6 +62,7 @@ const CropManagement = ({ historyData, latestData, alerts, deviceLocation, onClo
   useEffect(() => {
     if (!deviceLocation?.latitude || !deviceLocation?.longitude) {
       setWeatherData(null);
+      setPastDaily(null);
       return;
     }
     const key = `${deviceLocation.latitude},${deviceLocation.longitude}`;
@@ -64,48 +70,70 @@ const CropManagement = ({ historyData, latestData, alerts, deviceLocation, onClo
     weatherFetchedRef.current = key;
     setWeatherLoading(true);
 
-    // 積算の残り目安（全レコードの最大残りGDDから概算）
-    const maxRemainingDays = 120;
+    const { latitude, longitude } = deviceLocation;
+    const maxRemainingDays = 120;          // 積算の残り目安（季節ベースライン取得範囲）
+    const today = new Date();
+    const past = new Date(today); past.setDate(past.getDate() - 180);  // 欠測穴埋め用の過去実測範囲
 
-    fetchWeatherForHarvest(deviceLocation.latitude, deviceLocation.longitude, maxRemainingDays)
-      .then(data => setWeatherData(data))
-      .catch(() => setWeatherData(null))
-      .finally(() => setWeatherLoading(false));
+    Promise.allSettled([
+      fetchWeatherForHarvest(latitude, longitude, maxRemainingDays),
+      fetchPastDaily(latitude, longitude, past, today),
+    ]).then(([w, p]) => {
+      setWeatherData(w.status === 'fulfilled' ? w.value : null);
+      setPastDaily(p.status === 'fulfilled' ? p.value : null);
+    }).finally(() => setWeatherLoading(false));
   }, [deviceLocation?.latitude, deviceLocation?.longitude]);
 
-  // 霜予測（設定値を使用）
-  const frostPrediction = useMemo(() => {
-    if (!historyData || historyData.length < 6) return null;
+  // 日別統計（(max+min)/2 に統一）を履歴から一度だけ算出
+  const dailyStats = useMemo(() => computeDailyStats(historyData), [historyData]);
 
+  // 霜予測（予報の夜間最低気温を優先。無ければセンサ直近トレンドにフォールバック）
+  const frostPrediction = useMemo(() => {
+    const frostCritical = alerts?.frostCritical ?? 0;
+    const frostWarning = alerts?.frostWarning ?? 3;
+    const currentTempNow = latestData?.temperature;
+
+    // 予報あり: Open-Meteoの夜間最低気温ベース（センサ2時間外挿より確度が高い）
+    if (weatherData?.forecast) {
+      const f = predictFrost(weatherData.forecast, { warning: frostWarning, critical: frostCritical });
+      if (f) {
+        return {
+          source: 'forecast',
+          riskLevel: f.riskLevel,
+          message: f.message,
+          currentTemp: typeof currentTempNow === 'number' ? currentTempNow.toFixed(1) : '--',
+          currentMin: f.minTonight?.toFixed(1),      // 今夜の予報最低
+          predictedMinTemp: f.minAhead?.toFixed(1),  // 直近3日で最も低い予報最低
+          trend: null,
+          frostWarning,
+          frostCritical,
+        };
+      }
+    }
+
+    // フォールバック: センサ直近トレンド外挿（地点未設定/予報取得不可時）
+    if (!historyData || historyData.length < 6) return null;
     const recentData = historyData.slice(-6);
     const temps = recentData.map(d => d.temperature);
-
     const firstHalf = temps.slice(0, 3).reduce((a, b) => a + b, 0) / 3;
     const secondHalf = temps.slice(3).reduce((a, b) => a + b, 0) / 3;
     const trend = secondHalf - firstHalf;
-
     const currentMin = Math.min(...temps);
     const currentTemp = temps[temps.length - 1];
 
-    const frostCritical = alerts?.frostCritical ?? 0;
-    const frostWarning = alerts?.frostWarning ?? 3;
-
     let riskLevel = 'low';
     let message = '霜の心配はありません';
-    let predictedMinTemp = currentTemp + trend * 2;
-
+    const predictedMinTemp = currentTemp + trend * 2;
     if (predictedMinTemp <= frostCritical) {
-      riskLevel = 'critical';
-      message = '霜が発生する可能性が非常に高いです！';
+      riskLevel = 'critical'; message = '霜が発生する可能性が非常に高いです！';
     } else if (predictedMinTemp <= frostWarning) {
-      riskLevel = 'high';
-      message = '霜に注意が必要です';
+      riskLevel = 'high'; message = '霜に注意が必要です';
     } else if (predictedMinTemp <= frostWarning + 2 || currentMin <= frostWarning + 2) {
-      riskLevel = 'medium';
-      message = '気温が低めです。夜間の冷え込みに注意';
+      riskLevel = 'medium'; message = '気温が低めです。夜間の冷え込みに注意';
     }
 
     return {
+      source: 'sensor',
       riskLevel,
       message,
       currentTemp: currentTemp?.toFixed(1),
@@ -115,7 +143,7 @@ const CropManagement = ({ historyData, latestData, alerts, deviceLocation, onClo
       frostWarning,
       frostCritical,
     };
-  }, [historyData, alerts]);
+  }, [historyData, alerts, weatherData, latestData]);
 
   // 積算温度計算
   const calculateGDD = (record) => {
@@ -123,52 +151,28 @@ const CropManagement = ({ historyData, latestData, alerts, deviceLocation, onClo
 
     const baseTemp = Number(record.baseTemp) || 10;
     const requiredGDD = Number(record.targetGDD) || 1000;
-    const pollinationDate = new Date(record.date);
+    const upperTemp = Number(record.upperTemp) || 0;
 
     // 目標積算温度に基づいてアラート段階を動的生成
     const harvestAlerts = [0.75, 0.85, 0.90, 0.95, 1.0, 1.05].map(r => Math.round(requiredGDD * r));
 
-    const dataAfterPollination = historyData.filter(d => new Date(d.timestamp) >= pollinationDate);
-    if (dataAfterPollination.length === 0) return null;
-
-    let totalGDD = 0;
-    const dailyData = {};
-
-    dataAfterPollination.forEach(d => {
-      const dateKey = format(new Date(d.timestamp), 'yyyy-MM-dd');
-      if (!dailyData[dateKey]) dailyData[dateKey] = [];
-      dailyData[dateKey].push(d.temperature);
+    // 積算: (max+min)/2 統一・上限カットオフ・欠測日は過去実測(pastDaily)で穴埋め
+    const { totalGDD, daysElapsed, avgDailyGDD, observedDays, filledDays, missingDays } = accumulateGDD({
+      dailyStats,
+      fromDate: record.date,
+      baseTemp,
+      upperTemp,
+      fillFn: pastDaily ? (key) => pastDaily[key] : null,
     });
+    if (observedDays === 0 && filledDays === 0) return null;
 
-    Object.values(dailyData).forEach(temps => {
-      const avgTemp = temps.reduce((a, b) => a + b, 0) / temps.length;
-      totalGDD += Math.max(0, avgTemp - baseTemp);
+    // 収穫予想（単一エンジン: 気象データありは予報×季節ベースライン、無しは平均外挿）
+    const pred = predictHarvest({
+      currentGDD: totalGDD, targetGDD: requiredGDD, baseTemp, upperTemp, avgDailyGDD, weatherData,
     });
-
-    const daysElapsed = Object.keys(dailyData).length;
-    const avgDailyGDD = daysElapsed > 0 ? totalGDD / daysElapsed : 0;
-    const remainingGDD = requiredGDD - totalGDD;
-
-    // 収穫予想日: 気象データがあれば予報×季節ベースラインシミュレーション、なければ平均外挿
-    let estimatedHarvestDate = null;
-    let estimatedDaysRemaining = null;
-    let forecastBased = false;
-
-    if (weatherData && totalGDD < requiredGDD) {
-      const simDate = simulateHarvestDate(totalGDD, requiredGDD, baseTemp, weatherData);
-      if (simDate) {
-        estimatedHarvestDate = simDate;
-        estimatedDaysRemaining = differenceInDays(simDate, new Date());
-        forecastBased = true;
-      }
-    }
-
-    if (!forecastBased) {
-      estimatedDaysRemaining = avgDailyGDD > 0 ? Math.ceil(remainingGDD / avgDailyGDD) : null;
-      estimatedHarvestDate = estimatedDaysRemaining && estimatedDaysRemaining > 0
-        ? addDays(new Date(), estimatedDaysRemaining)
-        : null;
-    }
+    const estimatedHarvestDate = pred.date;
+    const estimatedDaysRemaining = pred.days;
+    const forecastBased = pred.method === 'forecast';
 
     const progress = Math.min(100, (totalGDD / requiredGDD) * 100);
 
@@ -204,6 +208,8 @@ const CropManagement = ({ historyData, latestData, alerts, deviceLocation, onClo
       totalGDD: totalGDD.toFixed(0),
       requiredGDD,
       baseTemp,
+      upperTemp,
+      dataQuality: { observedDays, filledDays, missingDays },
       progress: progress.toFixed(1),
       daysElapsed,
       avgDailyGDD: avgDailyGDD.toFixed(1),
@@ -224,6 +230,7 @@ const CropManagement = ({ historyData, latestData, alerts, deviceLocation, onClo
       ...newRecord,
       targetGDD: Number(newRecord.targetGDD),
       baseTemp: Number(newRecord.baseTemp),
+      upperTemp: Number(newRecord.upperTemp) || 0,
       id: Date.now(),
       createdAt: new Date().toISOString(),
     };
@@ -231,7 +238,7 @@ const CropManagement = ({ historyData, latestData, alerts, deviceLocation, onClo
     setPollinationRecords(updated);
     localStorage.setItem('foxsense_pollination', JSON.stringify(updated));
     setShowAddRecord(false);
-    setNewRecord({ date: format(new Date(), 'yyyy-MM-dd'), targetGDD: 1000, baseTemp: 10, note: '' });
+    setNewRecord({ date: format(new Date(), 'yyyy-MM-dd'), targetGDD: 1000, baseTemp: 10, upperTemp: 0, note: '' });
   };
 
   const deletePollinationRecord = (id) => {
@@ -313,7 +320,7 @@ const CropManagement = ({ historyData, latestData, alerts, deviceLocation, onClo
                     {frostPrediction.message}
                   </div>
                   <div className="text-sm text-gray-600 mt-1">
-                    2時間後の予測最低気温: {frostPrediction.predictedMinTemp}°C
+                    {frostPrediction.source === 'forecast' ? '今後3日の予報最低気温' : '2時間後の予測最低気温'}: {frostPrediction.predictedMinTemp}°C
                   </div>
                 </div>
               </div>
@@ -325,16 +332,20 @@ const CropManagement = ({ historyData, latestData, alerts, deviceLocation, onClo
                 <div className="text-lg sm:text-2xl font-bold text-gray-800">{frostPrediction.currentTemp}°C</div>
               </div>
               <div className="bg-gray-50 rounded-lg p-2 sm:p-4 text-center">
-                <div className="text-xs sm:text-sm text-gray-500">直近最低</div>
+                <div className="text-xs sm:text-sm text-gray-500">{frostPrediction.source === 'forecast' ? '今夜最低(予報)' : '直近最低'}</div>
                 <div className="text-lg sm:text-2xl font-bold text-blue-600">{frostPrediction.currentMin}°C</div>
               </div>
               <div className="bg-gray-50 rounded-lg p-2 sm:p-4 text-center">
-                <div className="text-xs sm:text-sm text-gray-500">トレンド</div>
-                <div className={`text-lg sm:text-2xl font-bold ${
-                  parseFloat(frostPrediction.trend) > 0 ? 'text-red-500' : 'text-blue-500'
-                }`}>
-                  {parseFloat(frostPrediction.trend) > 0 ? '+' : ''}{frostPrediction.trend}°C/h
-                </div>
+                <div className="text-xs sm:text-sm text-gray-500">{frostPrediction.trend != null ? 'トレンド' : '判定方式'}</div>
+                {frostPrediction.trend != null ? (
+                  <div className={`text-lg sm:text-2xl font-bold ${
+                    parseFloat(frostPrediction.trend) > 0 ? 'text-red-500' : 'text-blue-500'
+                  }`}>
+                    {parseFloat(frostPrediction.trend) > 0 ? '+' : ''}{frostPrediction.trend}°C/h
+                  </div>
+                ) : (
+                  <div className="text-sm sm:text-base font-semibold text-leaf-600 pt-1.5">予報ベース</div>
+                )}
               </div>
             </div>
 
@@ -509,7 +520,7 @@ const CropManagement = ({ historyData, latestData, alerts, deviceLocation, onClo
                   <select
                     onChange={(e) => {
                       const preset = CROP_PRESETS.find(p => p.label === e.target.value);
-                      if (preset) setNewRecord(r => ({ ...r, baseTemp: preset.baseTemp, targetGDD: preset.targetGDD, note: r.note || preset.label }));
+                      if (preset) setNewRecord(r => ({ ...r, baseTemp: preset.baseTemp, targetGDD: preset.targetGDD, upperTemp: preset.upperTemp ?? 0, note: r.note || preset.label }));
                     }}
                     className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:border-leaf-400 outline-none text-sm bg-white"
                   >

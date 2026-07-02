@@ -16,35 +16,35 @@
 
 body {
   margin: 0;
-  background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 50%, #d1fae5 100%);
+  /* 白基調：ほぼ白のニュートラル背景。緑はアクセントのみ */
+  background: #fafafa;
   min-height: 100vh;
   font-family: 'Noto Sans JP', -apple-system, BlinkMacSystemFont, sans-serif;
+  color: #111827;
+  -webkit-font-smoothing: antialiased;
 }
 
-/* カード共通スタイル */
+/* カード共通スタイル：フラットな白・繊細な境界と影（現代風・ミニマル） */
 .card {
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(10px);
-  border-radius: 1.5rem;
-  box-shadow: 0 4px 20px rgba(34, 197, 94, 0.1);
-  border: 1px solid rgba(34, 197, 94, 0.1);
+  background: #ffffff;
+  border-radius: 1rem;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.06);
+  border: 1px solid #edefed;
 }
 
 .card-hover {
-  transition: all 0.3s ease;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
 }
 
 .card-hover:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 8px 30px rgba(34, 197, 94, 0.15);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(16, 24, 40, 0.08);
+  border-color: #cdead7;
 }
 
-/* グラデーションテキスト */
+/* アクセントテキスト（ロゴ等）：緑ソリッド */
 .gradient-text {
-  background: linear-gradient(135deg, #16a34a 0%, #10b981 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: #16a34a;
 }
 
 /* ゲージアニメーション */
@@ -92,17 +92,17 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: #f0fdf4;
+  background: #f1f5f9;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #86efac;
+  background: #d1d5db;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #4ade80;
+  background: #9ca3af;
 }
 
 /* Leaflet / Geoman ツールバーアイコン保護 (Tailwind preflight 上書き防止) */
