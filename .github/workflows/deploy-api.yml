@@ -1,0 +1,69 @@
+name: Deploy foxsense-api
+
+# main への foxsense-api 変更 push で、VPSへ rsync 反映し pm2 で再起動する。
+# 本番は PM2 (プロセス名 foxsense-api / pm2-fox.service) で稼働。DB=PostgreSQL/Prisma。
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'foxsense-api/**'
+      - '.github/workflows/deploy-api.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-api
+  cancel-in-progress: false   # API再起動が重ならないよう後発は待たせる
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Web用CIと同じ作法（secret VPS_SSH_KEY = vps_new / id_ed25519 / ssh-keyscan）
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H 210.131.217.236 >> ~/.ssh/known_hosts
+
+      - name: Sync source to VPS
+        # .env / node_modules / サーバ側の生成物は保持（--delete でも除外）。
+        run: |
+          rsync -az --delete \
+            --exclude='node_modules/' \
+            --exclude='.env' \
+            --exclude='.env.*' \
+            --exclude='.git/' \
+            --exclude='*.bak*' \
+            --exclude='.deploy_lock_hash' \
+            -e "ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no" \
+            foxsense-api/ \
+            fox@210.131.217.236:/home/fox/foxsense-api/
+
+      - name: Install deps (only if lockfile changed) & restart
+        run: |
+          ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no fox@210.131.217.236 "
+            set -e
+            cd /home/fox/foxsense-api
+
+            # package-lock が変わった時だけ npm ci（src変更だけなら node_modules を触らない＝安全）
+            NEW=\$(sha256sum package-lock.json | cut -d' ' -f1)
+            OLD=\$(cat .deploy_lock_hash 2>/dev/null || echo none)
+            if [ \"\$NEW\" != \"\$OLD\" ]; then
+              echo '=== deps changed -> npm ci ==='
+              npm ci --prefer-offline 2>/dev/null || npm install
+              echo \"\$NEW\" > .deploy_lock_hash
+            else
+              echo '=== deps unchanged -> skip npm ci ==='
+            fi
+
+            # ※ Prisma スキーマ変更時のDBマイグレーションは手動運用:
+            #    cd /home/fox/foxsense-api && npx prisma migrate deploy && npx prisma generate && pm2 restart foxsense-api
+
+            echo '=== pm2 restart foxsense-api ==='
+            pm2 restart foxsense-api --update-env
+            pm2 describe foxsense-api | grep -E 'status|restarts' | head -3
+          "
