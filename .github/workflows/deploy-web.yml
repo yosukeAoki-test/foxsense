@@ -49,11 +49,18 @@ jobs:
           ssh-keyscan -H 210.131.217.236 >> ~/.ssh/known_hosts
 
       - name: Deploy to VPS (rsync)
-        # foxsenseの /var/www/foxsense/public は fox 書き込み可（手動手順が直接rsync実績あり）。
-        # sav の /var/www/sav (www-data所有→/tmp+sudo方式) とは権限が異なるため直接rsyncでよい。
-        # Linux runner なので rsync --chmod が有効 → nginx が読める 755/644 で転送（macOSの権限600問題を回避）。
-        # ※ 古いアセットも掃除したい場合は末尾に --delete を追加（firmware/ は public/ の外なので影響なし）。
+        # /var/www/foxsense/public は fox 書き込み可。直接rsyncでよい。
+        # ※ 古いアセットも掃除したい場合は --delete を追加（firmware/ は public/ の外なので影響なし）。
         run: |
-          rsync -rz --chmod=D755,F644 \
+          rsync -rz \
             -e "ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no" \
             dist/ fox@210.131.217.236:/var/www/foxsense/public/
+
+      - name: Fix permissions (nginx読取可能に 755/644)
+        # rsyncの--chmodはrunner/umask依存で640になることがあり、nginx(www-data)が
+        # world-read不可→403→画面真っ白になる。転送後に明示chmodで確実に755/644へ。
+        # ファイルはfox所有のためsudo不要。
+        run: |
+          ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no fox@210.131.217.236 \
+            'find /var/www/foxsense/public -type d -exec chmod 755 {} + && \
+             find /var/www/foxsense/public -type f -exec chmod 644 {} +'
