@@ -32,9 +32,12 @@
 #include "config.h"
 #include "ca_cert.h"
 #include "ir_control.h"
+#include "e220.h"
 
 // ディープスリープ間隔
-#define MEASUREMENT_INTERVAL_MIN 10  // 本番10分間隔
+#define MEASUREMENT_INTERVAL_MIN 20  // 起床間隔20分（親子とも20分毎に起床）
+#define ROUNDS_PER_UPLOAD 3          // LTE送信は3回に1回(20分×3≒1時間)。それまでRTCに蓄積
+#define MAX_RTC_ROUNDS 4             // 蓄積上限(超過で最古を破棄)
 #define NTP_SYNC_INTERVAL_SEC (24 * 60 * 60)  // 24時間
 #define SKIP_BATTERY_CHECK true
 
@@ -69,6 +72,23 @@ RTC_DATA_ATTR uint32_t lastConfigFetch = 0;       // 最後に設定取得した
 RTC_DATA_ATTR bool configFetched = false;          // 設定取得済みフラグ
 RTC_DATA_ATTR bool caCertUploaded = false;         // CA証明書アップロード済みフラグ
 
+// 起床回数（LTE送信タイミング判定用）
+RTC_DATA_ATTR uint32_t wakeCounter = 0;
+
+// データ蓄積バッファ（20分毎の計測を貯め、1時間毎にまとめて送信）
+struct RtcChild {
+    uint32_t id; bool received;
+    float temp, humid, pres; int8_t rssi; uint8_t bat; uint8_t lid;
+};
+struct RtcRound {
+    time_t ts;
+    float pTemp, pHumid, pPres; int pBat; int pVbus; int pSignal;
+    uint8_t childCount;
+    RtcChild child[MAX_CHILD_DEVICES];
+};
+RTC_DATA_ATTR RtcRound rtcRounds[MAX_RTC_ROUNDS];
+RTC_DATA_ATTR uint8_t rtcRoundCount = 0;
+
 // 子機データ配列
 ChildData childDataList[MAX_CHILD_DEVICES];
 int activeChildCount = 0;
@@ -87,7 +107,9 @@ int pendingChildCount = 0;
 Adafruit_BME280 bme;
 XPowersPMU PMU;
 HardwareSerial modemSerial(1);   // SIM7080G
-HardwareSerial tweliteSerial(2); // TWELITE
+HardwareSerial tweliteSerial(2); // E220 LoRa (旧TWELITE UART配線を流用)
+E220 lora(tweliteSerial, LORA_M0_PIN, LORA_M1_PIN, LORA_AUX_PIN);
+int16_t g_lastRssi = 0;          // 直近のLoRa受信RSSI(dBm)。parseChildPacketV2で使用
 IrController irCtrl;             // IR送信コントローラ (ACプロトタイプモード用)
 
 // ACコマンド構造体
@@ -146,6 +168,10 @@ bool uploadCACert();
 bool fetchConfigFromServer();
 void sendPairingCommand(uint32_t parentIdHash, uint32_t targetChildId, uint8_t logicalId);
 bool waitForPairingResponse(uint32_t targetChildId);
+void sendDataAck(uint32_t parentIdHash, uint32_t childId);
+void storeRoundToRtc();
+String buildRoundPayload(const RtcRound& r);
+bool uploadAllRounds();
 bool reportPairingResult(const char* childDeviceIdHex, const char* status);
 void executePairingMode();
 uint32_t computeParentIdHashLocal(const char* deviceId);
@@ -320,170 +346,113 @@ void setup() {
     // TWELITE初期化
     initTwelite();
 
-    // モデムシリアル初期化
-    modemSerial.begin(MODEM_BAUD_RATE, SERIAL_8N1, MODEM_RX_PIN, MODEM_TX_PIN);
-    delay(100);
+    // 起床回数++。LTE送信は ROUNDS_PER_UPLOAD 回に1回(≒1時間)。初回/設定未取得時は必ずLTE。
+    wakeCounter++;
+    bool lteWake = (!configFetched) || (wakeCounter % ROUNDS_PER_UPLOAD == 0);
+    bool modemOk = false;
 
-    // モデム初期化
-    Serial.println("\n[MODEM] Initializing...");
-    if (!initModem()) {
-        Serial.println("[ERROR] Modem init failed");
-        consecutiveFailures++;
+    if (lteWake) {
+        modemSerial.begin(MODEM_BAUD_RATE, SERIAL_8N1, MODEM_RX_PIN, MODEM_TX_PIN);
+        delay(100);
+        Serial.println("\n[MODEM] LTE wake: initializing...");
+        if (initModem()) {
+            modemOk = true;
+            modemState.isInitialized = true;
 
-        // モデム失敗時でもキャッシュがあれば子機データ収集は試行
-        if (configFetched && cachedParentIdHash != 0) {
-            Serial.println("[INFO] Using cached config for child data collection");
-            // 子機データ初期化（キャッシュから）
-            activeChildCount = cachedChildCount;
-            for (int i = 0; i < MAX_CHILD_DEVICES; i++) {
-                childDataList[i].deviceId = cachedChildIds[i];
-                childDataList[i].logicalId = cachedChildLogicalIds[i];
-                childDataList[i].received = false;
-                childDataList[i].temperature = 0;
-                childDataList[i].humidity = 0;
-                childDataList[i].pressure = 0;
-                childDataList[i].vccMv = 0;
-                childDataList[i].needsPairing = false;
+            if (!uploadCACert()) {
+                Serial.println("[SSL] CA cert upload failed, no-verify mode");
             }
 
-            sendMWXWakeTrigger();
-
-            readParentSensors();
-
-            if (activeChildCount > 0) {
-                collectChildData();
+            // NTP同期（RTCクロックは非LTE起床でもタイムスタンプに使う）
+            time_t now; time(&now);
+            if (!ntpSynced || lastNtpSyncTime == 0 || (now - lastNtpSyncTime >= NTP_SYNC_INTERVAL_SEC)) {
+                Serial.println("[NTP] Time sync...");
+                if (syncNTP()) { ntpSynced = true; time(&lastNtpSyncTime); printCurrentTime(); }
             }
-            // データはサーバー送信できないため、次回送信に期待
-        }
 
-        if (consecutiveFailures >= 5) {
-            goToDeepSleep(MEASUREMENT_INTERVAL_MIN * 60 * 6);
+            // サーバー設定取得
+            if (!configFetched || (bootCount - lastConfigFetch >= CONFIG_FETCH_INTERVAL)) {
+                Serial.println("[CONFIG] Fetching device config...");
+                if (fetchConfigFromServer()) {
+                    lastConfigFetch = bootCount; configFetched = true;
+                    Serial.printf("[CONFIG] hash:0x%08X children:%d\n", cachedParentIdHash, cachedChildCount);
+                } else if (!configFetched) {
+                    cachedParentIdHash = computeParentIdHashLocal(DEVICE_ID);
+                    Serial.printf("[WARN] Local hash fallback: 0x%08X\n", cachedParentIdHash);
+                }
+            }
         } else {
-            goToDeepSleep(MEASUREMENT_INTERVAL_MIN * 60);
-        }
-        return;
-    }
-    modemState.isInitialized = true;
-
-    // CA証明書をモデムファイルシステムにアップロード (電源オン初回のみ)
-    if (!uploadCACert()) {
-        Serial.println("[SSL] CA cert upload failed, falling back to no-verify mode");
-    }
-
-    // NTP同期
-    time_t now;
-    time(&now);
-    bool needNtpSync = !ntpSynced || (lastNtpSyncTime == 0) ||
-                       (now - lastNtpSyncTime >= NTP_SYNC_INTERVAL_SEC);
-
-    if (needNtpSync) {
-        Serial.println("\n[NTP] Time synchronization...");
-        if (syncNTP()) {
-            ntpSynced = true;
-            time(&lastNtpSyncTime);
-            printCurrentTime();
-        }
-    }
-
-    // ★ サーバーから設定取得
-    bool needConfigFetch = !configFetched ||
-                           (bootCount - lastConfigFetch >= CONFIG_FETCH_INTERVAL);
-
-    if (needConfigFetch) {
-        Serial.println("\n[CONFIG] Fetching device config from server...");
-        if (fetchConfigFromServer()) {
-            lastConfigFetch = bootCount;
-            configFetched = true;
-            Serial.printf("[CONFIG] parentIdHash: 0x%08X, children: %d\n",
-                          cachedParentIdHash, cachedChildCount);
-        } else {
-            Serial.println("[WARN] Config fetch failed, using cached values");
-            if (!configFetched) {
-                // キャッシュもない場合はローカルハッシュ使用
-                cachedParentIdHash = computeParentIdHashLocal(DEVICE_ID);
-                Serial.printf("[WARN] Using local hash fallback: 0x%08X\n", cachedParentIdHash);
-            }
+            Serial.println("[ERROR] Modem init failed (retry next LTE wake)");
+            consecutiveFailures++;
         }
     } else {
-        Serial.printf("[CONFIG] Using cached config (fetched at boot %d)\n", lastConfigFetch);
+        Serial.printf("[MODEM] Skip LTE (wake %lu; upload every %d)\n",
+                      (unsigned long)wakeCounter, ROUNDS_PER_UPLOAD);
     }
 
-    // 子機データ初期化（サーバー/キャッシュから）
+    // 子機データ初期化（RTCキャッシュから）
     activeChildCount = 0;
-
     for (int i = 0; i < MAX_CHILD_DEVICES; i++) {
         childDataList[i].deviceId = cachedChildIds[i];
         childDataList[i].logicalId = cachedChildLogicalIds[i];
         childDataList[i].received = false;
         childDataList[i].temperature = 0;
         childDataList[i].humidity = 0;
+        childDataList[i].pressure = 0;
         childDataList[i].vccMv = 0;
         childDataList[i].needsPairing = false;
-
-        if (cachedChildIds[i] != 0x00000000) {
-            activeChildCount++;
-        }
+        if (cachedChildIds[i] != 0x00000000) activeChildCount++;
     }
+    Serial.printf("[LoRa] Active children: %d\n", activeChildCount);
 
-    Serial.printf("[TWELITE] Active children: %d\n", activeChildCount);
-
-    // 親機TWELITEに起床信号ブロードキャストを指示（15秒間送信）
-    // ※ ペアリングより先に送り、子機を起こしてから対話する
-    sendMWXWakeTrigger();
-
-    // ペアリングモード実行（PENDING子機がある場合）
-    // 起床トリガー送信後500ms待って子機が受信窓に入るのを待つ
-    if (hasPendingChildren && pendingChildCount > 0) {
+    // ペアリング（LTE時かつPENDINGがある場合のみ。子機を起こしてからペア送信）
+    if (lteWake && modemOk && hasPendingChildren && pendingChildCount > 0) {
+        sendMWXWakeTrigger();
         delay(500);
         executePairingMode();
     }
 
-    // 親機のセンサーデータ取得（5サンプル中央値フィルタ）
-    Serial.println("\n[SENSOR] Reading parent BME280 (5-sample median)...");
-    if (!readParentSensors()) {
-        Serial.println("[WARN] Parent sensor read failed, using zeros");
-    }
-    Serial.printf("  Parent Temp: %.2f C\n", parentData.temperature);
-    Serial.printf("  Parent Humidity: %.2f %%\n", parentData.humidity);
-    Serial.printf("  Parent Pressure: %.1f hPa\n", parentData.pressure);
+    // 親機センサー
+    Serial.println("\n[SENSOR] Reading parent sensor...");
+    if (!readParentSensors()) Serial.println("[WARN] Parent sensor read failed");
+    Serial.printf("  Parent: %.2fC %.2f%% %.1fhPa\n",
+                  parentData.temperature, parentData.humidity, parentData.pressure);
 
-    // 子機データ収集（タイムアウトまで待機）
-    // activeChildCount==0でも未登録子機のIDを検出するため常に受信待機
-    Serial.println("\n[TWELITE] Collecting data from children (v2)...");
+    // 子機データ収集（子機起点プッシュ受信＋ACK）
+    Serial.println("\n[LoRa] Collecting child data (window + ACK)...");
     bool allReceived = collectChildData();
-
-    // ブロードキャスト完了 → TWELITE_WAKE_PIN をLOWに戻して親機TWELITEをスリープさせる
-    digitalWrite(TWELITE_WAKE_PIN, LOW);
-
     if (activeChildCount > 0 && !allReceived) {
-        Serial.println("[WARN] Not all children responded");
+        Serial.println("[WARN] Not all children pushed this round");
     }
 
-    // 全データをサーバーに送信
-    Serial.println("\n[HTTP] Sending all data to server...");
-    if (sendAllDataToServer()) {
-        Serial.println("[OK] All data sent successfully");
-        consecutiveFailures = 0;
-    } else {
-        Serial.println("[ERROR] Data send failed");
-        consecutiveFailures++;
+    // 今回のラウンドをRTCに蓄積
+    storeRoundToRtc();
+
+    // LTE時: 蓄積した全ラウンドをまとめて送信
+    if (lteWake && modemOk) {
+        Serial.printf("\n[HTTP] Uploading %d accumulated round(s)...\n", rtcRoundCount);
+        if (uploadAllRounds()) {
+            Serial.println("[OK] Batch upload success");
+            consecutiveFailures = 0;
+            rtcRoundCount = 0;   // 送信成功でバッファクリア
+        } else {
+            Serial.println("[ERROR] Batch upload failed (keep buffer, retry next LTE wake)");
+            consecutiveFailures++;
+        }
+
+        // ACコマンド
+        irCtrl.begin();
+        AcCommandPending acCmd = fetchPendingAcCommand();
+        if (acCmd.found) {
+            Serial.printf("[AC] Executing: mode=%d tempC=%.1f\n", (int)acCmd.mode, acCmd.tempC);
+            irCtrl.send(acCmd.mode, acCmd.tempC);
+            ackAcCommand(acCmd.id);
+        }
     }
 
-    // ACコマンドをチェックして実行（最大10分遅延）
-    irCtrl.begin();
-    AcCommandPending acCmd = fetchPendingAcCommand();
-    if (acCmd.found) {
-        Serial.printf("[AC] Executing: mode=%d tempC=%.1f\n", (int)acCmd.mode, acCmd.tempC);
-        irCtrl.send(acCmd.mode, acCmd.tempC);
-        ackAcCommand(acCmd.id);
-    }
-
-    // モデムはOFFにしない: DC3がディープスリープ中も保持され
-    // 次回起動時に既にCat-M1登録済み状態を維持できるため
-
-    // 次の定時までのスリープ時間を計算
+    // 20分グリッドまでスリープ
     uint64_t sleepDuration = calculateSleepDuration();
-    Serial.printf("\n[SLEEP] Going to deep sleep for %llu seconds...\n", sleepDuration);
+    Serial.printf("\n[SLEEP] Deep sleep for %llu s (lteWake=%d)...\n", sleepDuration, lteWake);
     goToDeepSleep(sleepDuration);
 }
 
@@ -498,121 +467,126 @@ void loop() {
  */
 void initTwelite() {
     tweliteSerial.setRxBufferSize(1024);
-    tweliteSerial.begin(TWELITE_BAUD_RATE, SERIAL_8N1, TWELITE_RX_PIN, TWELITE_TX_PIN);
+    tweliteSerial.begin(LORA_BAUD_RATE, SERIAL_8N1, LORA_RX_PIN, LORA_TX_PIN);
     delay(100);
 
-    // 親機TWELITE スリープ解除ピン (TWELITE DIO0 に配線)
-    pinMode(TWELITE_WAKE_PIN, OUTPUT);
-    digitalWrite(TWELITE_WAKE_PIN, LOW);
+    // E220 を設定（透過モード, RSSIバイト有効で子機RSSIを取得）
+    E220Config cfg;
+    cfg.address  = LORA_ADDR;
+    cfg.sf       = LORA_SF;
+    cfg.bw       = LORA_BW;
+    cfg.channel  = LORA_CHANNEL;
+    cfg.powerDbm = LORA_POWER;
+    cfg.rssiByte = true;              // 親機は受信データにRSSIを付与
 
-    // TWELITEリセット（オプション）
-    #ifdef TWELITE_RST_PIN
-    pinMode(TWELITE_RST_PIN, OUTPUT);
-    digitalWrite(TWELITE_RST_PIN, LOW);
-    delay(10);
-    digitalWrite(TWELITE_RST_PIN, HIGH);
-    delay(100);
-    #endif
-
-    Serial.println("[OK] TWELITE initialized");
+    if (lora.begin(cfg)) {
+        Serial.println("[OK] E220 (LoRa) initialized");
+    } else {
+        Serial.println("[ERROR] E220 init failed");
+    }
 }
 
 /**
- * MWX親機TWELITEに起床信号ブロードキャスト開始を指示
- * フォーマット: [0xA5][0x01][0x01][0x5A] (4バイト)
- * 親機TWELITEが15秒間起床パケットを送信 → 子機が50ms窓で確実に受信
+ * wake信号フレーム(13バイト)を1つ組み立てる
+ * フォーマット: [0xA5][VERSION][CMD_WAKE][PARENT_ID_HASH_4][TIMESTAMP_4][CHECKSUM][0x5A]
  */
-void sendMWXWakeTrigger() {
-    // DIO0 をHIGHにして親機TWELITEをスリープから起こす
-    digitalWrite(TWELITE_WAKE_PIN, HIGH);
-    delay(10);  // TWELITE起床待ち (JN5169 wakeup ~1ms + margin)
-
-    uint8_t cmd[4] = {0xA5, 0x01, 0x01, 0x5A};
-    tweliteSerial.write(cmd, 4);
-    Serial.println("[TWELITE] MWX wake trigger sent (15s broadcast)");
-
-    // 親機の初期応答をバッファから読み捨て（バッファオーバーフロー防止）
-    delay(500);
-    while (tweliteSerial.available()) tweliteSerial.read();
-    // ブロードキャスト終了後にLOWに戻す（親機TWELITEがスリープに入れるよう）
-    // 15秒後に下げる: collectChildData完了のタイミングでLOWにする
-}
-
-/**
- * v2起床信号送信（parentIdHash入り、旧ATmega子機向け互換）
- * フォーマット: [0xA5][VERSION][CMD_WAKE][PARENT_ID_HASH_4bytes][TIMESTAMP_4bytes][CHECKSUM][0x5A]
- * 合計: 13バイト
- */
-void sendWakeSignalV2(uint32_t parentIdHash) {
-    uint8_t packet[13];
+static void buildWakeFrame(uint8_t* packet, uint32_t parentIdHash) {
     uint32_t ts = millis();
-
     packet[0] = TWELITE_HEADER;
     packet[1] = PROTOCOL_VERSION;
     packet[2] = TWELITE_CMD_WAKE;
-    // parentIdHash (big-endian)
     packet[3] = (parentIdHash >> 24) & 0xFF;
     packet[4] = (parentIdHash >> 16) & 0xFF;
     packet[5] = (parentIdHash >> 8) & 0xFF;
     packet[6] = parentIdHash & 0xFF;
-    // timestamp (big-endian)
     packet[7] = (ts >> 24) & 0xFF;
     packet[8] = (ts >> 16) & 0xFF;
     packet[9] = (ts >> 8) & 0xFF;
     packet[10] = ts & 0xFF;
-    // checksum (XOR of bytes 1..10)
-    packet[11] = computeChecksum(packet, 11);
+    packet[11] = computeChecksum(packet, 11);  // XOR of bytes 1..10
     packet[12] = TWELITE_FOOTER;
-
-    // 複数回送信（確実性のため）
-    for (int i = 0; i < 3; i++) {
-        tweliteSerial.write(packet, 13);
-        delay(WAKE_SIGNAL_INTERVAL);
-    }
-
-    Serial.printf("[TWELITE] v2 Wake signal sent (hash: 0x%08X, ts: %lu)\n", parentIdHash, ts);
 }
 
 /**
- * 子機からデータを収集（v2: parentIdHash検証付き）
+ * wake信号を LoRa ブロードキャストで短時間バースト送信（ペアリング前の子機起床用）
+ * 通常のデータ収集では collectChildData() が送受信を交互に行う。
+ */
+void sendMWXWakeTrigger() {
+    uint8_t packet[13];
+    for (int i = 0; i < 3; i++) {
+        buildWakeFrame(packet, cachedParentIdHash);
+        lora.send(packet, 13);
+        delay(300);
+    }
+    Serial.printf("[LoRa] Wake burst (hash: 0x%08X)\n", cachedParentIdHash);
+}
+
+/**
+ * wake信号を1バースト送信（parentIdHash入り）
+ */
+void sendWakeSignalV2(uint32_t parentIdHash) {
+    uint8_t packet[13];
+    for (int i = 0; i < 3; i++) {
+        buildWakeFrame(packet, parentIdHash);
+        lora.send(packet, 13);
+        delay(WAKE_SIGNAL_INTERVAL);
+    }
+    Serial.printf("[LoRa] Wake signal sent (hash: 0x%08X)\n", parentIdHash);
+}
+
+/**
+ * 子機データ収集（子機起点プッシュ方式）
+ * 親機は受信窓を開き、子機からのDATAフレームを待つ。受信毎にDATA_ACKを返す。
+ * （wakeブロードキャストは行わない＝子機が自タイマで起床して送ってくる）
  */
 bool collectChildData() {
     unsigned long startTime = millis();
-    uint8_t buffer[64];
-    int bufferIndex = 0;
+    uint8_t payload[64];
 
     while (millis() - startTime < CHILD_RESPONSE_TIMEOUT) {
-        while (tweliteSerial.available()) {
-            uint8_t b = tweliteSerial.read();
+        int16_t rssi = 0;
+        int n = lora.recv(payload, sizeof(payload), &rssi, 500);
+        if (n >= 17 && payload[0] == TWELITE_HEADER) {
+            g_lastRssi = rssi;
+            uint8_t ver = payload[1];
+            uint8_t cmd = payload[2];
+            parseChildPacketV2(payload, n);
 
-            // ヘッダー検出
-            if (bufferIndex == 0 && b != TWELITE_HEADER) {
-                continue;
+            // DATAフレームを受理したら、その子機にACKを返す（子機は受信確認できる）
+            if (cmd == TWELITE_CMD_DATA && (ver == 0x03 || ver == 0x02)) {
+                uint32_t hash = ((uint32_t)payload[3] << 24) | ((uint32_t)payload[4] << 16) |
+                                ((uint32_t)payload[5] << 8)  | (uint32_t)payload[6];
+                uint32_t cid  = ((uint32_t)payload[7] << 24) | ((uint32_t)payload[8] << 16) |
+                                ((uint32_t)payload[9] << 8)  | (uint32_t)payload[10];
+                if (hash == cachedParentIdHash) sendDataAck(hash, cid);
             }
 
-            buffer[bufferIndex++] = b;
-
-            // フッター検出 → パケット解析 (MWX=17B, v3=21B, v2=19B)
-            if (b == TWELITE_FOOTER && bufferIndex >= 17) {
-                parseChildPacketV2(buffer, bufferIndex);
-                bufferIndex = 0;
-
-                // 全子機からデータ受信完了チェック
-                if (isAllChildDataReceived()) {
-                    Serial.println("[TWELITE] All child data received!");
-                    return true;
-                }
-            }
-
-            // バッファオーバーフロー防止
-            if (bufferIndex >= sizeof(buffer)) {
-                bufferIndex = 0;
+            if (isAllChildDataReceived()) {
+                Serial.println("[LoRa] All child data received!");
+                return true;
             }
         }
-        delay(10);
     }
 
     return isAllChildDataReceived();
+}
+
+/**
+ * データ受信ACK送信: [A5][VER][0x12][HASH_4][CHILD_ID_4][STATUS][CS][5A] = 14B
+ */
+void sendDataAck(uint32_t parentIdHash, uint32_t childId) {
+    uint8_t p[14];
+    p[0] = TWELITE_HEADER;
+    p[1] = PROTOCOL_VERSION;
+    p[2] = TWELITE_CMD_DATA_ACK;
+    p[3] = (parentIdHash >> 24) & 0xFF; p[4] = (parentIdHash >> 16) & 0xFF;
+    p[5] = (parentIdHash >> 8) & 0xFF;  p[6] = parentIdHash & 0xFF;
+    p[7] = (childId >> 24) & 0xFF; p[8] = (childId >> 16) & 0xFF;
+    p[9] = (childId >> 8) & 0xFF;  p[10] = childId & 0xFF;
+    p[11] = 0x01;                        // status: 受信OK
+    p[12] = computeChecksum(p, 12);
+    p[13] = TWELITE_FOOTER;
+    lora.send(p, 14);
 }
 
 /**
@@ -683,7 +657,7 @@ void parseChildPacketV2(uint8_t* buffer, int length) {
         float temperature = (int16_t)((buffer[11] << 8) | buffer[12]) / 100.0f;
         float humidity    = (int16_t)((buffer[13] << 8) | buffer[14]) / 100.0f;
         float pressure    = ((uint16_t)((buffer[15] << 8) | buffer[16])) / 10.0f;  // ×10 decode
-        int8_t rssi       = (int8_t)buffer[17];
+        int8_t rssi       = (int8_t)g_lastRssi;   // RSSIはE220リンク値を使用
         uint8_t battery   = buffer[18];
 
         Serial.printf("[TWELITE] v3 from 0x%08X: %.2fC %.2f%% %.1fhPa RSSI:%d Bat:%d%%\n",
@@ -721,7 +695,7 @@ void parseChildPacketV2(uint8_t* buffer, int length) {
                             ((uint32_t)buffer[9] << 8)  | (uint32_t)buffer[10];
         float temperature = (int16_t)((buffer[11] << 8) | buffer[12]) / 100.0f;
         float humidity    = (int16_t)((buffer[13] << 8) | buffer[14]) / 100.0f;
-        int8_t rssi       = (int8_t)buffer[15];
+        int8_t rssi       = (int8_t)g_lastRssi;   // RSSIはE220リンク値を使用
         uint8_t battery   = buffer[16];
 
         Serial.printf("[TWELITE] v2 from 0x%08X: %.2fC %.2f%% RSSI:%d Bat:%d%%\n",
@@ -1139,9 +1113,9 @@ void sendPairingCommand(uint32_t parentIdHash, uint32_t targetChildId, uint8_t l
     packet[12] = computeChecksum(packet, 12);
     packet[13] = TWELITE_FOOTER;
 
-    // 3回送信
+    // 3回ブロードキャスト送信
     for (int i = 0; i < 3; i++) {
-        tweliteSerial.write(packet, 14);
+        lora.send(packet, 14);
         delay(WAKE_SIGNAL_INTERVAL);
     }
 }
@@ -1154,53 +1128,34 @@ void sendPairingCommand(uint32_t parentIdHash, uint32_t targetChildId, uint8_t l
 bool waitForPairingResponse(uint32_t targetChildId) {
     unsigned long startTime = millis();
     uint8_t buffer[64];
-    int bufferIndex = 0;
 
     while (millis() - startTime < PAIRING_RESPONSE_TIMEOUT) {
-        while (tweliteSerial.available()) {
-            uint8_t b = tweliteSerial.read();
+        int n = lora.recv(buffer, sizeof(buffer), nullptr, 500);
+        if (n < 14 || buffer[0] != TWELITE_HEADER) continue;
 
-            if (bufferIndex == 0 && b != TWELITE_HEADER) {
-                continue;
-            }
+        // ペアリング応答チェック
+        if (buffer[1] == PROTOCOL_VERSION && buffer[2] == TWELITE_CMD_PAIR_ACK) {
+            // チェックサム検証
+            uint8_t expectedChecksum = computeChecksum(buffer, n - 2);
+            if (buffer[n - 2] != expectedChecksum) continue;
 
-            buffer[bufferIndex++] = b;
+            // parentIdHash検証
+            uint32_t receivedHash = ((uint32_t)buffer[3] << 24) |
+                                    ((uint32_t)buffer[4] << 16) |
+                                    ((uint32_t)buffer[5] << 8) |
+                                    (uint32_t)buffer[6];
 
-            if (b == TWELITE_FOOTER && bufferIndex >= 14) {
-                // ペアリング応答チェック
-                if (buffer[1] == PROTOCOL_VERSION && buffer[2] == TWELITE_CMD_PAIR_ACK) {
-                    // チェックサム検証
-                    uint8_t expectedChecksum = computeChecksum(buffer, bufferIndex - 2);
-                    if (buffer[bufferIndex - 2] != expectedChecksum) {
-                        bufferIndex = 0;
-                        continue;
-                    }
+            uint32_t childId = ((uint32_t)buffer[7] << 24) |
+                               ((uint32_t)buffer[8] << 16) |
+                               ((uint32_t)buffer[9] << 8) |
+                               (uint32_t)buffer[10];
 
-                    // parentIdHash検証
-                    uint32_t receivedHash = ((uint32_t)buffer[3] << 24) |
-                                            ((uint32_t)buffer[4] << 16) |
-                                            ((uint32_t)buffer[5] << 8) |
-                                            (uint32_t)buffer[6];
+            uint8_t status = buffer[11];
 
-                    uint32_t childId = ((uint32_t)buffer[7] << 24) |
-                                       ((uint32_t)buffer[8] << 16) |
-                                       ((uint32_t)buffer[9] << 8) |
-                                       (uint32_t)buffer[10];
-
-                    uint8_t status = buffer[11];
-
-                    if (receivedHash == cachedParentIdHash && childId == targetChildId && status == 0x01) {
-                        return true;  // ペアリング成功
-                    }
-                }
-                bufferIndex = 0;
-            }
-
-            if (bufferIndex >= sizeof(buffer)) {
-                bufferIndex = 0;
+            if (receivedHash == cachedParentIdHash && childId == targetChildId && status == 0x01) {
+                return true;  // ペアリング成功
             }
         }
-        delay(10);
     }
 
     return false;
@@ -1720,6 +1675,90 @@ bool sendAllDataToServer() {
     return success;
 }
 
+/**
+ * 蓄積した1ラウンド分（親＋子機）からサーバ送信JSONを構築
+ */
+String buildRoundPayload(const RtcRound& r) {
+    struct tm ti; localtime_r(&r.ts, &ti);
+    char tsbuf[32]; strftime(tsbuf, sizeof(tsbuf), "%Y-%m-%dT%H:%M:%S+09:00", &ti);
+
+    String payload = "{";
+    payload += "\"parent_id\":\"" + String(DEVICE_ID) + "\",";
+    payload += "\"secret\":\"" + String(DEVICE_SECRET) + "\",";
+    payload += "\"timestamp\":\"" + String(tsbuf) + "\",";
+    payload += "\"boot_count\":" + String(bootCount) + ",";
+    payload += "\"parent\":{";
+    payload += "\"temperature\":" + String(r.pTemp, 2) + ",";
+    payload += "\"humidity\":" + String(r.pHumid, 2) + ",";
+    payload += "\"pressure\":" + String(r.pPres, 1) + ",";
+    payload += "\"battery\":" + String(r.pBat) + ",";
+    payload += "\"vbus_mv\":" + String(r.pVbus) + ",";
+    payload += "\"signal\":" + String(r.pSignal);
+    payload += "},";
+    payload += "\"children\":[";
+    for (int i = 0; i < r.childCount; i++) {
+        if (i) payload += ",";
+        char hexId[9]; snprintf(hexId, sizeof(hexId), "%08x", r.child[i].id);
+        payload += "{";
+        payload += "\"device_id\":\"" + String(hexId) + "\",";
+        payload += "\"temperature\":" + String(r.child[i].temp, 2) + ",";
+        payload += "\"humidity\":" + String(r.child[i].humid, 2) + ",";
+        payload += "\"pressure\":" + String(r.child[i].pres, 1) + ",";
+        payload += "\"rssi\":" + String(r.child[i].rssi) + ",";
+        payload += "\"battery\":" + String(r.child[i].bat) + ",";
+        payload += "\"received\":" + String(r.child[i].received ? "true" : "false");
+        payload += "}";
+    }
+    payload += "]}";
+    return payload;
+}
+
+/**
+ * 今回の計測（親＋子機）をRTC蓄積バッファに1ラウンド追加
+ */
+void storeRoundToRtc() {
+    if (rtcRoundCount >= MAX_RTC_ROUNDS) {
+        for (int i = 1; i < MAX_RTC_ROUNDS; i++) rtcRounds[i - 1] = rtcRounds[i];  // 最古を破棄
+        rtcRoundCount = MAX_RTC_ROUNDS - 1;
+    }
+    RtcRound& r = rtcRounds[rtcRoundCount];
+    time(&r.ts);
+    r.pTemp = parentData.temperature; r.pHumid = parentData.humidity; r.pPres = parentData.pressure;
+    r.pBat = parentData.batteryLevel; r.pVbus = parentData.vbusMv; r.pSignal = modemState.signalStrength;
+    r.childCount = 0;
+    for (int i = 0; i < MAX_CHILD_DEVICES; i++) {
+        if (cachedChildIds[i] == 0x00000000) continue;
+        RtcChild& c = r.child[r.childCount++];
+        c.id = childDataList[i].deviceId;
+        c.received = childDataList[i].received;
+        c.temp = childDataList[i].temperature;
+        c.humid = childDataList[i].humidity;
+        c.pres = childDataList[i].pressure;
+        c.rssi = childDataList[i].rssi;
+        c.bat = childDataList[i].battery;
+        c.lid = childDataList[i].logicalId;
+    }
+    rtcRoundCount++;
+    Serial.printf("[RTC] Stored round (buffered:%d, children:%d)\n", rtcRoundCount, r.childCount);
+}
+
+/**
+ * 蓄積した全ラウンドをまとめてサーバ送信（1回のLTEセッションで連続POST）
+ * 途中失敗したら中断し、バッファを保持して次回LTE起床時に再送する。
+ */
+bool uploadAllRounds() {
+    bool allOk = true;
+    for (int i = 0; i < rtcRoundCount; i++) {
+        String payload = buildRoundPayload(rtcRounds[i]);
+        Serial.printf("[HTTP] Round %d/%d (%d bytes)\n", i + 1, rtcRoundCount, payload.length());
+        if (!sendRawHTTPTCP("POST", String(SERVER_PATH), String(SERVER_HOST), payload)) {
+            allOk = false; modemNeedsReset = true; break;
+        }
+        delay(200);
+    }
+    return allOk;
+}
+
 String sendATCommand(const String& cmd, unsigned long timeout) {
     while (modemSerial.available()) modemSerial.read();
     modemSerial.println(cmd);
@@ -1749,7 +1788,12 @@ String sendATCommand(const String& cmd, unsigned long timeout) {
 void goToDeepSleep(uint64_t sleepTimeSec) {
     Serial.flush();
     gpio_hold_en((gpio_num_t)MODEM_PWRKEY_PIN);
-    gpio_hold_en((gpio_num_t)TWELITE_WAKE_PIN);  // LOW保持: 親機TWELITEをスリープ中も眠らせる
+    // E220をM0=1,M1=1(設定/ディープスリープモード)に固定してスリープ中も低消費に
+    // (次回起床時に initTwelite()→lora.begin() が再設定する)
+    pinMode(LORA_M0_PIN, OUTPUT); digitalWrite(LORA_M0_PIN, HIGH);
+    pinMode(LORA_M1_PIN, OUTPUT); digitalWrite(LORA_M1_PIN, HIGH);
+    gpio_hold_en((gpio_num_t)LORA_M0_PIN);
+    gpio_hold_en((gpio_num_t)LORA_M1_PIN);
     gpio_deep_sleep_hold_en();
     esp_sleep_enable_timer_wakeup(sleepTimeSec * 1000000ULL);
     Serial.println("[SLEEP] Entering deep sleep...");
