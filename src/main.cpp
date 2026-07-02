@@ -23,6 +23,7 @@
 #include <Wire.h>
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BME280.h>
+#include <Adafruit_SHT31.h>
 #include <HardwareSerial.h>
 #include <time.h>
 #include <sys/time.h>
@@ -105,6 +106,8 @@ int pendingChildCount = 0;
 
 // センサー・通信オブジェクト
 Adafruit_BME280 bme;
+Adafruit_SHT31 shtParent = Adafruit_SHT31();  // FS304-SHT3x（温湿度・防水）
+bool shtParentOk = false;
 XPowersPMU PMU;
 HardwareSerial modemSerial(1);   // SIM7080G
 HardwareSerial tweliteSerial(2); // E220 LoRa (旧TWELITE UART配線を流用)
@@ -204,67 +207,72 @@ uint32_t computeParentIdHashLocal(const char* deviceId) {
  *  - 失敗時はI2C再初期化リトライ（最大1回）
  */
 bool readParentSensors() {
-    const int NUM_SAMPLES = 3;
-    float temps[NUM_SAMPLES], humids[NUM_SAMPLES], presses[NUM_SAMPLES];
+    const int N = 3;
+    bool haveTH = false;   // 温湿度を取得できたか
+
+    // --- 温湿度: FS304-SHT3x 優先（3サンプル中央値）---
+    if (shtParentOk) {
+        float ts[N], hs[N];
+        int n = 0;
+        shtParent.readTemperature();  // ウォームアップ
+        delay(30);
+        for (int i = 0; i < N; i++) {
+            float t = shtParent.readTemperature();
+            float h = shtParent.readHumidity();
+            if (!isnan(t) && t >= -40 && t <= 125 && !isnan(h) && h >= 0 && h <= 100) {
+                int j = n - 1;
+                while (j >= 0 && ts[j] > t) { ts[j+1]=ts[j]; hs[j+1]=hs[j]; j--; }
+                ts[j+1]=t; hs[j+1]=h; n++;
+            }
+            if (i < N - 1) delay(40);
+        }
+        if (n > 0) {
+            parentData.temperature = ts[n/2];
+            parentData.humidity    = hs[n/2];
+            haveTH = true;
+        } else {
+            Serial.println("[SENSOR] SHT3x read failed, fallback to BME280");
+        }
+    }
+
+    // --- 気圧(+ SHT3x無/失敗時は温湿度も): BME280（3サンプル中央値）---
+    float temps[N], humids[N], presses[N];
     int validCount = 0;
-
-    // ウォームアップ（最初の1回は捨てる）
-    bme.readTemperature();
+    bme.readTemperature();  // ウォームアップ
     delay(50);
-
-    for (int i = 0; i < NUM_SAMPLES; i++) {
+    for (int i = 0; i < N; i++) {
         float t = bme.readTemperature();
         float h = bme.readHumidity();
         float p = bme.readPressure() / 100.0f;  // Pa → hPa
-
         if (!isnan(t) && t >= -40.0f && t <= 85.0f &&
             !isnan(h) && h >= 0.0f  && h <= 100.0f &&
             !isnan(p) && p >= 300.0f && p <= 1100.0f) {
-            // 挿入ソート（温度基準）
             int j = validCount - 1;
             while (j >= 0 && temps[j] > t) {
-                temps[j+1]   = temps[j];
-                humids[j+1]  = humids[j];
-                presses[j+1] = presses[j];
-                j--;
+                temps[j+1]=temps[j]; humids[j+1]=humids[j]; presses[j+1]=presses[j]; j--;
             }
-            temps[j+1]   = t;
-            humids[j+1]  = h;
-            presses[j+1] = p;
-            validCount++;
+            temps[j+1]=t; humids[j+1]=h; presses[j+1]=p; validCount++;
         }
-        if (i < NUM_SAMPLES - 1) delay(50);
+        if (i < N - 1) delay(50);
     }
 
-    if (validCount == 0) {
-        // リトライ: BME280再初期化
-        Serial.println("[SENSOR] BME280 read failed, reinit I2C...");
-        Wire.end();
-        delay(300);
-        Wire.begin(BME280_SDA_PIN, BME280_SCL_PIN);
-        if (!bme.begin(0x76) && !bme.begin(0x77)) {
-            Serial.println("[ERROR] BME280 reinit failed");
+    if (validCount > 0) {
+        int mid = validCount / 2;
+        parentData.pressure = presses[mid];
+        if (!haveTH) {  // SHT3xが無い/失敗なら温湿度もBME280から
+            parentData.temperature = temps[mid];
+            parentData.humidity    = humids[mid];
+            haveTH = true;
+        }
+    } else {
+        parentData.pressure = 0;   // BME280読めず（FS304は気圧なし）
+        if (!haveTH) {
             parentData.temperature = 0;
             parentData.humidity    = 0;
-            parentData.pressure    = 0;
-            return false;
+            return false;          // 両センサーとも取得不可
         }
-        delay(300);
-        float t = bme.readTemperature();
-        float h = bme.readHumidity();
-        float p = bme.readPressure() / 100.0f;
-        parentData.temperature = (!isnan(t) && t >= -40 && t <= 85) ? t : 0;
-        parentData.humidity    = (!isnan(h) && h >= 0 && h <= 100)  ? h : 0;
-        parentData.pressure    = (!isnan(p) && p >= 300 && p <= 1100) ? p : 0;
-        return parentData.temperature != 0;
     }
-
-    // 中央値採用
-    int mid = validCount / 2;
-    parentData.temperature = temps[mid];
-    parentData.humidity    = humids[mid];
-    parentData.pressure    = presses[mid];
-    return true;
+    return haveTH;
 }
 
 /**
@@ -324,6 +332,12 @@ void setup() {
     } else {
         Serial.println("[OK] BME280 initialized (parent)");
     }
+
+    // FS304-SHT3x（温湿度・防水）を同I2Cバスに追加。長ケーブル対策でクロックを下げる
+    Wire.setClock(50000);
+    shtParentOk = shtParent.begin(0x44) || shtParent.begin(0x45);
+    Serial.println(shtParentOk ? "[OK] SHT3x (FS304) initialized (parent)"
+                               : "[WARN] SHT3x not found (fallback to BME280)");
 
     // バッテリー電圧確認 (AXP2101 PMU)
     if (initPMU()) {
