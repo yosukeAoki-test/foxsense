@@ -570,9 +570,10 @@ bool collectChildData() {
             g_lastRssi = rssi;
             uint8_t ver = payload[1];
             uint8_t cmd = payload[2];
-            parseChildPacketV2(payload, n);
 
-            // DATAフレームを受理したら、その子機にACKを返す（子機は受信確認できる）
+            // 【2026-07 修正】DATA受理時は解析より先にACKを返す。半二重の折り返し
+            // 遅延で子機の受信窓(waitForDataAck)を逃さないよう、parseより前・即応答。
+            // (sendDataAck内で複数回送出して取りこぼしを防ぐ)
             if (cmd == TWELITE_CMD_DATA && (ver == 0x03 || ver == 0x02)) {
                 uint32_t hash = ((uint32_t)payload[3] << 24) | ((uint32_t)payload[4] << 16) |
                                 ((uint32_t)payload[5] << 8)  | (uint32_t)payload[6];
@@ -580,6 +581,8 @@ bool collectChildData() {
                                 ((uint32_t)payload[9] << 8)  | (uint32_t)payload[10];
                 if (hash == cachedParentIdHash) sendDataAck(hash, cid);
             }
+
+            parseChildPacketV2(payload, n);
 
             if (isAllChildDataReceived()) {
                 Serial.println("[LoRa] All child data received!");
@@ -606,7 +609,12 @@ void sendDataAck(uint32_t parentIdHash, uint32_t childId) {
     p[11] = 0x01;                        // status: 受信OK
     p[12] = computeChecksum(p, 12);
     p[13] = TWELITE_FOOTER;
-    lora.send(p, 14);
+    // 半二重の折り返しタイミングで子機がRX準備前だと取りこぼすため、
+    // 短い間隔で複数回送出して確実に受信窓(2.5s)内で拾わせる。
+    for (int i = 0; i < 3; i++) {
+        lora.send(p, 14);
+        delay(50);
+    }
 }
 
 /**
@@ -1491,6 +1499,11 @@ bool connectNetwork() {
                     // モデムがPSMスリープに入りUART無応答(CASTATE/CAOPENが空)になって
                     // 送信不達だった。PSMは省電力目的だが、サイクル内で送信を終える前に
                     // 寝られると困るため無効化する(deep-sleep自体はESP32側で行う)。
+                    // 【将来の省電力再設計】PSMを使うなら「全送信完了後・ESP deep-sleep
+                    //   直前」にのみ CPSMS=1 を投入し、かつ次回起床時にモデムをPSMから
+                    //   確実に復帰させる処理(DTRトグル/PWRKEYで叩き起こす+応答待ち)を
+                    //   modem初期化前に追加すること。これが無いと起床時に無応答で送信不達に
+                    //   戻る。実機での起床→復帰検証が必須のため本コミットでは無効のまま。
                     String psmResp = sendATCommand("AT+CPSMS=0", 3000);
                     Serial.printf("[MODEM] PSM disabled: '%s'\n", psmResp.c_str());
                     return true;
