@@ -174,7 +174,7 @@ uint8_t computeChecksum(uint8_t* buffer, int length);
 bool uploadCACert();
 bool fetchConfigFromServer();
 void sendPairingCommand(uint32_t parentIdHash, uint32_t targetChildId, uint8_t logicalId);
-bool waitForPairingResponse(uint32_t targetChildId);
+bool waitForPairingResponse(uint32_t targetChildId, unsigned long timeoutMs = PAIRING_RESPONSE_TIMEOUT);
 void sendDataAck(uint32_t parentIdHash, uint32_t childId);
 void storeRoundToRtc();
 String buildRoundPayload(const RtcRound& r);
@@ -1091,10 +1091,17 @@ void executePairingMode() {
         Serial.printf("[PAIRING] Pairing child 0x%08X (logical:%d)...\n",
                       pendingChildren[i].deviceId, pendingChildren[i].logicalId);
 
-        sendPairingCommand(cachedParentIdHash, pendingChildren[i].deviceId, pendingChildren[i].logicalId);
+        // 【2026-07 修正】pairバーストが1回(3パケット/300ms)だと子機の受信窓に
+        // 当たらずFAILEDになりやすい。送信バースト→短いACK待ちを複数ラウンド繰り返し、
+        // 子機が確実にpairを受信し500ms後のACKを親機が同ラウンドで拾えるようにする。
+        bool paired = false;
+        for (int round = 0; round < 8 && !paired; round++) {
+            sendPairingCommand(cachedParentIdHash, pendingChildren[i].deviceId, pendingChildren[i].logicalId);
+            paired = waitForPairingResponse(pendingChildren[i].deviceId, 1200);
+        }
 
         // ペアリング応答待ち
-        if (waitForPairingResponse(pendingChildren[i].deviceId)) {
+        if (paired) {
             Serial.printf("[PAIRING] Child 0x%08X paired successfully!\n", pendingChildren[i].deviceId);
             reportPairingResult(pendingChildren[i].deviceIdHex, "PAIRED");
         } else {
@@ -1145,11 +1152,11 @@ void sendPairingCommand(uint32_t parentIdHash, uint32_t targetChildId, uint8_t l
  * フォーマット: [0xA5][VERSION][CMD_PAIR_ACK][PARENT_ID_HASH_4bytes][CHILD_ID_4bytes][STATUS][CHECKSUM][0x5A]
  * 合計: 14バイト
  */
-bool waitForPairingResponse(uint32_t targetChildId) {
+bool waitForPairingResponse(uint32_t targetChildId, unsigned long timeoutMs) {
     unsigned long startTime = millis();
     uint8_t buffer[64];
 
-    while (millis() - startTime < PAIRING_RESPONSE_TIMEOUT) {
+    while (millis() - startTime < timeoutMs) {
         int n = lora.recv(buffer, sizeof(buffer), nullptr, 500);
         if (n < 14 || buffer[0] != TWELITE_HEADER) continue;
 
