@@ -48,14 +48,21 @@
 #define LORA_ADDR        0x0000 // 透過モードは全ノード同一
 
 // ===== 方式B: 子機起点プッシュ + deep-sleep のタイミング =====
+#ifdef TEST_PAIR
+// 通信テスト用: ペア後すぐ短間隔送信・factoryは長時間listenで確実にペア成立
+#define SEND_INTERVAL_SEC 30
+#define RESYNC_INTERVAL_SEC 15
+#define FACTORY_LISTEN_MS 300000       // 5分連続listen(親のペアバーストを確実に受信)
+#define FACTORY_SLEEP_SEC 2
+#else
 #define SEND_INTERVAL_SEC 1200         // 通常の送信間隔(秒) = 20分（親機と同じ）
 #define RESYNC_INTERVAL_SEC 90         // ACK取れず親の窓を探索(ハント)する時の短いsleep(秒)
+#define FACTORY_LISTEN_MS 6000         // ペアリング要求の受信窓(ms)
+#define FACTORY_SLEEP_SEC 12           // ペアリング待ちの短いsleep(秒)
+#endif
 #define ACK_WAIT_MS 2500               // 送信後にDATA_ACKを待つ時間(ms)
 #define TX_RETRY 3                     // 1起床あたりの送信リトライ回数
 #define TDMA_BACKOFF_MS 250            // リトライ/衝突回避のバックオフ基準(ms)×logicalId
-// 未ペアリング(commissioning)時
-#define FACTORY_LISTEN_MS 6000         // ペアリング要求の受信窓(ms)
-#define FACTORY_SLEEP_SEC 12           // ペアリング待ちの短いsleep(秒)
 
 // センサー
 #define SENSOR_WARMUP_MS 50

@@ -19,10 +19,12 @@
 
 // ===== ピン配置設定 (LILYGO T-SIM7080G-S3) =====
 
-// BME280 I2Cピン（Wire0使用）
-// IO45/IO46 はカメラ搭載時も空き → 配線変更不要
-#define BME280_SDA_PIN 45                  // IO45 = P1 "IO45"
-#define BME280_SCL_PIN 46                  // IO46 = P2 "IO46"
+// センサー I2Cピン（Wire0使用 / FS304-SHT31 温湿度）
+// 旧IO45/46は使わない: ESP32-S3のストラッピングピン(45=VDD_SPI電圧選択)で、
+// 4.7kプルアップを付けると起動時にフラッシュ電圧を誤選択し起動不能の恐れ。
+// → 非ストラッピングのGPIO17/18(左ヘッダ, 隣接)へ移設。定義名はBME280互換のまま。
+#define BME280_SDA_PIN 17                  // GPIO17 (左ヘッダ, U1TXD) = SHT31 SDA
+#define BME280_SCL_PIN 18                  // GPIO18 (左ヘッダ, U1RXD) = SHT31 SCL
 
 // SIM7080G モデムピン（オンボード固定）
 #define MODEM_TX_PIN 5                     // ESP32 TX → SIM7080G RX

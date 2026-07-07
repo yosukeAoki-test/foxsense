@@ -37,7 +37,11 @@
 
 // ディープスリープ間隔
 #define MEASUREMENT_INTERVAL_MIN 20  // 起床間隔20分（親子とも20分毎に起床）
+#ifdef TEST_FAST
+#define ROUNDS_PER_UPLOAD 1          // テスト: 毎起床でLTE送信
+#else
 #define ROUNDS_PER_UPLOAD 3          // LTE送信は3回に1回(20分×3≒1時間)。それまでRTCに蓄積
+#endif
 #define MAX_RTC_ROUNDS 4             // 蓄積上限(超過で最古を破棄)
 #define NTP_SYNC_INTERVAL_SEC (24 * 60 * 60)  // 24時間
 #define SKIP_BATTERY_CHECK true
@@ -170,7 +174,7 @@ uint8_t computeChecksum(uint8_t* buffer, int length);
 bool uploadCACert();
 bool fetchConfigFromServer();
 void sendPairingCommand(uint32_t parentIdHash, uint32_t targetChildId, uint8_t logicalId);
-bool waitForPairingResponse(uint32_t targetChildId);
+bool waitForPairingResponse(uint32_t targetChildId, unsigned long timeoutMs = PAIRING_RESPONSE_TIMEOUT);
 void sendDataAck(uint32_t parentIdHash, uint32_t childId);
 void storeRoundToRtc();
 String buildRoundPayload(const RtcRound& r);
@@ -323,8 +327,7 @@ void setup() {
     digitalWrite(MODEM_PWRKEY_PIN, LOW);  // アイドル状態
     digitalWrite(MODEM_DTR_PIN, LOW);
 
-    // BME280初期化（Wire0, SDA=IO2/CAM_SDA, SCL=IO1/CAM_SCK）
-    // カメラ搭載時はこのピンが競合するため配線変更が必要
+    // センサーI2C初期化（Wire0, SDA=GPIO17, SCL=GPIO18 / FS304-SHT31）
     Wire.begin(BME280_SDA_PIN, BME280_SCL_PIN);
     bool bmeOk = bme.begin(0x76) || bme.begin(0x77);
     if (!bmeOk) {
@@ -466,6 +469,9 @@ void setup() {
 
     // 20分グリッドまでスリープ
     uint64_t sleepDuration = calculateSleepDuration();
+#ifdef TEST_FAST
+    sleepDuration = 15;  // テスト: 15秒で再起床し毎回LTE送信を試行(観測用)
+#endif
     Serial.printf("\n[SLEEP] Deep sleep for %llu s (lteWake=%d)...\n", sleepDuration, lteWake);
     goToDeepSleep(sleepDuration);
 }
@@ -564,9 +570,10 @@ bool collectChildData() {
             g_lastRssi = rssi;
             uint8_t ver = payload[1];
             uint8_t cmd = payload[2];
-            parseChildPacketV2(payload, n);
 
-            // DATAフレームを受理したら、その子機にACKを返す（子機は受信確認できる）
+            // 【2026-07 修正】DATA受理時は解析より先にACKを返す。半二重の折り返し
+            // 遅延で子機の受信窓(waitForDataAck)を逃さないよう、parseより前・即応答。
+            // (sendDataAck内で複数回送出して取りこぼしを防ぐ)
             if (cmd == TWELITE_CMD_DATA && (ver == 0x03 || ver == 0x02)) {
                 uint32_t hash = ((uint32_t)payload[3] << 24) | ((uint32_t)payload[4] << 16) |
                                 ((uint32_t)payload[5] << 8)  | (uint32_t)payload[6];
@@ -574,6 +581,8 @@ bool collectChildData() {
                                 ((uint32_t)payload[9] << 8)  | (uint32_t)payload[10];
                 if (hash == cachedParentIdHash) sendDataAck(hash, cid);
             }
+
+            parseChildPacketV2(payload, n);
 
             if (isAllChildDataReceived()) {
                 Serial.println("[LoRa] All child data received!");
@@ -600,7 +609,12 @@ void sendDataAck(uint32_t parentIdHash, uint32_t childId) {
     p[11] = 0x01;                        // status: 受信OK
     p[12] = computeChecksum(p, 12);
     p[13] = TWELITE_FOOTER;
-    lora.send(p, 14);
+    // 半二重の折り返しタイミングで子機がRX準備前だと取りこぼすため、
+    // 短い間隔で複数回送出して確実に受信窓(2.5s)内で拾わせる。
+    for (int i = 0; i < 3; i++) {
+        lora.send(p, 14);
+        delay(50);
+    }
 }
 
 /**
@@ -1085,10 +1099,17 @@ void executePairingMode() {
         Serial.printf("[PAIRING] Pairing child 0x%08X (logical:%d)...\n",
                       pendingChildren[i].deviceId, pendingChildren[i].logicalId);
 
-        sendPairingCommand(cachedParentIdHash, pendingChildren[i].deviceId, pendingChildren[i].logicalId);
+        // 【2026-07 修正】pairバーストが1回(3パケット/300ms)だと子機の受信窓に
+        // 当たらずFAILEDになりやすい。送信バースト→短いACK待ちを複数ラウンド繰り返し、
+        // 子機が確実にpairを受信し500ms後のACKを親機が同ラウンドで拾えるようにする。
+        bool paired = false;
+        for (int round = 0; round < 8 && !paired; round++) {
+            sendPairingCommand(cachedParentIdHash, pendingChildren[i].deviceId, pendingChildren[i].logicalId);
+            paired = waitForPairingResponse(pendingChildren[i].deviceId, 1200);
+        }
 
         // ペアリング応答待ち
-        if (waitForPairingResponse(pendingChildren[i].deviceId)) {
+        if (paired) {
             Serial.printf("[PAIRING] Child 0x%08X paired successfully!\n", pendingChildren[i].deviceId);
             reportPairingResult(pendingChildren[i].deviceIdHex, "PAIRED");
         } else {
@@ -1139,11 +1160,11 @@ void sendPairingCommand(uint32_t parentIdHash, uint32_t targetChildId, uint8_t l
  * フォーマット: [0xA5][VERSION][CMD_PAIR_ACK][PARENT_ID_HASH_4bytes][CHILD_ID_4bytes][STATUS][CHECKSUM][0x5A]
  * 合計: 14バイト
  */
-bool waitForPairingResponse(uint32_t targetChildId) {
+bool waitForPairingResponse(uint32_t targetChildId, unsigned long timeoutMs) {
     unsigned long startTime = millis();
     uint8_t buffer[64];
 
-    while (millis() - startTime < PAIRING_RESPONSE_TIMEOUT) {
+    while (millis() - startTime < timeoutMs) {
         int n = lora.recv(buffer, sizeof(buffer), nullptr, 500);
         if (n < 14 || buffer[0] != TWELITE_HEADER) continue;
 
@@ -1343,37 +1364,12 @@ bool initModem() {
     String cpsiEarly = sendATCommand("AT+CPSI?", 3000);
     Serial.printf("[MODEM] Early CPSI: %s\n", cpsiEarly.c_str());
 
-    if (cpsiEarly.indexOf("LTE CAT-M1,Online") >= 0 || cpsiEarly.indexOf("NB-IOT,Online") >= 0) {
-        // Cat-M1登録済みでも CFUN=1,1 でTCP/HTTPスタックを再初期化 (deep sleepで失われる)
-        Serial.println("[MODEM] Already on Cat-M1 - CFUN=1,1 to reinitialize TCP stack...");
-        sendATCommand("AT+CFUN=1,1", 5000);
-        delay(20000);
-        // SIM準備を待つ
-        for (int i = 0; i < 15; i++) {
-            String cpin = sendATCommand("AT+CPIN?", 3000);
-            if (cpin.indexOf("READY") >= 0) {
-                Serial.println("[MODEM] SIM ready after CFUN=1,1");
-                break;
-            }
-            delay(2000);
-        }
-        // ネットワーク再登録待ち
-        Serial.println("[MODEM] Waiting for re-registration...");
-        for (int i = 0; i < 30; i++) {
-            String cpsiNew = sendATCommand("AT+CPSI?", 2000);
-            if (cpsiNew.indexOf("LTE CAT-M1,Online") >= 0 || cpsiNew.indexOf("NB-IOT,Online") >= 0) {
-                Serial.printf("[MODEM] Re-registered: %s\n", cpsiNew.substring(0, 40).c_str());
-                break;
-            }
-            delay(2000);
-        }
-        modemState.signalStrength = getSignalStrength();
-        if (!connectNetwork()) {
-            return false;
-        }
-        modemState.isConnected = true;
-        return true;
-    }
+    // 【2026-07 修正】CFUN=1,1 高速パスを無効化。
+    // 登録済みのとき CFUN=1,1 でモデムをリブートしてからコンテキスト設定しても
+    // CNACT の PDPコンテキスト活性化がタイムアウトする不具合があったため、
+    // 登録済みでも下記の「フル初期化」(CFUN=0→CGDCONT→CNCFG→CFUN=1→登録→
+    // connectNetwork = 4月まで正常に送信できていた既知の正常シーケンス)を毎回通す。
+    (void)cpsiEarly;
 
     // SIM情報取得
     String imsi = sendATCommand("AT+CIMI", 3000);
@@ -1388,6 +1384,10 @@ bool initModem() {
     // APN設定 (SORACOM) - シンプルな構成
     String apnCmd = String("AT+CGDCONT=1,\"IP\",\"") + LTE_APN + "\"";
     sendATCommand(apnCmd, 3000);
+
+    // SIM7080G固有: アプリ層PDPコンテキスト(CNACT用)にAPNをマッピング(無線オフ時に設定)。
+    // 4月まで動作していた既知シーケンス。connectNetwork内でも再設定するが念のため明示。
+    sendATCommand(String("AT+CNCFG=0,1,\"") + LTE_APN + "\"", 3000);
 
     // LTE only + Cat-M1 only (plan-D は Cat-M1 対応、NB-IoT非対応)
     sendATCommand("AT+CNMP=38", 3000);   // LTE only
@@ -1460,6 +1460,11 @@ bool initModem() {
 bool connectNetwork() {
     Serial.println("[MODEM] Connecting...");
 
+    // SIM7080G固有: アプリ層PDPコンテキスト(CNACT用)にAPNをマッピング。
+    // これが無いとCNACTが空APNで活性化しPDPコンテキストタイムアウトになる。
+    // (2026-07: commit 9107b87でCNCFGが誤削除され4月以降LTE送信不達だった不具合の修正)
+    sendATCommand(String("AT+CNCFG=0,1,\"") + LTE_APN + "\"", 3000);
+
     // CNACT=0 でコンテキスト0を使用 (CGDCONT=1がpdpidx=0に対応)
     sendATCommand("AT+CNACT=0,0", 5000);
     delay(1000);
@@ -1489,12 +1494,18 @@ bool connectNetwork() {
                     Serial.printf("[MODEM] CGACT=1,1: '%s'\n", cgact.c_str());
                     String cgactQ = sendATCommand("AT+CGACT?", 3000);
                     Serial.printf("[MODEM] CGACT?: '%s'\n", cgactQ.c_str());
-#if !AC_PROTOTYPE_MODE
-                    // PSM有効化: ディープスリープ中にSIM7080Gを低消費電力状態へ移行
-                    // T3412=20分 (00110100: 1min単位×20), T3324=0秒 (すぐPSMへ)
-                    String psmResp = sendATCommand("AT+CPSMS=1,,,\"00110100\",\"00000000\"", 3000);
-                    Serial.printf("[MODEM] PSM: '%s'\n", psmResp.c_str());
-#endif
+                    // 【2026-07 修正】PSMをここで有効化しない。
+                    // T3324=0(即PSM)だと接続確立後〜バッチ送信の間(LoRa収集60秒窓)に
+                    // モデムがPSMスリープに入りUART無応答(CASTATE/CAOPENが空)になって
+                    // 送信不達だった。PSMは省電力目的だが、サイクル内で送信を終える前に
+                    // 寝られると困るため無効化する(deep-sleep自体はESP32側で行う)。
+                    // 【将来の省電力再設計】PSMを使うなら「全送信完了後・ESP deep-sleep
+                    //   直前」にのみ CPSMS=1 を投入し、かつ次回起床時にモデムをPSMから
+                    //   確実に復帰させる処理(DTRトグル/PWRKEYで叩き起こす+応答待ち)を
+                    //   modem初期化前に追加すること。これが無いと起床時に無応答で送信不達に
+                    //   戻る。実機での起床→復帰検証が必須のため本コミットでは無効のまま。
+                    String psmResp = sendATCommand("AT+CPSMS=0", 3000);
+                    Serial.printf("[MODEM] PSM disabled: '%s'\n", psmResp.c_str());
                     return true;
                 }
             }
@@ -1548,10 +1559,27 @@ bool syncNTP() {
 bool sendRawHTTPTCP(const String& method, const String& path,
                     const String& host, const String& body) {
     // TCP接続 (HTTP port 80)
-    sendATCommand("AT+CACLOSE=0", 1000);  // 念のため既存接続をクローズ
-    String r = sendATCommand("AT+CAOPEN=0,0,\"TCP\",\"" + host + "\",80", 20000);
-    Serial.printf("[TCP] CAOPEN: '%s'\n", r.c_str());
-    if (r.indexOf("OK") < 0) {
+    // 直前のkeep-alive接続やモデム割当clientID漏れで client slot が埋まると
+    // CAOPENが空応答(モデム無応答)になるため、全スロットをクローズしてバッファを
+    // 排出し、状態を確認してから開く。CAOPENは数回リトライ。
+    // (2026-07: バッチ送信でCAOPENが空応答になり送信不達だった不具合の修正)
+    String cst = sendATCommand("AT+CASTATE?", 2000);
+    Serial.printf("[TCP] CASTATE before: '%s'\n", cst.c_str());
+    for (int cid = 0; cid <= 2; cid++) {
+        sendATCommand("AT+CACLOSE=" + String(cid), 1500);
+    }
+    while (modemSerial.available()) modemSerial.read();  // 残バッファ排出
+    delay(1500);
+    String r;
+    bool opened = false;
+    for (int attempt = 0; attempt < 3; attempt++) {
+        r = sendATCommand("AT+CAOPEN=0,0,\"TCP\",\"" + host + "\",80", 20000);
+        Serial.printf("[TCP] CAOPEN try%d: '%s'\n", attempt, r.c_str());
+        if (r.indexOf("+CAOPEN: 0,0") >= 0) { opened = true; break; }
+        sendATCommand("AT+CACLOSE=0", 2000);
+        delay(2000);
+    }
+    if (!opened) {
         return false;
     }
     // +CAOPEN: <clientID>,0 からclientIDを取得 (モデムが割り当て)
