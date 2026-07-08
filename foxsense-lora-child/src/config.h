@@ -56,7 +56,11 @@
 #define FACTORY_SLEEP_SEC 2
 #else
 #define SEND_INTERVAL_SEC 1200         // 通常の送信間隔(秒) = 20分（親機と同じ）
-#define RESYNC_INTERVAL_SEC 90         // ACK取れず親の窓を探索(ハント)する時の短いsleep(秒)
+// 【2026-07 修正】ハント間隔は親機受信窓(60秒)より十分短くする。
+// 90秒だとハント周期(≒101秒)>窓(60秒)となり送信の谷間に窓が入って外し続け、
+// 位相ビートで数時間当たらないことがあった(実機で2時間ゼロを確認)。
+// 20秒ならハント周期≒30秒で必ず窓内に送信が入り約1親機サイクルで収束する。
+#define RESYNC_INTERVAL_SEC 20         // ACK取れず親の窓を探索(ハント)する時の短いsleep(秒)
 #define FACTORY_LISTEN_MS 6000         // ペアリング要求の受信窓(ms)
 #define FACTORY_SLEEP_SEC 12           // ペアリング待ちの短いsleep(秒)
 #endif
