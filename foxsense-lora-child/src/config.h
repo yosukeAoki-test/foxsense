@@ -36,7 +36,7 @@
 // 【2026-07 電源変更】単三アルカリ2本直列＋TPS63020(3.3V)構成。
 // TPS63020出力は常に3.3V固定なので、電池残量は「生の電池電圧(TPS入力側)」を
 // 分圧してADC測定すること(レギュレータ後の3.3Vを測っても残量が分からない)。
-#define BATTERY_PIN 2          // GPIO2 (A0) ※電池側(TPS63020入力)を分圧して接続
+#define BATTERY_PIN 2          // GPIO2 (A0) ※電池側(TPS入力)を470k:470k分圧+A0-GND間100nF
 #define BATTERY_FULL_MV 3200   // 新品 2×1.6V
 #define BATTERY_EMPTY_MV 1900  // 終止 2×0.95V (TPS63020入力下限1.8V手前)
 

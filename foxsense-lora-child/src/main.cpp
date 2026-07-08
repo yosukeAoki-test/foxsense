@@ -301,7 +301,14 @@ bool readSHT3x(float& t, float& h) {
 
 /** バッテリー残量(0-100%)。分圧回路の係数は要調整 */
 uint8_t readBatteryPercent() {
-    uint32_t mv = analogReadMilliVolts(BATTERY_PIN) * 2;  // 分圧2:1想定(要ハード調整)
+    // 電池側(TPS63020入力)を 470k:470k=2:1 で分圧しGPIO2で測定。
+    // 高インピーダンス分圧(テブナン235k)のため A0-GND間に100nF必須。
+    // ADCのS&H充電を安定させるため 捨て読み＋settle＋平均 で読む。
+    analogReadMilliVolts(BATTERY_PIN);           // 捨て読み(S&H充電)
+    delay(5);
+    uint32_t sum = 0;
+    for (int i = 0; i < 8; i++) { sum += analogReadMilliVolts(BATTERY_PIN); delay(2); }
+    uint32_t mv = (sum / 8) * 2;                  // 2:1分圧 → ×2で電池電圧復元
     if (mv >= BATTERY_FULL_MV)  return 100;
     if (mv <= BATTERY_EMPTY_MV) return 0;
     return (uint8_t)(((mv - BATTERY_EMPTY_MV) * 100) / (BATTERY_FULL_MV - BATTERY_EMPTY_MV));
