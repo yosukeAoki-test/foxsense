@@ -32,10 +32,13 @@
 #define SHT3X_I2C_ADDR 0x44    // FS304-SHT3x デフォルト(0x45の個体もあり)
 #define SHT3X_I2C_CLOCK 50000  // 150cmケーブル対策で低クロック(50kHz)
 
-// バッテリー電圧ADC(分圧回路経由)。未使用なら固定値
-#define BATTERY_PIN 2          // GPIO2 (A0)
-#define BATTERY_FULL_MV 4200   // 満充電 (Li-ion想定)
-#define BATTERY_EMPTY_MV 3200  // 空
+// バッテリー電圧ADC(分圧回路経由)。
+// 【2026-07 電源変更】単三アルカリ2本直列＋TPS63020(3.3V)構成。
+// TPS63020出力は常に3.3V固定なので、電池残量は「生の電池電圧(TPS入力側)」を
+// 分圧してADC測定すること(レギュレータ後の3.3Vを測っても残量が分からない)。
+#define BATTERY_PIN 2          // GPIO2 (A0) ※電池側(TPS63020入力)を分圧して接続
+#define BATTERY_FULL_MV 3200   // 新品 2×1.6V
+#define BATTERY_EMPTY_MV 1900  // 終止 2×0.95V (TPS63020入力下限1.8V手前)
 
 // LED (XIAO C3 内蔵LED = GPIO8, アクティブLow)
 #define LED_PIN 8
