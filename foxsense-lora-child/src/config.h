@@ -39,6 +39,9 @@
 #define BATTERY_PIN 2          // GPIO2 (A0) ※電池側(TPS入力)を470k:470k分圧+A0-GND間100nF
 #define BATTERY_FULL_MV 3200   // 新品 2×1.6V
 #define BATTERY_EMPTY_MV 1900  // 終止 2×0.95V (TPS63020入力下限1.8V手前)
+// 電池電圧の個体校正オフセット(mV)。3点校正(2.8/3.0/3.3V)で全域-65mVと判明→+65で補正。
+// ※この値はこの1台の実測。個体毎にADCオフセット/抵抗誤差が異なるので本来は台別。
+#define BATTERY_CAL_OFFSET_MV 65
 
 // LED (XIAO C3 内蔵LED = GPIO8, アクティブLow)
 #define LED_PIN 8

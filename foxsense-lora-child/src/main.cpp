@@ -66,6 +66,47 @@ void setup() {
     delay(50);
     Serial.println("\n[FoxSense LoRa Child / push mode]");
 
+#ifdef BATT_CAL
+    // 【電池ADC校正・ログ方式】-DBATT_CAL でビルド時のみ有効。
+    // 起動毎にA0を測定しNVS(battcal)へ追記。電源を切替え再投入する度に1件記録。
+    // 毎起動で全ログをシリアルにダンプ(後でUSB接続して読める)。
+    // 手順: 2.8V →(電源OFF/ON)→ 3.0V →(OFF/ON)→ 3.3V の3回。
+    // ※分圧入力(電池+ノード)にその電圧を入れること。本番readBatteryPercintと同じADC経路。
+    pinMode(LED_PIN, OUTPUT); digitalWrite(LED_PIN, HIGH);
+#ifdef BATT_CAL_CLEAR
+    { Preferences pc; pc.begin("battcal", false); pc.clear(); pc.end(); }
+    Serial.println("[CAL] === log CLEARED ===");
+#endif
+    analogReadMilliVolts(BATTERY_PIN); delay(200);        // warm-up + settle
+    uint32_t racc = 0;
+    for (int i = 0; i < 32; i++) { racc += analogReadMilliVolts(BATTERY_PIN); delay(3); }
+    uint32_t raw = racc / 32;
+
+    // 有効な測定(分圧に電圧あり)のみ記録。USB起動等でA0≈0(<300mV)なら記録しない=stale混入防止。
+    if (raw > 300) {
+        Preferences pc; pc.begin("battcal", false);
+        int nlog = pc.getInt("n", 0);
+        char ckey[8]; snprintf(ckey, sizeof(ckey), "v%d", nlog);
+        pc.putUInt(ckey, raw);
+        pc.putInt("n", nlog + 1);
+        pc.end();
+    }
+    // 以降ループで全ログを繰り返し表示(native USBの起動直後取りこぼし対策=いつ接続しても読める)
+    while (true) {
+        Preferences pr; pr.begin("battcal", true);
+        int cnt = pr.getInt("n", 0);
+        Serial.printf("\n[CAL] ===== log %d entries (今回の測定 A0=%u mV) =====\n", cnt, raw);
+        for (int i = 0; i < cnt; i++) {
+            char k[8]; snprintf(k, sizeof(k), "v%d", i);
+            uint32_t v = pr.getUInt(k, 0);
+            Serial.printf("[CAL] #%d  A0=%u mV  x2=%u mV\n", i, v, v * 2);
+        }
+        pr.end();
+        Serial.println("[CAL] ===== 電源OFF/ONで次の電圧を記録 =====");
+        delay(2000);
+    }
+#endif
+
     // 前回deep-sleepで保持したM0/M1ホールドを解除（E220再設定のため）
     releaseGpioHolds();
 
@@ -308,7 +349,9 @@ uint8_t readBatteryPercent() {
     delay(5);
     uint32_t sum = 0;
     for (int i = 0; i < 8; i++) { sum += analogReadMilliVolts(BATTERY_PIN); delay(2); }
-    uint32_t mv = (sum / 8) * 2;                  // 2:1分圧 → ×2で電池電圧復元
+    // 2:1分圧 → ×2で電池電圧復元。3点校正(2.8/3.0/3.3V)で全域-65mV(ゲイン≒1.0の
+    // ほぼ純オフセット=ADCオフセット)と判明→ +65mVで補正(残差±3mV)。※個体校正値。
+    uint32_t mv = (sum / 8) * 2 + BATTERY_CAL_OFFSET_MV;
     if (mv >= BATTERY_FULL_MV)  return 100;
     if (mv <= BATTERY_EMPTY_MV) return 0;
     return (uint8_t)(((mv - BATTERY_EMPTY_MV) * 100) / (BATTERY_FULL_MV - BATTERY_EMPTY_MV));
