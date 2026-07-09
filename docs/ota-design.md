@@ -67,31 +67,32 @@ WiFiは非搭載のため、**SIM7080G（SORACOM Cat-M1/NB-IoT）経由でサー
 
 ---
 
-## 3. パーティション変更（最初に1回だけ有線焼き直しが必要）
+## 3. パーティション（**変更不要**・OTA構成は既に存在）
 
-現状 `platformio.ini` に `board_build.partitions` の指定がなく、**OTA用の2面構成になっていない**。OTAには `otadata` + `ota_0`/`ota_1` を持つレイアウトが必須。
+> **【2026-07-09 訂正】** 当初「OTA用2面構成になっていない・パーティション変更が必要」と記載していたが、
+> 実機ビルドの `partitions.bin` をデコードした結果、**既に otadata + ota_0/ota_1 を持つOTA対応レイアウト**
+> だった（PlatformIOのesp32-s3-devkitc-1デフォルト）。**パーティション変更もそのための移行フラッシュも不要。**
 
-### 変更内容
-`platformio.ini` に追記：
-```ini
-board_build.partitions = default_16MB.csv
-```
+### 現状のパーティション（`.pio/build/.../partitions.bin` 実測, 2026-07-09）
+| name     | type | subtype  | offset    | size          |
+|----------|------|----------|-----------|---------------|
+| nvs      | data | nvs      | 0x9000    | 20K           |
+| otadata  | data | ota      | 0xe000    | 8K            |
+| app0     | app  | ota_0    | 0x10000   | **3264K (3.19MB)** |
+| app1     | app  | ota_1    | 0x340000  | **3264K (3.19MB)** |
+| spiffs   | data | spiffs   | 0x670000  | 1536K         |
+| coredump | data | coredump | 0x7f0000  | 64K           |
 
-`default_16MB.csv`（espressif32同梱）のレイアウト：
-| name     | type | subtype  | offset    | size     |
-|----------|------|----------|-----------|----------|
-| nvs      | data | nvs      | 0x9000    | 0x5000   |
-| otadata  | data | ota      | 0xe000    | 0x2000   |
-| app0     | app  | ota_0    | 0x10000   | 0x640000 (6.5MB) |
-| app1     | app  | ota_1    | 0x650000  | 0x640000 (6.5MB) |
-| spiffs   | data | spiffs   | 0xc90000  | 0x360000 |
-| coredump | data | coredump | 0xff0000  | 0x10000  |
+- **`otadata` あり** → bootloaderがOTA起動面を選択可能。**`Update.h` がそのまま使える**。
+- app片面 **3264K**、現行ファーム ~442KB → 余裕。
+- `nvs` は 0x9000 → **ペアリング等のNVSは維持**。
+- RTCメモリ（`RTC_DATA_ATTR`）は flash 外で影響なし。
 
-- アプリ領域が **片面6.5MB** あるので現行ファーム（数百KB〜）は余裕。
-- `nvs` のオフセットは 0x9000 のまま → **保存済み設定/NVSは消えない**。
-- RTCメモリ（`RTC_DATA_ATTR` のキャッシュ群）は flash 外なので影響なし。ただし**この焼き直し時はディープスリープ電源が一旦切れる**ため RTC キャッシュはリセットされる（=次回 config フェッチが走る、問題なし）。
-
-> ⚠️ このパーティション変更を反映する **最初の書き込みだけは USB 有線**で行う必要がある。以降はOTAで更新可能。
+### 有線フラッシュについて
+- **パーティション移行のための有線焼き直しは不要**。
+- ただし **performOta() を積んだ「最初のOTA対応ファーム」は通常の有線フラッシュが1回必要**
+  （現行ファームにperformOtaが無いため。これはパーティション変更ではなく普通の更新）。以降はOTAで更新可能。
+- **親機がアクセス可能なうちにこの初回フラッシュを済ませておくのが得策**（現地設置後は有線困難）。
 
 ---
 
@@ -340,8 +341,9 @@ body: { fromCode, toCode, status: "SUCCESS"|"FAILED", error? }
 ## 9. 実装タスク分解
 
 ### ファーム（`src/`）
-- [ ] `platformio.ini`: `board_build.partitions = default_16MB.csv` 追加 → **有線で1回フラッシュ**
+- [x] ~~パーティション変更~~ → **不要**（既にota_0/ota_1構成。§3訂正参照）
 - [ ] `config.h`: `FIRMWARE_VERSION` / `FIRMWARE_VERSION_CODE` 追加
+- [ ] performOta実装後、**最初のOTA対応ファームだけ有線で1回フラッシュ**（親機アクセス可能なうちに）
 - [ ] `fetchConfigFromServer()`: GETに `&fw=` 付与、レスポンスJSONの `firmware` をパース（RTC不要、ローカル変数でOK）
 - [ ] `performOta()` 新規実装（`Update.h` 使用、CARECV→`Update.write` 逐次、MD5検証）
 - [ ] メインループ：センサ送信・config取得後、`firmware`あり＆事前条件OKなら `performOta()` 呼び出し
@@ -369,7 +371,7 @@ body: { fromCode, toCode, status: "SUCCESS"|"FAILED", error? }
 - HTTP/1.1 keep-alive を使う（HTTP/1.0だとバッファ解放レースの既知問題）。
 - `+CAOPEN` の clientID はモデム割当で要求値と異なる場合あり → レスポンスからパースして使う。
 - 読み取りループの終端は `response.endsWith("\r\nOK\r\n")` で判定（`indexOf("OK")` 不可）。
-- パーティション変更後の**初回だけ有線フラッシュ必須**。これを忘れるとOTA面が無く失敗する。
+- ~~パーティション変更後の初回だけ有線フラッシュ必須~~ → **【2026-07-09訂正】パーティションは既にOTA対応（変更不要）**。performOtaを積んだ最初のファームだけ通常の有線フラッシュが1回要る（§3参照）。
 - **【2026-07 追記】CNCFG(APNマッピング) が無いと PDP activation がタイムアウトし、OTAのTCP接続以前に失敗する**。connectNetworkでCNCFGを毎回投入すること。
 - **【2026-07 追記】PSMをOTAダウンロード中に有効化しない**。接続確立〜受信の間にモデムがPSMスリープしUART無応答になる。performOta冒頭の `AT+CPSMS=0` は必須。
 - **【2026-07 追記】CAOPENは空応答(モデム無応答)で失敗することがある**（keep-alive残socket / スロット詰まり）。全スロットクローズ+バッファ排出+リトライで対応（§4.3）。
