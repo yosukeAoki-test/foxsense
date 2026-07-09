@@ -296,6 +296,17 @@ void setup() {
     Serial.begin(115200);
     delay(50);
 
+    // 【2026-07 修正・重大バグ】前回deep-sleepで固定したM0/M1/PWRKEYのgpio_holdを解除する。
+    // これが無いとM0/M1がHIGHラッチのままで、起床後のlora.begin()がE220を透過モードに
+    // 戻せず、E220のLoRa RX/TXが死ぬ(親機のLTEは別系統なので生き続けるが子機を受信できない)。
+    // 症状: 電源リセット(コールドブート=ラッチ消える)直後だけ子機を受信し、以降のdeep-sleep
+    // 起床では受信不能→子機は一晩ハントして電池を無駄消費。子機は元々releaseGpioHolds()で
+    // 解除していたが親機だけ抜けていた。
+    gpio_hold_dis((gpio_num_t)LORA_M0_PIN);
+    gpio_hold_dis((gpio_num_t)LORA_M1_PIN);
+    gpio_hold_dis((gpio_num_t)MODEM_PWRKEY_PIN);
+    gpio_deep_sleep_hold_dis();
+
     bootCount++;
 
     Serial.println("\n=============================================");
