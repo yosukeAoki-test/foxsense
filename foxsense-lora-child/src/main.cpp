@@ -34,6 +34,7 @@ Preferences prefs;
 DeviceState deviceState = STATE_FACTORY_DEFAULT;
 uint32_t pairedParentIdHash = 0;
 uint8_t  myLogicalId = 0;
+RTC_DATA_ATTR uint16_t g_huntCount = 0;   // 連続ハント回数(deep-sleep間保持,ハント上限用)
 uint32_t myDeviceId = 0;
 bool     shtOk = false;
 
@@ -140,8 +141,22 @@ void setup() {
         Serial.printf("[INFO] Paired hash:0x%08X LID:%u\n", pairedParentIdHash, myLogicalId);
         // 測定 → 送信 → ACK待ち（リトライ）
         bool acked = runPushCycle();
-        // ACK有り: 通常間隔でsleep / ACK無し: 短くして親の窓を探索
-        deepSleep(acked ? SEND_INTERVAL_SEC : RESYNC_INTERVAL_SEC);
+        // 【ハント上限(電池保護)】ACK有り:通常間隔でsleep+カウンタ解除。
+        // ACK無し:MAX_HUNT回まで短sleepでハント(親の窓を掃引)、超えたら通常間隔の
+        // 省電力バックオフに落とす。BACKOFF回後にカウンタ解除しハント再挑戦。
+        if (acked) {
+            g_huntCount = 0;
+            deepSleep(SEND_INTERVAL_SEC);
+        } else {
+            g_huntCount++;
+            if (g_huntCount <= MAX_HUNT) {
+                deepSleep(RESYNC_INTERVAL_SEC);               // ハント継続(短sleep)
+            } else {
+                if (g_huntCount >= MAX_HUNT + HUNT_BACKOFF_CYCLES) g_huntCount = 0;
+                Serial.printf("[HUNT] cap reached -> backoff sleep (n=%u)\n", g_huntCount);
+                deepSleep(SEND_INTERVAL_SEC);                 // 省電力バックオフ(通常間隔)
+            }
+        }
     } else {
         Serial.println("[INFO] Factory default - listening for pairing");
         bool paired = listenForPairing(FACTORY_LISTEN_MS);

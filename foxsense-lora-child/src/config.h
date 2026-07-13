@@ -73,6 +73,12 @@
 #define ACK_WAIT_MS 2500               // 送信後にDATA_ACKを待つ時間(ms)
 #define TX_RETRY 3                     // 1起床あたりの送信リトライ回数
 #define TDMA_BACKOFF_MS 250            // リトライ/衝突回避のバックオフ基準(ms)×logicalId
+// 【2026-07 ハント上限(電池保護)】親機不在時にRESYNC間隔でハントし続けると
+// 電池を著しく消費する(同期時0.2mA→ハント約9mA)。MAX_HUNT回ハントして親の窓に
+// 当たらなければ(≒1親サイクル掃引しても不在)、通常間隔(SEND_INTERVAL)の省電力
+// バックオフに落とす。BACKOFF回バックオフ後に再度ハースト再挑戦して復帰も図る。
+#define MAX_HUNT 40                    // 連続ハント上限(RESYNC20s×40≒20分=約1親サイクル)
+#define HUNT_BACKOFF_CYCLES 3          // 上限到達後、通常間隔でsleepする回数→その後ハント再開
 
 // センサー
 #define SENSOR_WARMUP_MS 50
