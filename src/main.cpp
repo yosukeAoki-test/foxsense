@@ -44,6 +44,13 @@
 #endif
 #define MAX_RTC_ROUNDS 4             // 蓄積上限(超過で最古を破棄)
 #define NTP_SYNC_INTERVAL_SEC (24 * 60 * 60)  // 24時間
+
+// 【明示同期】親のDATA_ACKに「次の受信窓が開くまでの秒数」を載せ、子機がその窓中央を
+// 狙って寝ることで、子機の自RC誤差を毎サイクル親のNTP時計にリセットする(誤差が累積しない)。
+// 次窓オフセット=grid境界から窓openまでの概算。次起床がLTE(モデム初期化で窓が遅れる)かで
+// 変える。実測とのズレは窓幅(CHILD_RESPONSE_TIMEOUT=90s)で吸収する。
+#define NEXT_WINDOW_LTE_OFFSET_SEC    40   // 次がLTE起床時の grid→窓open 概算(モデム初期化分)
+#define NEXT_WINDOW_NORMAL_OFFSET_SEC  3   // 次が非LTE起床時の grid→窓open 概算
 #define SKIP_BATTERY_CHECK true
 
 // 子機データ構造体
@@ -176,6 +183,7 @@ bool fetchConfigFromServer();
 void sendPairingCommand(uint32_t parentIdHash, uint32_t targetChildId, uint8_t logicalId);
 bool waitForPairingResponse(uint32_t targetChildId, unsigned long timeoutMs = PAIRING_RESPONSE_TIMEOUT);
 void sendDataAck(uint32_t parentIdHash, uint32_t childId);
+uint16_t secondsToNextWindow();
 void storeRoundToRtc();
 String buildRoundPayload(const RtcRound& r);
 bool uploadAllRounds();
@@ -609,7 +617,8 @@ bool collectChildData() {
  * データ受信ACK送信: [A5][VER][0x12][HASH_4][CHILD_ID_4][STATUS][CS][5A] = 14B
  */
 void sendDataAck(uint32_t parentIdHash, uint32_t childId) {
-    uint8_t p[14];
+    uint16_t nextWin = secondsToNextWindow();  // 【明示同期】次の受信窓openまでの秒数
+    uint8_t p[16];
     p[0] = TWELITE_HEADER;
     p[1] = PROTOCOL_VERSION;
     p[2] = TWELITE_CMD_DATA_ACK;
@@ -618,14 +627,36 @@ void sendDataAck(uint32_t parentIdHash, uint32_t childId) {
     p[7] = (childId >> 24) & 0xFF; p[8] = (childId >> 16) & 0xFF;
     p[9] = (childId >> 8) & 0xFF;  p[10] = childId & 0xFF;
     p[11] = 0x01;                        // status: 受信OK
-    p[12] = computeChecksum(p, 12);
-    p[13] = TWELITE_FOOTER;
+    p[12] = (nextWin >> 8) & 0xFF;       // 次窓まで秒(上位) ← 明示同期
+    p[13] = nextWin & 0xFF;              // 次窓まで秒(下位)
+    p[14] = computeChecksum(p, 14);
+    p[15] = TWELITE_FOOTER;
     // 半二重の折り返しタイミングで子機がRX準備前だと取りこぼすため、
     // 短い間隔で複数回送出して確実に受信窓(2.5s)内で拾わせる。
     for (int i = 0; i < 3; i++) {
-        lora.send(p, 14);
+        lora.send(p, 16);
         delay(50);
     }
+}
+
+/**
+ * 【明示同期】現在(ACK送出時)から親機の「次の受信窓が開く」までの秒数を返す。
+ * = 次の20分グリッド境界(NTP壁時計)までの秒数 + 次起床の窓オフセット。
+ * 子機はこの値+窓中央狙いオフセットで寝て、毎サイクル親時計に再同期する。
+ */
+uint16_t secondsToNextWindow() {
+    time_t now; struct tm ti;
+    time(&now); localtime_r(&now, &ti);
+    int grid = MEASUREMENT_INTERVAL_MIN * 60;              // 1200s
+    int intoGrid = (ti.tm_min * 60 + ti.tm_sec) % grid;    // 現グリッド内の経過秒
+    int toNextGrid = grid - intoGrid;                      // 次グリッド境界まで
+    // 次起床がLTE(モデム初期化で窓openが遅れる)かどうか。wakeCounterは本起床で加算済み。
+    bool nextLte = (!configFetched) || (((wakeCounter + 1) % ROUNDS_PER_UPLOAD) == 0);
+    int off = nextLte ? NEXT_WINDOW_LTE_OFFSET_SEC : NEXT_WINDOW_NORMAL_OFFSET_SEC;
+    long v = (long)toNextGrid + off;
+    if (v < 1) v = 1;
+    if (v > 65535) v = 65535;
+    return (uint16_t)v;
 }
 
 /**

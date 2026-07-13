@@ -35,6 +35,7 @@ DeviceState deviceState = STATE_FACTORY_DEFAULT;
 uint32_t pairedParentIdHash = 0;
 uint8_t  myLogicalId = 0;
 RTC_DATA_ATTR uint16_t g_huntCount = 0;   // 連続ハント回数(deep-sleep間保持,ハント上限用)
+uint16_t g_ackNextWindowSec = 0;          // 【明示同期】親ACKが返す「次窓まで秒」(0=未提供/旧親)
 uint32_t myDeviceId = 0;
 bool     shtOk = false;
 
@@ -150,7 +151,18 @@ void setup() {
         // 省電力バックオフに落とす。BACKOFF回後にカウンタ解除しハント再挑戦。
         if (acked) {
             g_huntCount = 0;
-            deepSleep(SEND_INTERVAL_SEC);
+            // 【明示同期】親ACKが「次窓まで秒」を返したら、その次窓の中央を狙って寝る。
+            // これで毎サイクル親のNTP時計に再同期し、自機RC誤差が累積しない。
+            // 旧親/未提供(=0)なら従来通りSEND_INTERVAL固定でfallback。
+            uint32_t sleepSec = SEND_INTERVAL_SEC;
+            if (g_ackNextWindowSec > 0) {
+                int32_t s = (int32_t)g_ackNextWindowSec + WINDOW_AIM_OFFSET_SEC - CHILD_WAKE_LATENCY_SEC;
+                if (s < 5) s = 5;                 // 異常に小さい値のガード
+                sleepSec = (uint32_t)s;
+                Serial.printf("[SYNC] next window in %us -> sleep %us (aim mid)\n",
+                              g_ackNextWindowSec, sleepSec);
+            }
+            deepSleep(sleepSec);
         } else {
             g_huntCount++;
 #ifdef HUNT_TEST
@@ -213,6 +225,7 @@ uint8_t computePacketChecksum(uint8_t* buffer, int length) {
  * 戻り値: true=ACK受信(親機が受信窓を開いていた), false=未ACK(ハントへ)
  */
 bool runPushCycle() {
+    g_ackNextWindowSec = 0;   // 【明示同期】今サイクルのACKで上書き(旧親/未受信なら0のまま)
     float t = 0, h = 0;
     readSHT3x(t, h);
     uint8_t battery = readBatteryPercent();
@@ -247,7 +260,11 @@ bool waitForDataAck(uint32_t parentIdHash, uint32_t timeoutMs) {
                         ((uint32_t)buf[5] << 8)  | (uint32_t)buf[6];
         uint32_t cid  = ((uint32_t)buf[7] << 24) | ((uint32_t)buf[8] << 16) |
                         ((uint32_t)buf[9] << 8)  | (uint32_t)buf[10];
-        if (hash == parentIdHash && cid == myDeviceId && buf[11] == 0x01) return true;
+        if (hash == parentIdHash && cid == myDeviceId && buf[11] == 0x01) {
+            // 【明示同期】16Bの新ACKなら「次窓まで秒」を採用。14Bの旧ACKなら0のまま(fallback)。
+            if (n >= 16) g_ackNextWindowSec = ((uint16_t)buf[12] << 8) | buf[13];
+            return true;
+        }
     }
     return false;
 }
