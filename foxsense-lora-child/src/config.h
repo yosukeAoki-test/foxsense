@@ -79,6 +79,14 @@
 // バックオフに落とす。BACKOFF回バックオフ後に再度ハースト再挑戦して復帰も図る。
 #define MAX_HUNT 40                    // 連続ハント上限(RESYNC20s×40≒20分=約1親サイクル)
 #define HUNT_BACKOFF_CYCLES 3          // 上限到達後、通常間隔でsleepする回数→その後ハント再開
+#ifdef HUNT_TEST                       // テスト用: 上限到達を数分で確認
+#undef MAX_HUNT
+#undef HUNT_BACKOFF_CYCLES
+#undef SEND_INTERVAL_SEC
+#define MAX_HUNT 4
+#define HUNT_BACKOFF_CYCLES 2
+#define SEND_INTERVAL_SEC 60           // バックオフも短く(60s)して観察しやすく
+#endif
 
 // センサー
 #define SENSOR_WARMUP_MS 50

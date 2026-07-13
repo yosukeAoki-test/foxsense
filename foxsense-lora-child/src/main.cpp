@@ -66,6 +66,10 @@ void setup() {
     Serial.begin(115200);   // USB CDC (デバッグ)
     delay(50);
     Serial.println("\n[FoxSense LoRa Child / push mode]");
+#ifdef HUNT_TEST
+    Serial.printf("[BOOT] wake_cause=%d (4=TIMER, 0=RESET/PowerOn)  g_huntCount=%u\n",
+                  (int)esp_sleep_get_wakeup_cause(), g_huntCount);
+#endif
 
 #ifdef BATT_CAL
     // 【電池ADC校正・ログ方式】-DBATT_CAL でビルド時のみ有効。
@@ -149,6 +153,9 @@ void setup() {
             deepSleep(SEND_INTERVAL_SEC);
         } else {
             g_huntCount++;
+#ifdef HUNT_TEST
+            Serial.printf("[HUNT] g_huntCount=%u (MAX_HUNT=%d)\n", g_huntCount, MAX_HUNT);
+#endif
             if (g_huntCount <= MAX_HUNT) {
                 deepSleep(RESYNC_INTERVAL_SEC);               // ハント継続(短sleep)
             } else {
