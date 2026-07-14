@@ -45,12 +45,13 @@
 #define MAX_RTC_ROUNDS 4             // 蓄積上限(超過で最古を破棄)
 #define NTP_SYNC_INTERVAL_SEC (24 * 60 * 60)  // 24時間
 
-// 【明示同期】親のDATA_ACKに「次の受信窓が開くまでの秒数」を載せ、子機がその窓中央を
-// 狙って寝ることで、子機の自RC誤差を毎サイクル親のNTP時計にリセットする(誤差が累積しない)。
-// 次窓オフセット=grid境界から窓openまでの概算。次起床がLTE(モデム初期化で窓が遅れる)かで
-// 変える。実測とのズレは窓幅(CHILD_RESPONSE_TIMEOUT=90s)で吸収する。
-#define NEXT_WINDOW_LTE_OFFSET_SEC    40   // 次がLTE起床時の grid→窓open 概算(モデム初期化分)
-#define NEXT_WINDOW_NORMAL_OFFSET_SEC  3   // 次が非LTE起床時の grid→窓open 概算
+// 【明示同期+窓のNTP固定】親のDATA_ACKに「次の受信窓が開くまでの秒数」を載せ、子機が
+// その窓中央を狙って寝ることで、子機の自RC誤差を毎サイクル親のNTP時計にリセットする。
+// 【重要】親機自身もRC発振器ドリフトでグリッドより早/遅く起床する(実測で約60s早起きの例)。
+// そのままだと受信窓が「親の起床時刻」に固定され、子機が狙う「NTP絶対時刻」とズレて外す。
+// 対策: 親は起床後NTPで grid境界+WINDOW_OPEN_OFFSET_SEC まで待ってから窓を開く=窓位置を
+// 絶対時刻に固定。OFFSETはLTEモデム初期化(実測~76s)を吸収できる値にする(窓はLTE初期化の後)。
+#define WINDOW_OPEN_OFFSET_SEC 100   // grid境界→受信窓openの固定オフセット(NTP絶対)。~76sのLTE初期化+余裕
 #define SKIP_BATTERY_CHECK true
 
 // 子機データ構造体
@@ -184,6 +185,7 @@ void sendPairingCommand(uint32_t parentIdHash, uint32_t targetChildId, uint8_t l
 bool waitForPairingResponse(uint32_t targetChildId, unsigned long timeoutMs = PAIRING_RESPONSE_TIMEOUT);
 void sendDataAck(uint32_t parentIdHash, uint32_t childId);
 uint16_t secondsToNextWindow();
+void waitUntilWindowOpen();
 void storeRoundToRtc();
 String buildRoundPayload(const RtcRound& r);
 bool uploadAllRounds();
@@ -454,6 +456,10 @@ void setup() {
     Serial.printf("  Parent: %.2fC %.2f%% %.1fhPa\n",
                   parentData.temperature, parentData.humidity, parentData.pressure);
 
+    // 【明示同期/窓のNTP固定】受信窓を開く前にNTPで grid境界+OFFSET まで待ち、窓位置を絶対
+    // 時刻に固定(親機のRC早起きドリフトを吸収、子機の狙いと一致させる)。
+    waitUntilWindowOpen();
+
     // 子機データ収集（子機起点プッシュ受信＋ACK）
     Serial.println("\n[LoRa] Collecting child data (window + ACK)...");
     bool allReceived = collectChildData();
@@ -641,8 +647,9 @@ void sendDataAck(uint32_t parentIdHash, uint32_t childId) {
 
 /**
  * 【明示同期】現在(ACK送出時)から親機の「次の受信窓が開く」までの秒数を返す。
- * = 次の20分グリッド境界(NTP壁時計)までの秒数 + 次起床の窓オフセット。
- * 子機はこの値+窓中央狙いオフセットで寝て、毎サイクル親時計に再同期する。
+ * = 次の20分グリッド境界(NTP壁時計)までの秒数 + WINDOW_OPEN_OFFSET_SEC。
+ * 窓はwaitUntilWindowOpen()で grid境界+OFFSET のNTP絶対時刻に固定されるので、次窓openも
+ * nextGrid+OFFSETで決定的。子機はこの値+窓中央狙いオフセットで寝て毎サイクル親時計に再同期。
  */
 uint16_t secondsToNextWindow() {
     time_t now; struct tm ti;
@@ -650,18 +657,39 @@ uint16_t secondsToNextWindow() {
     int grid = MEASUREMENT_INTERVAL_MIN * 60;              // 1200s
     int intoGrid = (ti.tm_min * 60 + ti.tm_sec) % grid;    // 現グリッド内の経過秒
     int toNextGrid = grid - intoGrid;                      // 直近のグリッド境界まで
-    // 【重要バグ修正】親機がグリッド境界の"手前"で起床(RCドリフトで数十秒早い)してACKを
-    // 送ると、intoGridがgrid近く→toNextGridが極小(数秒)になり、"目の前の境界=今回の起床分"を
-    // 次窓と誤認する(本来の次起床は+1周期先)。子機がその極小値で寝て即起床し親不在→同期喪失。
-    // 境界手前(toNextGridがgrid/2以下)なら、その境界は今回分なので1周期足して真の次起床を指す。
+    // 【重要】親機がグリッド境界の"手前"で起床(RCドリフトで数十秒早い)してACKを送ると、
+    // intoGridがgrid近く→toNextGridが極小(数秒)になり、"目の前の境界=今回の起床分"を次窓と
+    // 誤認する(本来の次起床は+1周期先)。境界手前(grid/2以下)なら1周期足して真の次起床を指す。
     if (toNextGrid <= grid / 2) toNextGrid += grid;
-    // 次起床がLTE(モデム初期化で窓openが遅れる)かどうか。wakeCounterは本起床で加算済み。
-    bool nextLte = (!configFetched) || (((wakeCounter + 1) % ROUNDS_PER_UPLOAD) == 0);
-    int off = nextLte ? NEXT_WINDOW_LTE_OFFSET_SEC : NEXT_WINDOW_NORMAL_OFFSET_SEC;
-    long v = (long)toNextGrid + off;
+    long v = (long)toNextGrid + WINDOW_OPEN_OFFSET_SEC;    // 窓はNTPで grid+OFFSET に固定
     if (v < 1) v = 1;
     if (v > 65535) v = 65535;
     return (uint16_t)v;
+}
+
+/**
+ * 【明示同期/窓のNTP固定】受信窓を開く前に、NTPで「対象グリッド境界+WINDOW_OPEN_OFFSET_SEC」
+ * まで待つ。親機がRCドリフトで早起きしても窓openを絶対時刻に揃え、子機(同じ絶対時刻を狙う)と
+ * 一致させる。既にその時刻を過ぎている(遅起き/LTE初期化が長い)場合は待たず即open。
+ */
+void waitUntilWindowOpen() {
+    time_t now; struct tm ti;
+    time(&now); localtime_r(&now, &ti);
+    int grid = MEASUREMENT_INTERVAL_MIN * 60;
+    int intoGrid = (ti.tm_min * 60 + ti.tm_sec) % grid;
+    int secToOpen;
+    if (intoGrid > grid / 2) {
+        // 境界手前で起床(早起き)。対象境界は (grid-intoGrid)秒後。窓open=そこ+OFFSET
+        secToOpen = (grid - intoGrid) + WINDOW_OPEN_OFFSET_SEC;
+    } else {
+        // 境界を過ぎている。対象境界はintoGrid秒前。窓open=OFFSET-intoGrid秒後
+        secToOpen = WINDOW_OPEN_OFFSET_SEC - intoGrid;
+    }
+    if (secToOpen > 0) {
+        Serial.printf("[SYNC] wait-to-grid: %ds (open window at grid+%ds NTP)\n",
+                      secToOpen, WINDOW_OPEN_OFFSET_SEC);
+        delay((uint32_t)secToOpen * 1000UL);
+    }
 }
 
 /**
