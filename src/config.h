@@ -72,10 +72,11 @@
 
 // 子機管理設定
 #define MAX_CHILD_DEVICES 8                // 最大子機数
-#define CHILD_RESPONSE_TIMEOUT 90000       // 子機受信窓 (ms) 子機起点プッシュを待つ窓
-                                           // 【明示同期】90sに拡幅。子機は窓中央を狙って
-                                           // 起床するので±45sの自RC誤差/LTEオフセット誤差を
-                                           // 吸収できる。親機は外部電源&全機受信で早期returnのため広くても低コスト。
+#define CHILD_RESPONSE_TIMEOUT 150000      // 子機受信窓 (ms) 子機起点プッシュを待つ窓
+                                           // 【明示同期】150sに拡幅。子機は窓中央(WINDOW_AIM=75s)を
+                                           // 狙って起床するので±75sの自RCドリフトを吸収(日中は温度で±60s程度)。
+                                           // 実機で90s窓では日中に外していたため拡幅。親機は外部電源&全機
+                                           // 受信で早期returnのため広くても低コスト(欠測時のみ最大150s待つ)。
 #define WAKE_SIGNAL_INTERVAL 100           // 起床信号送信間隔 (ms)
 #define PAIRING_RESPONSE_TIMEOUT 10000     // ペアリング応答タイムアウト (ms)
 

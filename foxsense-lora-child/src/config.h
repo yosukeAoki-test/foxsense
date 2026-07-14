@@ -74,7 +74,8 @@
 // 【明示同期】親ACK(16B)の「次窓まで秒」を使い、次窓の中央を狙って寝る。窓中央狙いで
 // 前後±(窓幅/2)の自RC誤差/LTEオフセット誤差を吸収。毎サイクル親のNTP時計に再同期する
 // ので誤差が累積しない。親窓幅=90s(CHILD_RESPONSE_TIMEOUT)に対し中央45sを狙う。
-#define WINDOW_AIM_OFFSET_SEC 45       // 親窓open+45s(=90s窓の中央付近)を狙って起床
+#define WINDOW_AIM_OFFSET_SEC 75       // 親窓open+75s(=150s窓の中央)を狙って起床。±75sの自RC
+                                       // ドリフト(日中は温度で±60s程度)を窓幅150sで吸収する。
 #define CHILD_WAKE_LATENCY_SEC 1       // 起床→初回TXまでの概算(起動+測定)を差し引く
 #define TX_RETRY 3                     // 1起床あたりの送信リトライ回数
 #define TDMA_BACKOFF_MS 250            // リトライ/衝突回避のバックオフ基準(ms)×logicalId
