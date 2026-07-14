@@ -649,7 +649,12 @@ uint16_t secondsToNextWindow() {
     time(&now); localtime_r(&now, &ti);
     int grid = MEASUREMENT_INTERVAL_MIN * 60;              // 1200s
     int intoGrid = (ti.tm_min * 60 + ti.tm_sec) % grid;    // 現グリッド内の経過秒
-    int toNextGrid = grid - intoGrid;                      // 次グリッド境界まで
+    int toNextGrid = grid - intoGrid;                      // 直近のグリッド境界まで
+    // 【重要バグ修正】親機がグリッド境界の"手前"で起床(RCドリフトで数十秒早い)してACKを
+    // 送ると、intoGridがgrid近く→toNextGridが極小(数秒)になり、"目の前の境界=今回の起床分"を
+    // 次窓と誤認する(本来の次起床は+1周期先)。子機がその極小値で寝て即起床し親不在→同期喪失。
+    // 境界手前(toNextGridがgrid/2以下)なら、その境界は今回分なので1周期足して真の次起床を指す。
+    if (toNextGrid <= grid / 2) toNextGrid += grid;
     // 次起床がLTE(モデム初期化で窓openが遅れる)かどうか。wakeCounterは本起床で加算済み。
     bool nextLte = (!configFetched) || (((wakeCounter + 1) % ROUNDS_PER_UPLOAD) == 0);
     int off = nextLte ? NEXT_WINDOW_LTE_OFFSET_SEC : NEXT_WINDOW_NORMAL_OFFSET_SEC;
