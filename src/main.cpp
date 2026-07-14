@@ -34,6 +34,8 @@
 #include "ca_cert.h"
 #include "ir_control.h"
 #include "e220.h"
+#include <Update.h>          // LTE OTA: ota_1面への書込
+#include "esp_ota_ops.h"     // LTE OTA: ロールバック/確定
 
 // ディープスリープ間隔
 #define MEASUREMENT_INTERVAL_MIN 20  // 起床間隔20分（親子とも20分毎に起床）
@@ -87,6 +89,18 @@ RTC_DATA_ATTR bool caCertUploaded = false;         // CA証明書アップロー
 
 // 起床回数（LTE送信タイミング判定用）
 RTC_DATA_ATTR uint32_t wakeCounter = 0;
+
+// ===== LTE OTA 状態 =====
+// config応答の firmware{} をパースして格納(このブート内のローカル判断用。RTC不要)
+bool     g_otaAvailable = false;
+uint32_t g_otaVerCode   = 0;
+uint32_t g_otaSize      = 0;
+String   g_otaUrl       = "";
+String   g_otaMd5       = "";
+// OTA後の見極め(probation): esp_restart跨ぎで保持。電源断で消えるが新ファームは既に書込済で害なし。
+RTC_DATA_ATTR bool    g_otaProbation      = false;  // OTA直後で未確定
+RTC_DATA_ATTR uint8_t g_otaProbationBoots = 0;      // 未確定のまま起動した回数
+bool g_serverReachedThisBoot = false;               // 本ブートでサーバ到達したか(確定判定用)
 
 // データ蓄積バッファ（20分毎の計測を貯め、1時間毎にまとめて送信）
 struct RtcChild {
@@ -187,6 +201,10 @@ void sendDataAck(uint32_t parentIdHash, uint32_t childId);
 uint16_t secondsToNextWindow();
 void waitUntilWindowOpen();
 void storeRoundToRtc();
+// LTE OTA
+void markOtaValidIfPending();
+int  carecvRaw(uint8_t* out, int maxOut, uint32_t timeoutMs);
+bool performOta();
 String buildRoundPayload(const RtcRound& r);
 bool uploadAllRounds();
 bool reportPairingResult(const char* childDeviceIdHex, const char* status);
@@ -325,7 +343,23 @@ void setup() {
     Serial.println("=============================================");
     Serial.printf("Boot count: %d\n", bootCount);
     Serial.printf("Device ID: %s (Parent)\n", DEVICE_ID);
-    Serial.printf("Protocol: v%d\n", PROTOCOL_VERSION);
+    Serial.printf("Protocol: v%d  Firmware: %s (code %d)\n", PROTOCOL_VERSION, FIRMWARE_VERSION, FIRMWARE_VERSION_CODE);
+
+    // 【LTE OTA ロールバック保護】OTA直後(probation)はサーバ到達で確定するまで様子見。
+    // OTA_PROBATION_MAX回起動してもサーバ未到達(=新ファーム不良でLTE不能の疑い)なら旧面へ戻す。
+    if (g_otaProbation) {
+        g_otaProbationBoots++;
+        Serial.printf("[OTA] probation boot %d/%d (awaiting server contact)\n",
+                      g_otaProbationBoots, OTA_PROBATION_MAX);
+        if (g_otaProbationBoots >= OTA_PROBATION_MAX) {
+            const esp_partition_t* prev = esp_ota_get_next_update_partition(NULL);  // 旧面
+            if (prev && esp_ota_set_boot_partition(prev) == ESP_OK) {
+                Serial.println("[OTA] ROLLBACK: server unreachable -> boot previous firmware");
+                g_otaProbation = false; g_otaProbationBoots = 0;
+                delay(300); esp_restart();
+            }
+        }
+    }
 
     // 起床理由を確認
     esp_sleep_wakeup_cause_t wakeup_reason = esp_sleep_get_wakeup_cause();
@@ -477,6 +511,7 @@ void setup() {
             Serial.println("[OK] Batch upload success");
             consecutiveFailures = 0;
             rtcRoundCount = 0;   // 送信成功でバッファクリア
+            markOtaValidIfPending();   // サーバ到達 → OTA新ファーム確定
         } else {
             Serial.println("[ERROR] Batch upload failed (keep buffer, retry next LTE wake)");
             consecutiveFailures++;
@@ -489,6 +524,17 @@ void setup() {
             Serial.printf("[AC] Executing: mode=%d tempC=%.1f\n", (int)acCmd.mode, acCmd.tempC);
             irCtrl.send(acCmd.mode, acCmd.tempC);
             ackAcCommand(acCmd.id);
+        }
+
+        // 【LTE OTA】センサ送信完了後に実行(データ欠損を防ぐ)。新版があり事前条件OKなら書換→再起動。
+        if (g_otaAvailable) {
+            int bat = parentData.batteryLevel;   // 親は外部電源だとVBUS給電で電池不定。<50%かつ電池駆動時のみ見送り。
+            bool batteryOk = (parentData.vbusMv > 4000) || (bat <= 0) || (bat >= OTA_MIN_BATTERY_PCT);
+            if (!batteryOk) {
+                Serial.printf("[OTA] skip: battery %d%% < %d%% (no external power)\n", bat, OTA_MIN_BATTERY_PCT);
+            } else {
+                performOta();   // 成功時は戻らない(esp_restart)。失敗時は旧ファーム維持で継続。
+            }
         }
     }
 
@@ -690,6 +736,156 @@ void waitUntilWindowOpen() {
                       secToOpen, WINDOW_OPEN_OFFSET_SEC);
         delay((uint32_t)secToOpen * 1000UL);
     }
+}
+
+// ===== LTE OTA =====
+
+/**
+ * OTA後の見極め(probation)中にサーバ到達したら「新ファーム確定」。
+ * ロールバックを解除し、二度と旧面へ戻らないようにする。
+ */
+void markOtaValidIfPending() {
+    g_serverReachedThisBoot = true;
+    if (g_otaProbation) {
+        esp_ota_mark_app_valid_cancel_rollback();   // Arduino既定bootでは概ねno-opだが害なし
+        g_otaProbation = false;
+        g_otaProbationBoots = 0;
+        Serial.println("[OTA] new firmware confirmed valid (server reached)");
+    }
+}
+
+/**
+ * CARECVで生バイトを1回受信し out[] に格納。戻り値=受信バイト数(0=データ無し,-1=エラー/タイムアウト)。
+ * 応答書式: "...\r\n+CARECV: <len>,<len個の生バイト>\r\nOK\r\n"。lenをテキスト解析後、
+ * 生バイトはStringに入れずuint8_tへ直接読む(ファームは0x00を含むためString不可)。
+ */
+int carecvRaw(uint8_t* out, int maxOut, uint32_t timeoutMs) {
+    modemSerial.print("AT+CARECV=0,1460\r\n");
+    // Phase1: "+CARECV: <len>," までをテキストで読む
+    String hdr = ""; unsigned long t = millis(); int len = -1;
+    while (millis() - t < timeoutMs) {
+        while (modemSerial.available()) {
+            char c = (char)modemSerial.read();
+            hdr += c;
+            int ci = hdr.indexOf("+CARECV:");
+            if (ci >= 0) {
+                int comma = hdr.indexOf(",", ci + 8);
+                if (comma > 0) { len = hdr.substring(ci + 9, comma).toInt(); goto haveLen; }
+            }
+            if (hdr.indexOf("ERROR") >= 0) return -1;
+            if (hdr.length() > 200) hdr = hdr.substring(hdr.length() - 40); // 肥大防止
+        }
+        delay(2);
+    }
+    return -1; // +CARECV来ず
+haveLen:
+    if (len <= 0) {
+        // 末尾OKを排出
+        unsigned long d = millis();
+        while (millis() - d < 500) { while (modemSerial.available()) modemSerial.read(); delay(5); }
+        return 0;
+    }
+    // Phase2: len個の生バイトを読む
+    int got = 0; t = millis();
+    while (got < len && got < maxOut && millis() - t < timeoutMs) {
+        if (modemSerial.available()) { out[got++] = (uint8_t)modemSerial.read(); t = millis(); }
+        else delay(1);
+    }
+    // Phase3: 末尾 \r\nOK\r\n を排出
+    unsigned long d = millis();
+    while (millis() - d < 400) { while (modemSerial.available()) modemSerial.read(); delay(5); }
+    return got;
+}
+
+/**
+ * LTE OTA本体。config応答の firmware{} に基づき ota_1 面へ書込み、MD5照合後に再起動。
+ * 失敗時は Update.abort() で旧ファーム維持(次サイクル再試行)。成功時は戻らない(esp_restart)。
+ * ※堅牢なCAOPEN(全スロットクローズ+リトライ)を使用。port80平文HTTP(configと同経路)。
+ */
+bool performOta() {
+    const char* host = SERVER_HOST;
+    Serial.printf("\n[OTA] === Starting OTA: %s (%u bytes) ===\n", g_otaUrl.c_str(), (unsigned)g_otaSize);
+
+    sendATCommand("AT+CPSMS=0", 2000);   // ダウンロード中にPSMスリープさせない
+
+    if (!Update.begin(g_otaSize)) {
+        Serial.printf("[OTA] Update.begin fail: %d (free ota space?)\n", Update.getError());
+        return false;
+    }
+    Update.setMD5(g_otaMd5.c_str());     // end(true)時に自動MD5照合
+
+    // 堅牢CAOPEN: 全スロットクローズ+バッファ排出+リトライ
+    for (int cid = 0; cid <= 2; cid++) sendATCommand("AT+CACLOSE=" + String(cid), 1200);
+    while (modemSerial.available()) modemSerial.read();
+    delay(1200);
+    String r; bool opened = false;
+    for (int a = 0; a < 3 && !opened; a++) {
+        r = sendATCommand(String("AT+CAOPEN=0,0,\"TCP\",\"") + host + "\"," + String(OTA_HTTP_PORT), 20000);
+        if (r.indexOf("+CAOPEN: 0,0") >= 0) { opened = true; break; }
+        sendATCommand("AT+CACLOSE=0", 2000); delay(1500);
+    }
+    if (!opened) { Serial.println("[OTA] CAOPEN failed"); Update.abort(); return false; }
+
+    String req = "GET " + g_otaUrl + " HTTP/1.1\r\nHost: " + String(host)
+               + "\r\nConnection: keep-alive\r\n\r\n";
+    sendATCommand("AT+CASEND=0," + String(req.length()), 5000);
+    modemSerial.print(req);
+
+    // 最初の +CADATAIND を待つ
+    { String wb; unsigned long t0 = millis();
+      while (millis() - t0 < 12000) { while (modemSerial.available()) wb += (char)modemSerial.read();
+          if (wb.indexOf("+CADATAIND:") >= 0) break; delay(20); } }
+
+    // ストリーミング: CARECVの生バイトをHTTPヘッダ除去してUpdate.writeへ
+    static uint8_t buf[1500];
+    uint32_t written = 0; bool headerDone = false; String hdrAccum = "";
+    unsigned long lastProgress = millis();
+    while (written < g_otaSize && millis() - lastProgress < 90000) {
+        int n = carecvRaw(buf, sizeof(buf), 5000);
+        if (n < 0) { delay(150); continue; }
+        if (n == 0) { delay(250); continue; }
+        lastProgress = millis();
+        int bodyStart = 0;
+        if (!headerDone) {
+            int i = 0;
+            for (; i < n && !headerDone; i++) {
+                hdrAccum += (char)buf[i];
+                if (hdrAccum.endsWith("\r\n\r\n")) headerDone = true;
+                if (hdrAccum.length() > 800) hdrAccum = hdrAccum.substring(hdrAccum.length() - 8);
+            }
+            if (!headerDone) continue;   // このチャンクは全てヘッダ
+            bodyStart = i;               // ボディは buf[i] から
+        }
+        int bodyLen = n - bodyStart;
+        if (bodyLen > 0) {
+            if (written + (uint32_t)bodyLen > g_otaSize) bodyLen = g_otaSize - written;
+            if (Update.write(buf + bodyStart, bodyLen) != (size_t)bodyLen) {
+                Serial.printf("[OTA] write err %d at %u\n", Update.getError(), (unsigned)written);
+                Update.abort(); sendATCommand("AT+CACLOSE=0", 2000); return false;
+            }
+            written += bodyLen;
+            if ((written % 51200) < (uint32_t)bodyLen)
+                Serial.printf("[OTA] %u / %u bytes\n", (unsigned)written, (unsigned)g_otaSize);
+        }
+    }
+    sendATCommand("AT+CACLOSE=0", 3000);
+
+    if (written != g_otaSize) {
+        Serial.printf("[OTA] size mismatch: %u / %u -> abort\n", (unsigned)written, (unsigned)g_otaSize);
+        Update.abort(); return false;
+    }
+    if (!Update.end(true)) {   // MD5照合込み
+        Serial.printf("[OTA] end/MD5 error: %d -> abort (old fw kept)\n", Update.getError());
+        return false;
+    }
+
+    // probation開始(新ファームがサーバ到達で自己確定するまで)
+    g_otaProbation = true;
+    g_otaProbationBoots = 0;
+    Serial.println("[OTA] SUCCESS -> reboot into new firmware");
+    delay(500);
+    esp_restart();   // 戻らない
+    return true;
 }
 
 /**
@@ -900,8 +1096,9 @@ bool uploadCACert() {
  * レスポンスJSONをパースしてRTCキャッシュに保存
  */
 bool fetchConfigFromServer() {
-    // HTTPS GET リクエスト
-    String configPath = String(SERVER_CONFIG_PATH) + DEVICE_ID + "?secret=" + DEVICE_SECRET;
+    // HTTPS GET リクエスト。&fw= で稼働中バージョンを申告(OTA判定用)
+    String configPath = String(SERVER_CONFIG_PATH) + DEVICE_ID + "?secret=" + DEVICE_SECRET
+                      + "&fw=" + String(FIRMWARE_VERSION_CODE);
 
     String r;
     // TCP接続 (HTTP port 80)
@@ -1156,7 +1353,28 @@ bool fetchConfigFromServer() {
                 searchPos = objEnd + 1;
             }
         }
+
+        // OTA: firmware{} をパース(あれば新版候補、無ければ最新)
+        g_otaAvailable = false;
+        int fwIdx = response.indexOf("\"firmware\":{");
+        if (fwIdx >= 0) {
+            int fwEnd = response.indexOf("}", fwIdx);
+            String fw = (fwEnd > fwIdx) ? response.substring(fwIdx, fwEnd + 1) : String("");
+            uint32_t vc = 0, sz = 0; String url = "", md5 = ""; int p;
+            if ((p = fw.indexOf("\"versionCode\":")) >= 0) vc = (uint32_t)strtoul(fw.substring(p + 14).c_str(), NULL, 10);
+            if ((p = fw.indexOf("\"size\":")) >= 0)        sz = (uint32_t)strtoul(fw.substring(p + 7).c_str(), NULL, 10);
+            if ((p = fw.indexOf("\"url\":\"")) >= 0)  { int s = p + 7, e = fw.indexOf("\"", s); if (e > s) url = fw.substring(s, e); }
+            if ((p = fw.indexOf("\"md5\":\"")) >= 0)  { int s = p + 7, e = fw.indexOf("\"", s); if (e > s) md5 = fw.substring(s, e); }
+            if (vc > FIRMWARE_VERSION_CODE && sz > 0 && url.length() > 0 && md5.length() == 32) {
+                g_otaAvailable = true; g_otaVerCode = vc; g_otaSize = sz; g_otaUrl = url; g_otaMd5 = md5;
+                Serial.printf("[OTA] update available: vcode %u -> %u, %u bytes, url=%s md5=%s\n",
+                              (unsigned)FIRMWARE_VERSION_CODE, (unsigned)vc, (unsigned)sz, url.c_str(), md5.c_str());
+            }
+        }
     }
+
+    // サーバ到達成功 → OTA probation確定(ロールバック解除)
+    if (success) markOtaValidIfPending();
 
     return success && cachedParentIdHash != 0;
 }

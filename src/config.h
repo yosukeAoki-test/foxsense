@@ -12,6 +12,13 @@
 // プロトコルバージョン
 #define PROTOCOL_VERSION 0x03              // v3: 気圧センサー対応（v2後方互換）
 
+// ===== ファームウェアバージョン（LTE OTA用）=====
+#define FIRMWARE_VERSION      "1.0.0"      // 人間可読(ログ/レポート用)
+#define FIRMWARE_VERSION_CODE 10000        // 比較用の単調増加整数 (M*10000 + m*100 + p)
+#define OTA_MIN_BATTERY_PCT   50           // これ未満のバッテリでは書込中の電断防止でOTA見送り(親は外部電源想定で通常無効化しうる)
+#define OTA_HTTP_PORT         80           // ファーム配信ポート(configと同じ平文HTTP/nginx静的配信)
+#define OTA_PROBATION_MAX     3            // OTA後この回数サーバ未到達ならロールバック
+
 // 動作モード設定
 #define USE_TEST_MODE false                // true=30秒間隔テスト, false=10分間隔本番
 #define SEND_INTERVAL_MINUTES 10           // 本番モード送信間隔 (分)

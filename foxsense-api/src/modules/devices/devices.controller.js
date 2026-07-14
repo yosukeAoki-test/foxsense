@@ -82,13 +82,13 @@ export const updateAlertSettings = asyncHandler(async (req, res) => {
 // Device Config (ファームウェア認証エンドポイント)
 export const getDeviceConfig = asyncHandler(async (req, res) => {
   const { deviceId } = req.params;
-  const { secret } = req.query;
+  const { secret, fw } = req.query;   // fw=稼働中FIRMWARE_VERSION_CODE(OTA判定用)
 
   if (!secret) {
     return res.status(400).json({ success: false, message: 'Secret is required' });
   }
 
-  const config = await devicesService.getDeviceConfig(deviceId, secret);
+  const config = await devicesService.getDeviceConfig(deviceId, secret, fw);
   res.json({ success: true, data: config });
 });
 

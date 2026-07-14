@@ -342,7 +342,7 @@ export const getAssignmentHistory = async (childId, userId) => {
 
 // ===== Device Config (ファームウェア認証) =====
 
-export const getDeviceConfig = async (deviceId, secret) => {
+export const getDeviceConfig = async (deviceId, secret, fwCode) => {
   const device = await prisma.parentDevice.findUnique({
     where: { deviceId },
     include: {
@@ -359,6 +359,45 @@ export const getDeviceConfig = async (deviceId, secret) => {
 
   const parentIdHash = computeParentIdHash(deviceId);
 
+  // ===== LTE OTA: 稼働中バージョンの記録＋新版判定 =====
+  let firmware = null;
+  const reported = fwCode != null ? Number(fwCode) : null;
+  if (reported != null && !Number.isNaN(reported)) {
+    // 稼働中バージョンを記録（可視化用）。列が無い旧DBでも落ちないようtry握り
+    try {
+      await prisma.parentDevice.update({
+        where: { deviceId },
+        data: { fwVersionCode: reported, fwReportedAt: new Date() },
+      });
+    } catch (e) { /* migration前などは無視 */ }
+
+    // 配信対象の最新版（個体ピン留め targetFwCode があれば優先）
+    try {
+      const latest = await prisma.firmware.findFirst({
+        where: { board: 'foxsense-one', channel: 'stable', isActive: true },
+        orderBy: { versionCode: 'desc' },
+      });
+      const wantCode = device.targetFwCode ?? latest?.versionCode;
+      if (latest && wantCode != null && reported < wantCode) {
+        // targetFwCodeでピン留めされている場合はその版、無ければ最新
+        const target = device.targetFwCode
+          ? await prisma.firmware.findFirst({
+              where: { board: 'foxsense-one', versionCode: device.targetFwCode, isActive: true },
+            })
+          : latest;
+        if (target && reported < target.versionCode) {
+          firmware = {
+            versionCode: target.versionCode,
+            version: target.version,
+            url: `/firmware/${target.fileName}`, // ホストはデバイス側で付与
+            size: target.size,
+            md5: target.md5,
+          };
+        }
+      }
+    } catch (e) { /* Firmwareテーブル未作成などは無視（firmware=null=最新扱い） */ }
+  }
+
   return {
     deviceId: device.deviceId,
     parentIdHash,
@@ -372,6 +411,7 @@ export const getDeviceConfig = async (deviceId, secret) => {
       pairingStatus: a.pairingStatus,
       name: a.child.name,
     })),
+    firmware, // null=最新（デバイスは何もしない）
   };
 };
 

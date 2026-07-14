@@ -73,6 +73,23 @@ model Subscription {
   user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
+// ===== LTE OTA: 配信ファームウェア =====
+model Firmware {
+  id          String   @id @default(uuid())
+  board       String   @default("foxsense-one") // 機種識別(将来複数機種)
+  channel     String   @default("stable")       // stable / beta
+  version     String                             // "1.0.1"(表示用)
+  versionCode Int                                // 10001(比較用・単調増加)
+  fileName    String                             // "foxsense-one-1.0.1.bin"(/firmware/配下)
+  size        Int                                // バイト数(Content-Length)
+  md5         String                             // 小文字hex 32桁
+  notes       String?                            // 変更メモ
+  isActive    Boolean  @default(true)            // 配信ON/OFF
+  createdAt   DateTime @default(now())
+
+  @@index([board, channel, isActive])
+}
+
 model ParentDevice {
   id            String             @id @default(uuid())
   userId        String
@@ -84,6 +101,9 @@ model ParentDevice {
   soracomSimId  String?            @unique
   simStatus     String             @default("INACTIVE")
   acEnabled     Boolean            @default(false)
+  fwVersionCode Int?               // LTE OTA: デバイスが最後に申告した稼働中バージョン
+  fwReportedAt  DateTime?          // LTE OTA: 申告日時
+  targetFwCode  Int?               // LTE OTA: 個体ピン留め(段階展開/テスト機)。未設定なら最新に追従
   createdAt     DateTime           @default(now())
   updatedAt     DateTime           @updatedAt
   alertSettings AlertSettings?
